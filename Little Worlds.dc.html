@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&amp;family=Quicksand:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+html,body{margin:0;height:100%}
+body{background:#241a2e;font-family:'Quicksand',sans-serif;color:#3a2e3f;-webkit-font-smoothing:antialiased}
+a{color:#ff7a59}a:hover{color:#d95f3f}
+@keyframes lwpulse{0%,100%{opacity:.35;transform:scale(.85)}50%{opacity:1;transform:scale(1)}}
+@keyframes lwpop{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media(max-width:900px){
+#lw-main{flex-direction:column!important;height:auto!important}
+#lw-view{height:52vh!important;min-height:340px!important;flex:none!important}
+#lw-panel{width:auto!important;max-width:none!important;border-radius:24px 24px 0 0!important;margin-top:-18px}
+#lw-root{height:auto!important;min-height:100vh}
+}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+</helmet>
+<div id="lw-root" style="height:100vh;display:flex;flex-direction:column;background:radial-gradient(120% 100% at 20% 0%, #35244a 0%, #241a2e 55%, #1b1424 100%)">
+  <header style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 20px;flex:none">
+    <div style="display:flex;align-items:center;gap:11px">
+      <div style="width:34px;height:34px;border-radius:50%;background:radial-gradient(circle at 32% 30%, #ffd9a0 0%, #ff8a5f 45%, #b8508a 100%);box-shadow:0 0 18px rgba(255,150,110,.45)"></div>
+      <div>
+        <div style="font-family:'Baloo 2',cursive;font-weight:800;font-size:21px;color:#fff3e4;line-height:1">Little Worlds</div>
+        <div style="font-size:11.5px;color:#b9a8c9;margin-top:2px">sculpt a planet, then see who lives there</div>
+      </div>
+    </div>
+    <button onClick="{{ surprise }}" style="font-family:'Baloo 2',cursive;font-weight:700;font-size:15px;color:#2c1f18;background:linear-gradient(180deg,#ffc46b,#ff9a4f);border:none;border-radius:999px;padding:10px 20px;cursor:pointer;box-shadow:0 4px 14px rgba(255,150,80,.35)" style-hover="filter:brightness(1.06)" style-active="transform:translateY(1px)">Surprise me</button>
+  </header>
+  <div id="lw-main" style="flex:1;display:flex;min-height:0;gap:0">
+    <div id="lw-view" style="flex:1;position:relative;min-width:0">
+      <x-import component-from-global-scope="planet-viewport" from="./planet-engine.js?v=11" ref="{{ viewRef }}" hint-size="100%,100%" style="position:absolute;inset:0"></x-import>
+      <div style="position:absolute;left:22px;top:20px;display:flex;align-items:center;gap:7px;background:rgba(30,20,42,.55);padding:6px 8px 6px 13px;border-radius:999px">
+        <span style="font-size:11px;font-weight:700;color:#c9b8d9;text-transform:uppercase;letter-spacing:.06em">Time</span>
+        <sc-for list="{{ speeds }}" as="s" hint-placeholder-count="5">
+          <button onClick="{{ s.onPick }}" title="{{ s.title }}" style="font-family:'Quicksand',sans-serif;font-weight:700;font-size:12px;padding:5px 11px;border-radius:999px;border:none;background:{{ s.bg }};color:{{ s.fg }};cursor:pointer">{{ s.label }}</button>
+        </sc-for>
+      </div>
+      <div style="position:absolute;left:22px;bottom:20px;pointer-events:none">
+        <div style="font-family:'Baloo 2',cursive;font-weight:800;font-size:30px;color:#fff3e4;text-shadow:0 2px 12px rgba(0,0,0,.4);line-height:1.1">{{ displayName }}</div>
+        <div style="font-size:12.5px;color:#c9b8d9;margin-top:4px">{{ subLine }}</div>
+      </div>
+      <div style="position:absolute;right:18px;bottom:20px;display:flex;align-items:center;gap:9px">
+        <button onClick="{{ resetView }}" style="font-family:'Quicksand',sans-serif;font-weight:700;font-size:11.5px;color:#e8dcf2;background:rgba(30,20,42,.62);border:1px solid rgba(200,180,220,.28);padding:6px 13px;border-radius:999px;cursor:pointer" style-hover="background:rgba(60,40,80,.8)">Reset view</button>
+        <span style="pointer-events:none;font-size:11.5px;color:#9a89ad;background:rgba(30,20,42,.55);padding:6px 12px;border-radius:999px">drag to travel · scroll to zoom</span>
+      </div>
+    </div>
+    <div id="lw-panel" style="width:372px;max-width:44vw;flex:none;background:#fff8ee;border-radius:26px 0 0 26px;display:flex;flex-direction:column;min-height:0;box-shadow:-8px 0 30px rgba(0,0,0,.25)">
+      <div style="display:flex;gap:6px;padding:16px 18px 10px;flex:none">
+        <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="3">
+          <button onClick="{{ t.onClick }}" style="flex:1;font-family:'Baloo 2',cursive;font-weight:700;font-size:13px;white-space:nowrap;padding:9px 2px;border-radius:999px;border:1.5px solid {{ t.bc }};background:{{ t.bg }};color:{{ t.fg }};cursor:pointer">{{ t.label }}</button>
+        </sc-for>
+      </div>
+      <div style="flex:1;overflow-y:auto;padding:6px 20px 24px;min-height:0">
+        <sc-if value="{{ isSculpt }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;gap:8px;margin-bottom:12px">
+            <div style="flex:1">
+              <div style="font-size:11px;font-weight:700;color:#9a8296;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px">Name</div>
+              <input type="text" value="{{ name }}" onChange="{{ onName }}" style="width:100%;box-sizing:border-box;font-family:'Quicksand',sans-serif;font-weight:600;font-size:14px;color:#3a2e3f;background:#fff;border:1.5px solid #eaddca;border-radius:12px;padding:9px 12px;outline:none">
+            </div>
+            <div style="width:118px">
+              <div style="font-size:11px;font-weight:700;color:#9a8296;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px">Seed</div>
+              <div style="display:flex;gap:6px">
+                <input type="text" inputMode="numeric" value="{{ seedStr }}" onChange="{{ onSeed }}" style="width:100%;min-width:0;box-sizing:border-box;font-family:'Quicksand',sans-serif;font-weight:600;font-size:14px;color:#3a2e3f;background:#fff;border:1.5px solid #eaddca;border-radius:12px;padding:9px 10px;outline:none">
+                <button onClick="{{ rollSeed }}" title="New seed" style="flex:none;width:38px;border:1.5px solid #eaddca;background:#fff;border-radius:12px;cursor:pointer;font-size:16px;color:#b0648a" style-hover="background:#fdf0e0">⟳</button>
+              </div>
+            </div>
+          </div>
+          <div style="font-size:11px;font-weight:700;color:#9a8296;text-transform:uppercase;letter-spacing:.06em;margin-bottom:7px">World type</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">
+            <sc-for list="{{ presets }}" as="p" hint-placeholder-count="5">
+              <button onClick="{{ p.onPick }}" style="display:flex;align-items:center;gap:6px;font-family:'Quicksand',sans-serif;font-weight:700;font-size:12.5px;padding:7px 11px;border-radius:999px;border:1.5px solid {{ p.bc }};background:{{ p.bg }};color:{{ p.fg }};cursor:pointer">
+                <span style="width:10px;height:10px;border-radius:50%;background:{{ p.dot }};display:inline-block;flex:none"></span>{{ p.label }}
+              </button>
+            </sc-for>
+          </div>
+          <sc-if value="{{ isReal }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;align-items:center;gap:11px;background:#f2f7ff;border:1.5px solid #d5e2f2;border-radius:16px;padding:12px 14px;margin-bottom:14px">
+              <div style="flex:1;min-width:0;font-size:12.5px;color:#5f6b85;line-height:1.45">Showing the real surface, so the land sliders are resting.</div>
+              <button onClick="{{ reshape }}" style="flex:none;font-family:'Quicksand',sans-serif;font-weight:700;font-size:12px;color:#fff8ee;background:#5f7bb0;border:none;border-radius:999px;padding:7px 13px;cursor:pointer" style-hover="background:#4c6595">Reshape</button>
+            </div>
+          </sc-if>
+          <sc-for list="{{ sliders }}" as="s" hint-placeholder-count="5">
+            <div style="margin-bottom:13px;opacity:{{ s.op }}">
+              <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">
+                <span style="font-weight:700;font-size:13.5px;color:#4a3a4f">{{ s.label }}</span>
+                <span style="font-size:12px;font-weight:600;color:#b0648a">{{ s.pct }}</span>
+              </div>
+              <input type="range" min="0" max="100" value="{{ s.v100 }}" onChange="{{ s.onInput }}" disabled="{{ s.dis }}" style="width:100%;accent-color:#ff7a59;height:22px;cursor:pointer;margin:0">
+            </div>
+          </sc-for>
+          <div style="display:flex;gap:10px;margin:4px 0 13px">
+            <div style="flex:none">
+              <div style="font-size:11px;font-weight:700;color:#9a8296;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Rings</div>
+              <button onClick="{{ toggleRings }}" style="font-family:'Quicksand',sans-serif;font-weight:700;font-size:12.5px;padding:7px 14px;border-radius:999px;border:1.5px solid {{ ringsB.bc }};background:{{ ringsB.bg }};color:{{ ringsB.fg }};cursor:pointer;white-space:nowrap;opacity:{{ ringsOp }}">{{ ringsLabel }}</button>
+            </div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:11px;font-weight:700;color:#9a8296;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Moons</div>
+              <div style="display:flex;gap:5px">
+                <sc-for list="{{ moonOpts }}" as="m" hint-placeholder-count="4">
+                  <button onClick="{{ m.onPick }}" style="flex:1;font-family:'Quicksand',sans-serif;font-weight:700;font-size:12.5px;padding:7px 0;border-radius:999px;border:1.5px solid {{ m.bc }};background:{{ m.bg }};color:{{ m.fg }};cursor:pointer;opacity:{{ m.op }}">{{ m.label }}</button>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+          <div style="background:#fff;border:1.5px solid #eaddca;border-radius:16px;padding:13px 14px;margin-bottom:15px">
+            <div style="font-size:11px;font-weight:700;color:#9a8296;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Spin</div>
+            <div style="display:flex;gap:6px;margin-bottom:11px;opacity:{{ spinOp }}">
+              <button onClick="{{ spinFwd.onPick }}" style="flex:1;font-family:'Quicksand',sans-serif;font-weight:700;font-size:12.5px;padding:7px 0;border-radius:999px;border:1.5px solid {{ spinFwd.bc }};background:{{ spinFwd.bg }};color:{{ spinFwd.fg }};cursor:pointer">Prograde</button>
+              <button onClick="{{ spinRev.onPick }}" style="flex:1;font-family:'Quicksand',sans-serif;font-weight:700;font-size:12.5px;padding:7px 0;border-radius:999px;border:1.5px solid {{ spinRev.bc }};background:{{ spinRev.bg }};color:{{ spinRev.fg }};cursor:pointer">Retrograde</button>
+            </div>
+            <div style="opacity:{{ spinOp }}">
+              <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">
+                <span style="font-weight:700;font-size:13px;color:#4a3a4f">Day length</span>
+                <span style="font-size:12px;font-weight:600;color:#b0648a">{{ spinPct }}</span>
+              </div>
+              <input type="range" min="0" max="100" value="{{ spinV100 }}" onChange="{{ spinInput }}" style="width:100%;accent-color:#ff7a59;height:20px;cursor:pointer;margin:0">
+            </div>
+            <sc-if value="{{ isReal }}" hint-placeholder-val="{{ false }}">
+              <div style="font-size:12px;color:#9a8296;line-height:1.4;margin-top:7px">This world turns at its real sidereal rate.</div>
+            </sc-if>
+          </div>
+          <div style="background:#fff;border:1.5px solid #eaddca;border-radius:16px;padding:13px 14px;margin-bottom:15px">
+            <div style="font-size:11px;font-weight:700;color:#9a8296;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Sunlight</div>
+            <sc-for list="{{ lightSliders }}" as="s" hint-placeholder-count="2">
+              <div style="margin-bottom:10px">
+                <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">
+                  <span style="font-weight:700;font-size:13px;color:#4a3a4f">{{ s.label }}</span>
+                  <span style="font-size:12px;font-weight:600;color:#b0648a">{{ s.pct }}</span>
+                </div>
+                <input type="range" min="0" max="100" value="{{ s.v100 }}" onChange="{{ s.onInput }}" style="width:100%;accent-color:#ff7a59;height:20px;cursor:pointer;margin:0">
+              </div>
+            </sc-for>
+            <button onClick="{{ lightReset }}" style="font-family:'Quicksand',sans-serif;font-weight:700;font-size:12px;padding:6px 13px;border-radius:999px;border:1.5px solid #eaddca;background:#fff;color:#4a3a4f;cursor:pointer">Noon light</button>
+          </div>
+          <sc-if value="{{ ringDesign }}" hint-placeholder-val="{{ false }}">
+            <div style="background:#fff;border:1.5px solid #eaddca;border-radius:16px;padding:13px 14px;margin-bottom:15px">
+              <div style="font-size:11px;font-weight:700;color:#9a8296;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Ring designer</div>
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:11px">
+                <span style="font-weight:700;font-size:13px;color:#4a3a4f;flex:1">Bands</span>
+                <div style="display:flex;gap:5px">
+                  <sc-for list="{{ ringNOpts }}" as="n" hint-placeholder-count="4">
+                    <button onClick="{{ n.onPick }}" style="width:32px;font-family:'Quicksand',sans-serif;font-weight:700;font-size:12.5px;padding:6px 0;border-radius:999px;border:1.5px solid {{ n.bc }};background:{{ n.bg }};color:{{ n.fg }};cursor:pointer">{{ n.label }}</button>
+                  </sc-for>
+                </div>
+              </div>
+              <sc-for list="{{ ringSliders }}" as="s" hint-placeholder-count="3">
+                <div style="margin-bottom:10px">
+                  <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">
+                    <span style="font-weight:700;font-size:13px;color:#4a3a4f">{{ s.label }}</span>
+                    <span style="font-size:12px;font-weight:600;color:#b0648a">{{ s.pct }}</span>
+                  </div>
+                  <input type="range" min="0" max="100" value="{{ s.v100 }}" onChange="{{ s.onInput }}" style="width:100%;accent-color:#ff7a59;height:20px;cursor:pointer;margin:0">
+                </div>
+              </sc-for>
+              <div style="display:flex;gap:7px;align-items:center;margin-top:9px">
+                <button onClick="{{ ringAuto }}" style="font-family:'Quicksand',sans-serif;font-weight:700;font-size:12.5px;padding:6px 13px;border-radius:999px;border:1.5px solid {{ ringAutoB.bc }};background:{{ ringAutoB.bg }};color:{{ ringAutoB.fg }};cursor:pointer">Auto</button>
+                <sc-for list="{{ ringTints }}" as="o" hint-placeholder-count="4">
+                  <button onClick="{{ o.onPick }}" title="Ring tint" style="width:26px;height:26px;border-radius:50%;background:{{ o.c }};border:2.5px solid {{ o.bc }};cursor:pointer;padding:0;flex:none"></button>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ realRings }}" hint-placeholder-val="{{ false }}">
+            <div style="background:#fff;border:1.5px solid #eaddca;border-radius:16px;padding:12px 14px;margin-bottom:15px;font-size:12.5px;color:#7a6a85;line-height:1.45">These are the planet's real rings — measured widths, gaps and shadow. Reshape the world to design your own.</div>
+          </sc-if>
+          <div style="margin-bottom:15px">
+            <div style="font-size:11px;font-weight:700;color:#9a8296;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Sky color</div>
+            <div style="display:flex;gap:7px;align-items:center">
+              <button onClick="{{ atmoAuto }}" style="font-family:'Quicksand',sans-serif;font-weight:700;font-size:12.5px;padding:6px 13px;border-radius:999px;border:1.5px solid {{ autoB.bc }};background:{{ autoB.bg }};color:{{ autoB.fg }};cursor:pointer">Auto</button>
+              <sc-for list="{{ atmoOpts }}" as="o" hint-placeholder-count="5">
+                <button onClick="{{ o.onPick }}" title="Sky color" style="width:26px;height:26px;border-radius:50%;background:{{ o.c }};border:2.5px solid {{ o.bc }};cursor:pointer;padding:0;flex:none"></button>
+              </sc-for>
+            </div>
+          </div>
+          <button onClick="{{ saveWorld }}" style="width:100%;margin-top:6px;font-family:'Baloo 2',cursive;font-weight:700;font-size:15.5px;color:#fff8ee;background:#3a2e3f;border:none;border-radius:14px;padding:12px;cursor:pointer" style-hover="background:#54425c">Save this world</button>
+        </sc-if>
+        <sc-if value="{{ isScan }}" hint-placeholder-val="{{ false }}">
+          <button onClick="{{ doScan }}" style="width:100%;font-family:'Baloo 2',cursive;font-weight:700;font-size:16px;color:#12312a;background:linear-gradient(180deg,#9fe8c9,#5fcfa4);border:none;border-radius:14px;padding:13px;cursor:pointer;box-shadow:0 4px 14px rgba(95,207,164,.3)" style-hover="filter:brightness(1.05)" style-active="transform:translateY(1px)">{{ scanBtnLabel }}</button>
+          <sc-if value="{{ scanning }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;align-items:center;gap:9px;justify-content:center;margin-top:18px;color:#7a6a85;font-weight:600;font-size:13.5px">
+              <span style="width:9px;height:9px;border-radius:50%;background:#5fcfa4;animation:lwpulse 1s infinite"></span>
+              Splitting the reflected light…
+            </div>
+          </sc-if>
+          <sc-if value="{{ hasScan }}" hint-placeholder-val="{{ false }}">
+            <div style="margin-top:14px;animation:lwpop .35s ease both">
+              <div style="display:flex;gap:5px;margin-bottom:12px">
+                <sc-for list="{{ scanSecs }}" as="s" hint-placeholder-count="3">
+                  <button onClick="{{ s.onPick }}" style="flex:1;font-family:'Quicksand',sans-serif;font-weight:700;font-size:11.5px;padding:8px 0;border-radius:999px;border:1.5px solid {{ s.bc }};background:{{ s.bg }};color:{{ s.fg }};cursor:pointer">{{ s.label }}</button>
+                </sc-for>
+              </div>
+
+              <sc-if value="{{ secAtmo }}" hint-placeholder-val="{{ true }}">
+                <div style="background:#fff;border:1.5px solid #eaddca;border-radius:16px;padding:14px 15px;margin-bottom:10px">
+                  <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:5px">
+                    <span style="font-family:'Baloo 2',cursive;font-weight:700;font-size:15.5px;color:#3a2e3f">{{ scan.atmoTitle }}</span>
+                    <span style="font-size:12px;font-weight:700;color:#b0648a;flex:none">{{ scan.pressure }}</span>
+                  </div>
+                  <div style="font-size:13px;color:#7a6a85;line-height:1.5">{{ scan.atmoSummary }}</div>
+                </div>
+                <div style="background:#fff;border:1.5px solid #eaddca;border-radius:16px;padding:14px 15px;margin-bottom:10px">
+                  <div style="font-size:11px;font-weight:700;color:#9a8296;text-transform:uppercase;letter-spacing:.06em;margin-bottom:11px">Composition by volume</div>
+                  <sc-for list="{{ scan.gases }}" as="g" hint-placeholder-count="4">
+                    <div style="margin-bottom:12px">
+                      <div style="display:flex;align-items:baseline;gap:7px;margin-bottom:4px">
+                        <span style="font-family:'Baloo 2',cursive;font-weight:700;font-size:14px;color:#3a2e3f;flex:none">{{ g.f }}</span>
+                        <span style="font-size:12.5px;color:#7a6a85;flex:1;min-width:0">{{ g.n }}</span>
+                        <span style="font-size:12.5px;font-weight:700;color:#b0648a;flex:none">{{ g.pct }}</span>
+                      </div>
+                      <div style="height:6px;border-radius:99px;background:#f4e8d6;overflow:hidden;margin-bottom:5px">
+                        <div style="height:100%;width:{{ g.w }};border-radius:99px;background:linear-gradient(90deg,#ffc46b,#ff7a59)"></div>
+                      </div>
+                      <div style="font-size:12px;color:#9a8296;line-height:1.45">{{ g.eff }}</div>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ secSurf }}" hint-placeholder-val="{{ false }}">
+                <div style="background:#eff7fb;border:1.5px solid #d3e6f0;border-radius:16px;padding:14px 15px;margin-bottom:10px">
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+                    <span style="width:11px;height:11px;border-radius:50%;background:{{ scan.water.dot }};flex:none"></span>
+                    <span style="font-family:'Baloo 2',cursive;font-weight:700;font-size:15.5px;color:#2c4a5c">Water — {{ scan.water.state }}</span>
+                  </div>
+                  <div style="font-size:13px;color:#5b7383;line-height:1.5;margin-bottom:7px">{{ scan.water.detail }}</div>
+                  <div style="font-size:11.5px;color:#7f97a6;line-height:1.45;border-top:1px solid #d9eaf3;padding-top:7px">{{ scan.water.sig }}</div>
+                </div>
+                <div style="background:#fff;border:1.5px solid #eaddca;border-radius:16px;padding:14px 15px;margin-bottom:10px">
+                  <div style="font-size:11px;font-weight:700;color:#9a8296;text-transform:uppercase;letter-spacing:.06em;margin-bottom:11px">{{ scan.surfLabel }}</div>
+                  <sc-for list="{{ scan.compounds }}" as="c" hint-placeholder-count="4">
+                    <div style="margin-bottom:12px">
+                      <div style="display:flex;align-items:baseline;gap:7px;margin-bottom:4px">
+                        <span style="font-size:13px;font-weight:700;color:#4a3a4f;flex:1;min-width:0">{{ c.n }}</span>
+                        <span style="font-family:'Baloo 2',cursive;font-size:12.5px;color:#9a8296;flex:none">{{ c.f }}</span>
+                        <span style="font-size:12.5px;font-weight:700;color:#b0648a;flex:none">{{ c.pct }}</span>
+                      </div>
+                      <div style="height:6px;border-radius:99px;background:#f4e8d6;overflow:hidden;margin-bottom:5px">
+                        <div style="height:100%;width:{{ c.w }};border-radius:99px;background:{{ c.bar }}"></div>
+                      </div>
+                      <div style="font-size:12px;color:#9a8296;line-height:1.45">{{ c.note }}</div>
+                    </div>
+                  </sc-for>
+                </div>
+                <div style="background:#fff;border:1.5px solid #eaddca;border-radius:16px;padding:14px 15px">
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                    <span style="width:11px;height:11px;border-radius:50%;background:{{ scan.bio.dot }};flex:none"></span>
+                    <span style="font-family:'Baloo 2',cursive;font-weight:700;font-size:15.5px;color:#3a2e3f">{{ scan.bio.title }}</span>
+                  </div>
+                  <div style="font-size:13px;color:#7a6a85;line-height:1.5">{{ scan.bio.desc }}</div>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ secLight }}" hint-placeholder-val="{{ false }}">
+                <div style="background:#fff;border:1.5px solid #eaddca;border-radius:16px;padding:14px 15px;margin-bottom:10px">
+                  <div style="font-size:11px;font-weight:700;color:#9a8296;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Reflected spectrum</div>
+                  <div style="position:relative;height:46px;border-radius:9px;overflow:hidden;background:linear-gradient(90deg,#3d0a63 0%,#3512c4 7%,#0038f5 11.5%,#0090ff 16%,#00cfd4 20%,#00e83f 25%,#7cf000 31%,#f0e800 36%,#ffb400 40.5%,#ff5e00 45%,#dc0d00 49.5%,#7a0500 51.6%,#2a1e26 52.4%,#191218 100%)">
+                    <sc-for list="{{ scan.lines }}" as="k" hint-placeholder-count="4">
+                      <span style="position:absolute;top:0;bottom:0;left:{{ k.x }};width:2px;background:{{ k.mark }};box-shadow:0 0 0 1px rgba(255,255,255,.35)"></span>
+                    </sc-for>
+                    <span style="position:absolute;right:7px;bottom:4px;font-size:9.5px;font-weight:700;letter-spacing:.08em;color:#8d7f95">INFRARED</span>
+                  </div>
+                  <div style="display:flex;justify-content:space-between;font-size:10px;color:#b0a2b8;font-weight:700;margin-top:4px">
+                    <span>400</span><span>500</span><span>600</span><span>700 nm</span><span>1000</span>
+                  </div>
+                  <div style="font-size:12px;color:#9a8296;line-height:1.45;margin-top:8px">Dark ticks are wavelengths this world <em>removes</em> from sunlight; bright ticks are light it <em>emits</em>.</div>
+                </div>
+                <div style="background:#fff;border:1.5px solid #eaddca;border-radius:16px;padding:14px 15px;margin-bottom:10px">
+                  <div style="font-size:11px;font-weight:700;color:#9a8296;text-transform:uppercase;letter-spacing:.06em;margin-bottom:11px">Lines identified</div>
+                  <sc-for list="{{ scan.lines }}" as="k" hint-placeholder-count="5">
+                    <div style="display:flex;align-items:flex-start;gap:9px;margin-bottom:10px">
+                      <span style="width:9px;height:30px;border-radius:3px;background:{{ k.bg }};flex:none;border:1px solid rgba(0,0,0,.12)"></span>
+                      <div style="flex:1;min-width:0">
+                        <div style="font-size:12.5px;font-weight:700;color:#4a3a4f;margin-bottom:2px">{{ k.nmLabel }} · {{ k.label }}</div>
+                        <div style="font-size:12px;color:#9a8296;line-height:1.45">{{ k.desc }}</div>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+                <div style="background:#faf1ff;border:1.5px solid #e4d5ee;border-radius:16px;padding:13px 15px;margin-bottom:10px">
+                  <div style="font-size:11px;font-weight:700;color:#a08ab5;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px">Why it looks this colour</div>
+                  <div style="font-size:13.5px;color:#5f4a6e;line-height:1.55">{{ scan.colorWhy }}</div>
+                </div>
+                <div style="background:#faf1ff;border:1.5px solid #e4d5ee;border-radius:16px;padding:13px 15px">
+                  <div style="font-size:11px;font-weight:700;color:#a08ab5;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px">Field note</div>
+                  <div style="font-size:13.5px;color:#5f4a6e;font-style:italic;line-height:1.5">{{ scan.note }}</div>
+                </div>
+              </sc-if>
+            </div>
+          </sc-if>
+          <sc-if value="{{ scanEmpty }}" hint-placeholder-val="{{ false }}">
+            <div style="text-align:center;color:#9a8296;font-size:13.5px;line-height:1.55;padding:26px 14px">Split this world's reflected sunlight into a spectrum. Every element and compound absorbs its own set of wavelengths — that fingerprint tells you what the air is made of, whether there is water, and why the planet is the colour it is.</div>
+          </sc-if>
+        </sc-if>
+        <sc-if value="{{ isSolar }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;gap:6px;margin-bottom:12px">
+            <button onClick="{{ viewList }}" style="flex:1;font-family:'Quicksand',sans-serif;font-weight:700;font-size:12.5px;padding:8px 0;border-radius:999px;border:1.5px solid {{ vList.bc }};background:{{ vList.bg }};color:{{ vList.fg }};cursor:pointer">Planet list</button>
+            <button onClick="{{ viewOrbit }}" style="flex:1;font-family:'Quicksand',sans-serif;font-weight:700;font-size:12.5px;padding:8px 0;border-radius:999px;border:1.5px solid {{ vOrbit.bc }};background:{{ vOrbit.bg }};color:{{ vOrbit.fg }};cursor:pointer">Orbit view</button>
+          </div>
+          <sc-if value="{{ isOrbit }}" hint-placeholder-val="{{ false }}">
+            <div style="font-size:11px;font-weight:700;color:#9a8296;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Planet size</div>
+            <div style="display:flex;gap:6px;margin-bottom:12px">
+              <button onClick="{{ sizeSame.onPick }}" style="flex:1;font-family:'Quicksand',sans-serif;font-weight:700;font-size:12.5px;padding:8px 0;border-radius:999px;border:1.5px solid {{ sizeSame.bc }};background:{{ sizeSame.bg }};color:{{ sizeSame.fg }};cursor:pointer">Same size</button>
+              <button onClick="{{ sizeScale.onPick }}" style="flex:1;font-family:'Quicksand',sans-serif;font-weight:700;font-size:12.5px;padding:8px 0;border-radius:999px;border:1.5px solid {{ sizeScale.bc }};background:{{ sizeScale.bg }};color:{{ sizeScale.fg }};cursor:pointer">To scale</button>
+            </div>
+            <div style="background:#fff;border:1.5px solid #eaddca;border-radius:16px;padding:13px 15px;font-size:13px;color:#7a6a85;line-height:1.55">Every planet moves at its real orbital pace — one Earth year ≈ 14 seconds — on its real elliptical, tilted path. <strong>Same size</strong> draws every planet alike for easy spotting; <strong>To scale</strong> ranks them by true size, so Jupiter and Saturn tower over Earth. Distances are eased inward and the Sun is still far smaller than life. Drag to tilt, scroll to zoom, click a planet to visit it.</div>
+          </sc-if>
+          <sc-if value="{{ notOrbit }}" hint-placeholder-val="{{ true }}">
+          <div style="font-size:13px;color:#9a8296;line-height:1.5;margin:2px 2px 12px">Our own neighborhood, re-imagined in miniature. Visit one, then sculpt it into something new.</div>
+          <sc-for list="{{ solar }}" as="w" hint-placeholder-count="8">
+            <div style="display:flex;align-items:center;gap:11px;background:#fff;border:1.5px solid #eaddca;border-radius:14px;padding:11px 13px;margin-bottom:8px">
+              <span style="width:26px;height:26px;border-radius:50%;background:radial-gradient(circle at 32% 30%, #ffffff66, transparent 50%), {{ w.dot }};flex:none;box-shadow:inset -3px -3px 6px rgba(0,0,0,.18)"></span>
+              <div style="flex:1;min-width:0">
+                <div style="font-weight:700;font-size:14px;color:#3a2e3f">{{ w.name }}</div>
+                <div style="font-size:11.5px;color:#9a8296">{{ w.sub }}</div>
+              </div>
+              <button onClick="{{ w.onLoad }}" style="flex:none;font-family:'Quicksand',sans-serif;font-weight:700;font-size:12px;color:#fff8ee;background:#b0648a;border:none;border-radius:999px;padding:6px 13px;cursor:pointer" style-hover="background:#9a4f76">Visit</button>
+            </div>
+          </sc-for>
+          </sc-if>
+        </sc-if>
+        <sc-if value="{{ isWorlds }}" hint-placeholder-val="{{ false }}">
+          <sc-if value="{{ noWorlds }}" hint-placeholder-val="{{ false }}">
+            <div style="text-align:center;color:#9a8296;font-size:13.5px;line-height:1.55;padding:26px 14px">No saved worlds yet. Sculpt one you love, then save it from the Sculpt tab.</div>
+          </sc-if>
+          <sc-for list="{{ worlds }}" as="w" hint-placeholder-count="3">
+            <div style="display:flex;align-items:center;gap:11px;background:#fff;border:1.5px solid #eaddca;border-radius:14px;padding:11px 13px;margin-bottom:8px">
+              <span style="width:26px;height:26px;border-radius:50%;background:radial-gradient(circle at 32% 30%, #ffffff66, transparent 50%), {{ w.dot }};flex:none;box-shadow:inset -3px -3px 6px rgba(0,0,0,.18)"></span>
+              <div style="flex:1;min-width:0">
+                <div style="font-weight:700;font-size:14px;color:#3a2e3f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ w.name }}</div>
+                <div style="font-size:11.5px;color:#9a8296">{{ w.sub }}</div>
+              </div>
+              <button onClick="{{ w.onLoad }}" style="flex:none;font-family:'Quicksand',sans-serif;font-weight:700;font-size:12px;color:#fff8ee;background:#b0648a;border:none;border-radius:999px;padding:6px 13px;cursor:pointer" style-hover="background:#9a4f76">Visit</button>
+              <button onClick="{{ w.onDel }}" title="Delete" style="flex:none;width:26px;height:26px;border:none;background:none;color:#c9b0bb;font-size:16px;cursor:pointer;border-radius:50%" style-hover="color:#b0648a;background:#f7e9ef">×</button>
+            </div>
+          </sc-for>
+        </sc-if>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:800},&quot;autoRotate&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Viewport&quot;},&quot;stars&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Viewport&quot;},&quot;detail&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;standard&quot;,&quot;high&quot;],&quot;default&quot;:&quot;high&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Viewport&quot;}}">
+class Component extends DCLogic {
+  state = { tab:'sculpt', name:'Peachmoss', view:'single', sizeMode:'same', timeScale:1, params:{seed:31174,preset:'temperate',mountains:0.5,water:0.55,roughness:0.5,clouds:0.5,glow:0.5,ice:0.25,lightAz:0.107,lightEl:0.639,spinDir:1,spinSpeed:0.5,rings:false,ringN:2,ringInner:0.24,ringTilt:0.5,ringWidth:0.5,ringGap:0.35,ringOpacity:0.7,ringColor:null,moons:0,atmoColor:null}, scanning:false, scan:null, scanSec:'atmo', worlds:[] };
+  PRESETS = [
+    {key:'temperate',label:'Meadow',dot:'#7fae62',def:{mountains:.5,water:.55,roughness:.5,clouds:.5,glow:.5,ice:.25}},
+    {key:'desert',label:'Dune',dot:'#e0b070',def:{mountains:.45,water:.12,roughness:.6,clouds:.18,glow:.4,ice:0}},
+    {key:'ice',label:'Frost',dot:'#bcd7e8',def:{mountains:.35,water:.5,roughness:.4,clouds:.6,glow:.6,ice:.85}},
+    {key:'lava',label:'Ember',dot:'#ff6a3d',def:{mountains:.7,water:.3,roughness:.7,clouds:.22,glow:.7,ice:0}},
+    {key:'candy',label:'Candy',dot:'#ff8fc7',def:{mountains:.4,water:.5,roughness:.35,clouds:.7,glow:.8,ice:.3}},
+    {key:'gasAmber',label:'Amber giant',gas:true,dot:'#d9b184',def:{mountains:0,water:0,roughness:.5,clouds:0,glow:.35,ice:0,rings:true,ringN:2,ringInner:.3,ringWidth:.45,ringOpacity:.5}},
+    {key:'gasMist',label:'Mist giant',gas:true,dot:'#a8dcd8',def:{mountains:0,water:0,roughness:.35,clouds:0,glow:.5,ice:0,rings:true,ringN:3,ringInner:.42,ringWidth:.3,ringOpacity:.35}},
+    {key:'gasStorm',label:'Storm giant',gas:true,dot:'#8f5fbc',def:{mountains:0,water:0,roughness:.75,clouds:0,glow:.6,ice:0,rings:false}}
+  ];
+  SOLAR = [
+    {key:'mercury',name:'Mercury',label:'Rocky',dot:'#9a9294',sub:'closest to the Sun · no air at all',params:{seed:11,mountains:.65,water:0,roughness:.7,clouds:0,glow:.03,ice:0,rings:false,moons:0,atmoColor:null,texture:'images2k/mercury.jpg',cloudTexture:null}},
+    {key:'venus',name:'Venus',label:'Veiled',dot:'#e8c088',sub:'hidden under thick golden clouds',params:{seed:22,mountains:.45,water:0,roughness:.5,clouds:0,glow:.3,ice:0,rings:false,moons:0,atmoColor:null,texture:'images2k/venus.jpg',cloudTexture:null}},
+    {key:'temperate',name:'Earth',label:'Meadow',dot:'#7fae62',sub:'the original little world',params:{seed:4242,mountains:.5,water:.66,roughness:.55,clouds:.5,glow:.4,ice:.2,rings:false,moons:1,atmoColor:null,texture:'images2k/earth.jpg',cloudTexture:'images2k/earthclouds.png'}},
+    {key:'mars',name:'Mars',label:'Rust',dot:'#c07040',sub:'rusty deserts, two tiny moons',params:{seed:44,mountains:.6,water:0,roughness:.6,clouds:0,glow:.12,ice:.1,rings:false,moons:2,atmoColor:null,texture:'images2k/mars.jpg',cloudTexture:null}},
+    {key:'jupiter',name:'Jupiter',label:'Gas giant',dot:'#c9a06a',sub:'a storm bigger than Earth',params:{seed:55,mountains:0,water:0,roughness:.5,clouds:0,glow:.15,ice:0,rings:false,moons:3,atmoColor:null,texture:'images2k/jupiter.jpg',cloudTexture:null}},
+    {key:'saturn',name:'Saturn',label:'Gas giant',dot:'#d9c49a',sub:'rings of ice and dust',params:{seed:66,mountains:0,water:0,roughness:.5,clouds:0,glow:.12,ice:0,rings:false,moons:3,atmoColor:null,texture:'images2k/saturn.jpg',cloudTexture:null}},
+    {key:'uranus',name:'Uranus',label:'Gas giant',dot:'#9fd8dc',sub:'rolls around on its side · faint rings',params:{seed:77,mountains:0,water:0,roughness:.4,clouds:0,glow:.2,ice:0,rings:false,moons:2,atmoColor:null,texture:'images2k/uranus.jpg',cloudTexture:null}},
+    {key:'neptune',name:'Neptune',label:'Gas giant',dot:'#3f6fd0',sub:'the windiest place we know',params:{seed:88,mountains:0,water:0,roughness:.5,clouds:0,glow:.22,ice:0,rings:false,moons:1,atmoColor:null,texture:'images2k/neptune.jpg',cloudTexture:null}}
+  ];
+  typeOf(key){ return this.PRESETS.find(x=>x.key===key)||this.SOLAR.find(x=>x.key===key)||this.PRESETS[0]; }
+  SPECIES = {
+    H2:{n:'Hydrogen',f:'H₂',eff:'Colourless in bulk. Its molecules are tiny, so they scatter short wavelengths — a deep hydrogen sky reads blue-grey.',lines:[[656,'H α','Hydrogen emission — the red of any glowing gas',1],[486,'H β','Hydrogen emission — cyan',1]]},
+    He:{n:'Helium',f:'He',eff:'Completely inert and clear; shows one pale yellow line when excited.',lines:[[587.6,'He D₃','Helium emission — pale yellow',1]]},
+    N2:{n:'Nitrogen',f:'N₂',eff:'Transparent, but small molecules scatter blue sunlight far more than red — the reason a nitrogen sky is blue.',lines:[[391.4,'N₂⁺','Nitrogen band — violet, the colour of high aurora',1]]},
+    O2:{n:'Oxygen',f:'O₂',eff:'Colourless, yet it cuts a hard notch at 760 nm. Free O₂ is chemically reactive: nothing keeps it in the air unless something keeps making it.',lines:[[760,'O₂ A-band','Oxygen absorption — the strongest biosignature we know how to look for',0],[687,'O₂ B-band','Oxygen absorption',0]]},
+    O3:{n:'Ozone',f:'O₃',eff:'Absorbs broadly through green and yellow (the Chappuis band) and blocks UV entirely.',lines:[[602,'Chappuis band','Ozone absorption — broad, across green and yellow',0]]},
+    CO2:{n:'Carbon dioxide',f:'CO₂',eff:'Invisible to the eye — it only bites in the infrared, at 1.4, 1.6 and 2.0 µm. Pale sky, hot ground.',lines:[]},
+    CO:{n:'Carbon monoxide',f:'CO',eff:'Colourless; its fingerprint sits far out at 4.6 µm.',lines:[]},
+    H2O:{n:'Water vapour',f:'H₂O',eff:'Clear as a gas, but it eats red and near-infrared light in a comb of bands — the classic way to find water from orbit.',lines:[[720,'H₂O','Water-vapour absorption',0],[940,'H₂O','Water-vapour absorption — strong',0]]},
+    CH4:{n:'Methane',f:'CH₄',eff:'Swallows orange, red and near-infrared light. What comes back out is cyan — this is exactly why Uranus and Neptune are blue.',lines:[[619,'CH₄','Methane absorption — removes orange-red',0],[725,'CH₄','Methane absorption — strong',0],[890,'CH₄','Methane absorption',0]]},
+    NH3:{n:'Ammonia',f:'NH₃',eff:'Freezes into bright white crystals that reflect nearly every visible wavelength evenly.',lines:[[645,'NH₃','Ammonia absorption — weak, in the red',0],[930,'NH₃','Ammonia absorption',0]]},
+    NH4SH:{n:'Ammonium hydrosulphide',f:'NH₄SH',eff:'Breaks down in sunlight into sulphur-bearing compounds that absorb blue — the tan and brown of a gas giant\u2019s belts.',lines:[[440,'S chromophore','Broad blue absorption — leaves tan and ochre',0]]},
+    SO2:{n:'Sulphur dioxide',f:'SO₂',eff:'Drinks violet and ultraviolet light hard, leaving a creamy yellow cast over everything below.',lines:[[390,'SO₂','Sulphur-dioxide absorption — violet and UV',0]]},
+    H2S:{n:'Hydrogen sulphide',f:'H₂S',eff:'Condenses into a pale cloud deck under the methane haze; confirmed at Uranus in 2018.',lines:[]},
+    Ar:{n:'Argon',f:'Ar',eff:'Utterly inert. Its build-up is a clock for how long an atmosphere has been outgassing.',lines:[[696.5,'Ar I','Argon emission — deep red',1]]},
+    Na:{n:'Sodium',f:'Na',eff:'The loudest colour trick in the solar system: sodium re-emits sunlight at 589 nm as pure amber.',lines:[[589,'Na D','Sodium emission — amber, the same line as a street lamp',1]]},
+    K:{n:'Potassium',f:'K',eff:'Emits in the far red, right at the edge of what an eye can register.',lines:[[766.5,'K','Potassium emission',1]]},
+    O:{n:'Atomic oxygen',f:'O',eff:'Single atoms knocked off the ground by sunlight and the solar wind; glows green at 558 nm.',lines:[[557.7,'O I','Atomic-oxygen emission — auroral green',1]]},
+    C2H6:{n:'Ethane & acetylene',f:'C₂H₆',eff:'Photochemical smog made by sunlight breaking methane apart. Builds a haze that mutes and yellows everything beneath it.',lines:[]},
+    CH4h:{n:'Organic haze (tholins)',f:'CₓHᵦNᵧ',eff:'Sunlight-cooked organics. Absorbs blue strongly, so the sky above turns orange-brown.',lines:[[420,'Tholin haze','Broad blue absorption — the orange of an organic smog',0]]}
+  };
+  PIG = {
+    hematite:[[535,'Fe³⁺ (hematite)','Ferric-iron absorption — swallows blue and green, so the dust reads red',0],[860,'Fe³⁺ band','Ferric crystal-field band in the near-infrared',0]],
+    sulfur:[[450,'S₈','Elemental sulphur absorbs violet and blue — appears yellow',0]],
+    chloro:[[430,'Chlorophyll a','Absorbs violet-blue',0],[662,'Chlorophyll a','Absorbs red; the middle it reflects is green',0],[710,'Vegetation red edge','Reflectance jumps sharply past 700 nm — visible from orbit as life',0]],
+    ice:[[810,'H₂O ice','Water-ice absorption band; grows deeper at 1.04 and 1.25 µm',0]],
+    co2ice:[[780,'CO₂ ice','Dry-ice frost band',0]],
+    carbon:[[500,'Graphitic carbon','Absorbs flatly at every wavelength — darkens without tinting',0]],
+    olivine:[[1000,'Olivine / pyroxene','Broad 1 µm crystal-field band of ferrous silicate rock',0]],
+    liquid:[[680,'Liquid water','Liquid water absorbs red ~100× more than blue, so deep water is blue',0]]
+  };
+  REAL = {
+    mercury:{atmoTitle:'No real atmosphere',pressure:'~10⁻¹⁵ bar',
+      atmoSummary:'A surface-bound exosphere, not an atmosphere: atoms kicked off the ground by sunlight and the solar wind, then lost to space within hours. Ten thousand billion times thinner than Earth\u2019s air.',
+      gases:[['O',42],['Na',29],['H2',22],['He',6],['K',0.5]],
+      water:{state:'ice, in permanent shadow',dot:'#bcd7e8',detail:'Radar and neutron spectrometry found water ice on the floors of polar craters that have never seen sunlight, capped by a dark organic lag deposit. Everywhere else the daytime ground hits 430 °C.',sig:'Found by neutron counting and radar reflectivity rather than by colour — the deposits sit in darkness.'},
+      surfLabel:'Crustal composition',pigs:['carbon','olivine'],
+      compounds:[['Plagioclase feldspar','(Ca,Na)Al₂Si₂O₈',45,'#ded8c9','A pale calcium-rich silicate — the bulk of the crust.'],['Pyroxene & olivine','(Mg,Fe)SiO₃',30,'#9aa08c','Iron-poor for a rocky planet; almost all the iron sank into the oversized core.'],['Graphitic carbon','C',3,'#4d4750','A relic of an ancient graphite crust. Absorbs every wavelength equally, which is what makes Mercury so dark.'],['Sulphides (troilite)','FeS',2,'#c9b06a','Surprisingly sulphur-rich, a sign Mercury formed in very reducing conditions.'],['Water ice','H₂O',1,'#cfe6f2','Polar crater floors only.']],
+      bio:{title:'No biosignature',dot:'#c9b0bb',desc:'No atmosphere to hold chemistry in place and no liquid water anywhere. Nothing here is even ambiguous.'},
+      colorWhy:'Mercury has no air and no pigment. A graphite-darkened silicate crust reflects all visible wavelengths at roughly the same low level, so the eye reads neutral grey. Its only real colour is the faint amber glow of the sodium exosphere at 589 nm.',
+      note:'Mercury\u2019s sodium tail streams millions of kilometres downwind of the planet and is bright enough to photograph from Earth.'},
+    venus:{atmoTitle:'Crushing and sulphurous',pressure:'92 bar',
+      atmoSummary:'Ninety-two times Earth\u2019s surface pressure and 464 °C, kept there by a runaway CO₂ greenhouse. The cloud deck is not water — it is droplets of concentrated sulphuric acid, 50–70 km up.',
+      gases:[['CO2',96.5],['N2',3.5],['SO2',0.015],['Ar',0.007],['H2O',0.002],['CO',0.0017]],
+      water:{state:'vapour only, ~20 ppm',dot:'#e0c49a',detail:'Venus is bone dry. What water it had was broken up by sunlight and the hydrogen lost to space — the leftover deuterium is 150× more abundant than on Earth, the fingerprint of a vanished ocean.',sig:'Measured by the 1.4 µm and 1.9 µm water bands, plus mass spectrometry from descent probes.'},
+      surfLabel:'Clouds & surface',pigs:['sulfur','hematite','olivine'],
+      compounds:[['Sulphuric-acid droplets','H₂SO₄',75,'#f0dda6','The clouds. They scatter every colour but absorb violet and UV, giving the creamy yellow tone.'],['Basalt (plagioclase + pyroxene)','—',60,'#9d968c','Volcanic plains covering ~80% of the surface, some of it geologically fresh.'],['Iron oxides','Fe₂O₃',6,'#b05a3c','Weathered rock; a faint rusty tinge under the acid haze.'],['Anhydrite & pyrite','CaSO₄, FeS₂',4,'#d8c98f','Sulphur cycling between rock and cloud, the engine of the whole system.']],
+      bio:{title:'Disputed at best',dot:'#e0b070',desc:'A 2020 claim of phosphine (PH₃) in the cloud deck — a possible biosignature — has not held up under reanalysis. The surface is sterilising; the temperate cloud layer remains a long-shot argument.'},
+      colorWhy:'Venus is a featureless cream-yellow because you never see the ground. Sulphur dioxide and sulphuric-acid droplets absorb violet and ultraviolet light while scattering the rest, so the reflected spectrum is bright and flat with the blue end shaved off.',
+      note:'In ultraviolet the same clouds look strikingly banded and dark — an unidentified absorber, sometimes argued over as chemistry, sometimes as something stranger.'},
+    temperate:{atmoTitle:'Nitrogen–oxygen, in disequilibrium',pressure:'1.01 bar',
+      atmoSummary:'The only atmosphere we know that is chemically impossible without life: 21% free oxygen alongside methane, both of which should have reacted away long ago. Something replenishes them daily.',
+      gases:[['N2',78.08],['O2',20.95],['Ar',0.93],['H2O',0.4],['CO2',0.042],['CH4',0.00019],['O3',0.00006]],
+      water:{state:'liquid, ice and vapour at once',dot:'#5aa8d8',detail:'1.35 billion km³ of liquid water covering 71% of the surface, plus polar ice and atmospheric vapour. The only known world where all three phases are stable together.',sig:'Liquid water absorbs red light ~100× more strongly than blue; oceans therefore return blue. Vapour shows up at 720 and 940 nm.'},
+      surfLabel:'Surface composition',pigs:['liquid','chloro','ice'],
+      compounds:[['Feldspars','(K,Na,Ca)AlSi₃O₈',51,'#ded7c6','Half the crust by volume.'],['Quartz','SiO₂',12,'#e8e4dc','Clear silica, weathered into most of the world\u2019s sand.'],['Pyroxene & olivine','(Mg,Fe)SiO₃',15,'#8d9a80','Dark iron-magnesium rock; the ocean floor is made of it.'],['Chlorophyll-bearing biomass','C₅₅H₇₂MgN₄O₅',6,'#6f9e4a','The pigment that makes continents green — and the sharpest chemical evidence of life visible from space.'],['Calcite','CaCO₃',4,'#e4dfd0','Almost all of it laid down by living things; it locks carbon out of the air.'],['Halite & dissolved salts','NaCl',2,'#eeeae4','35 g per litre of seawater.']],
+      bio:{title:'Confirmed',dot:'#7fae62',desc:'Free O₂ plus CH₄ together, a vegetation red edge at 700 nm, and seasonal CO₂ swings. Any of the three would be suggestive; all three at once is decisive.'},
+      colorWhy:'Two effects stacked. Nitrogen molecules scatter blue sunlight far more than red (Rayleigh scattering, ∝ 1/λ⁴), which paints the sky; liquid water absorbs red about a hundred times harder than blue, which paints the oceans. Chlorophyll adds green by absorbing at 430 and 662 nm and reflecting what falls between.',
+      note:'Earth\u2019s 760 nm oxygen band is the single feature astronomers most want to find in the spectrum of another planet.'},
+    mars:{atmoTitle:'Thin, cold, carbon dioxide',pressure:'0.006 bar',
+      atmoSummary:'Less than 1% of Earth\u2019s pressure — below the triple point of water, so liquid water boils and freezes at the same time. Up to a third of the air freezes onto the winter pole each year and comes back in spring.',
+      gases:[['CO2',95.3],['N2',2.6],['Ar',1.9],['O2',0.16],['CO',0.06],['H2O',0.03]],
+      water:{state:'ice, kilometres thick',dot:'#a8cfe0',detail:'The polar caps hold enough water ice to cover the planet metres deep, under a seasonal veneer of CO₂ dry ice. Buried mid-latitude glaciers and briny perchlorate seeps make up the rest. Ancient river valleys and deltas say it once flowed freely.',sig:'Detected by orbital radar sounding, the 1.5 and 2.0 µm ice bands, and neutron spectrometry of buried hydrogen.'},
+      surfLabel:'Surface composition',pigs:['hematite','olivine','co2ice'],
+      compounds:[['Plagioclase feldspar','(Ca,Na)Al₂Si₂O₈',30,'#cfc1ae','The pale bulk of the basaltic crust.'],['Pyroxene','(Mg,Fe)SiO₃',25,'#8a8574','Dark volcanic rock; visible where wind strips the dust away.'],['Olivine','(Mg,Fe)₂SiO₄',13,'#8ea06a','Weathers fast in water — its survival says Mars has been dry a very long time.'],['Nanophase ferric oxide','Fe₂O₃',8,'#b8502e','The pigment. Grains a few nanometres across, coating everything; this alone makes Mars red.'],['Sulphates (jarosite, gypsum)','KFe₃(SO₄)₂(OH)₆',6,'#dcc98d','Can only form in acidic water — direct mineral evidence of a wet past.'],['Perchlorate salts','Mg(ClO₄)₂',0.6,'#e6e0ce','Lower water\u2019s freezing point to −70 °C, which is how brines can still be liquid.']],
+      bio:{title:'Unresolved',dot:'#e0b070',desc:'Curiosity measures seasonal methane pulses in Gale Crater that the Trace Gas Orbiter cannot see from above. Either the chemistry is stranger than expected, or something is producing it. Organic molecules are confirmed in the mudstones; their origin is not.'},
+      colorWhy:'One mineral does all the work. Ferric iron (Fe³⁺) in nanophase hematite absorbs strongly from 400–550 nm — the whole blue-green half of the spectrum — and reflects everything past 600 nm. Rust, on a planetary scale. The thin CO₂ air adds almost no colour of its own, which is why Martian sunsets are blue: dust scatters red forward and lets blue through around the sun.',
+      note:'Viking\u2019s first colour pictures were released too red, then corrected, then argued about for decades. The real Mars is more butterscotch than crimson.'},
+    jupiter:{atmoTitle:'Hydrogen, helium and chemistry',pressure:'no surface',
+      atmoSummary:'Essentially the composition of the Sun, minus the fusion. There is no ground: pressure simply rises until hydrogen turns into a metallic liquid. The visible cloud tops are three decks of condensing ices.',
+      gases:[['H2',89.8],['He',10.2],['CH4',0.3],['NH3',0.026],['H2O',0.04],['C2H6',0.0006]],
+      water:{state:'vapour and ice, deep in the cloud decks',dot:'#a8cfe0',detail:'Juno finds water making up ~0.25% of the molecules at the equator — patchy, and much less than expected elsewhere. It condenses into a deep cloud layer far below the ammonia we can see.',sig:'Measured by microwave sounding straight through the cloud tops, not by reflected colour.'},
+      surfLabel:'Cloud decks',pigs:['ice'],
+      compounds:[['Ammonia ice','NH₃',55,'#efe9de','The top deck. Bright white, reflects all visible wavelengths — the pale zones.'],['Ammonium hydrosulphide','NH₄SH',25,'#c19a68','The middle deck. Sunlight breaks it into sulphur compounds that absorb blue — the tan and brown belts.'],['Water ice','H₂O',12,'#cfe6f2','The deepest visible deck, only glimpsed through gaps.'],['Hydrocarbon haze','C₂H₆, C₂H₂',5,'#dcc9a0','Photochemical smog above everything, made from methane broken by UV.'],['Phosphine & hydrazine','PH₃, N₂H₄',1,'#e8d0b8','Dredged up from below; candidate colourants for the Great Red Spot.']],
+      bio:{title:'No biosignature',dot:'#c9b0bb',desc:'None here. The interest is in the moons: Europa hides a salt-water ocean under its ice shell, and its surface shows sodium chloride and sulphates from below.'},
+      colorWhy:'The bands are a two-substance story. White ammonia-ice clouds reflect everything; where the deck is thinner you see down onto ammonium-hydrosulphide products that absorb the blue end, so those stripes read tan, ochre and brown. Methane removes some far red, but at 0.3% it cannot compete.',
+      note:'The exact chromophore of the Great Red Spot is still unidentified — the best candidates are ammonia-and-acetylene products cooked by ultraviolet light at the cloud tops.'},
+    saturn:{atmoTitle:'Hydrogen under a hydrocarbon haze',pressure:'no surface',
+      atmoSummary:'Even more hydrogen-dominated than Jupiter and colder, so the ammonia clouds sit deeper and a thick photochemical haze covers the whole planet, smoothing out the banding.',
+      gases:[['H2',96.3],['He',3.25],['CH4',0.45],['NH3',0.0125],['C2H6',0.0007]],
+      water:{state:'ice — and the rings are almost nothing else',dot:'#cfe6f2',detail:'The rings are 95–99% water ice, in grains from smoke-sized to house-sized, spread across 280,000 km but only tens of metres thick. Deeper down, water vapour condenses far below the visible cloud tops.',sig:'The rings\u2019 ice is identified by its 1.5, 2.0 and 3.0 µm absorption bands — an unmistakable water-ice spectrum.'},
+      surfLabel:'Clouds, haze & rings',pigs:['ice'],
+      compounds:[['Water ice (rings)','H₂O',96,'#dff0f7','The rings, almost pure. Bright because fresh ice reflects nearly all visible light.'],['Ammonia ice','NH₃',50,'#f0ead8','Cloud deck, deeper and colder than Jupiter\u2019s.'],['Hydrocarbon haze','C₂H₆, C₂H₂',20,'#e6cf9c','A thick UV-made smog. It mutes contrast and adds the gold.'],['Silicate & organic ring dust','—',3,'#c4ae8e','Darkens some rings and the gaps; slowly raining in from outside.']],
+      bio:{title:'No biosignature here',dot:'#c9b0bb',desc:'But Enceladus vents salt water, silica, methane and molecular hydrogen from a subsurface ocean, straight through the E ring — the most directly sampled habitable environment beyond Earth.'},
+      colorWhy:'Pale gold rather than banded brown. Sunlight breaking methane apart high in the atmosphere builds a deep hydrocarbon haze that absorbs blue slightly and scatters the rest, veiling the ammonia clouds below. The result is a soft, low-contrast butterscotch.',
+      note:'Cassini tasted the Enceladus plume by flying through it, and found the chemical ingredients for life in the spray.'},
+    uranus:{atmoTitle:'Methane-tinted hydrogen',pressure:'no surface',
+      atmoSummary:'Hydrogen and helium with an unusually large helping of methane — enough to control the colour completely. Below sits a hot, dense fluid mantle of water, ammonia and methane, not a rocky surface.',
+      gases:[['H2',82.5],['He',15.2],['CH4',2.3],['H2S',0.0008]],
+      water:{state:'a hot supercritical water–ammonia mantle',dot:'#8fc7ff',detail:'Most of the planet by mass is a scorching, electrically conducting fluid of water, ammonia and methane — often called an "ice" mantle, though it is nothing like ice. No liquid ocean in any familiar sense.',sig:'Inferred from density, gravity and magnetic field rather than observed directly.'},
+      surfLabel:'Clouds & haze',pigs:[],
+      compounds:[['Methane ice clouds','CH₄',60,'#cfe9ea','Condense at the top of the troposphere; the source of the colour.'],['Hydrogen sulphide clouds','H₂S',20,'#dfe0cf','Confirmed spectroscopically in 2018 — the deck below the methane.'],['Photochemical haze','C₂H₂, C₂H₆',18,'#e8ecec','A thick aerosol layer that pales the cyan toward white.'],['Ammonia hydrates','NH₃·H₂O',2,'#e4eef2','Deeper still, mixed into the mantle fluid.']],
+      bio:{title:'No biosignature',dot:'#c9b0bb',desc:'No surface, no liquid-water interface, and temperatures at the cloud tops near −220 °C.'},
+      colorWhy:'Pure methane absorption. CH₄ absorbs hard from about 600 nm outward — all the orange, red and near-infrared — while leaving blue and green untouched. What escapes back to your eye is cyan. A thick white haze layer dilutes it, which is why Uranus is paler than Neptune despite similar chemistry.',
+      note:'Uranus is tipped 98° over, so each pole spends 42 years in continuous sunlight and 42 in darkness.'},
+    neptune:{atmoTitle:'Methane-tinted hydrogen, less haze',pressure:'no surface',
+      atmoSummary:'Almost the same recipe as Uranus but warmer inside and less hazy, with the fastest winds in the solar system — over 2,000 km/h.',
+      gases:[['H2',80],['He',19],['CH4',1.5],['H2S',0.0005]],
+      water:{state:'a hot supercritical water–ammonia mantle',dot:'#8fc7ff',detail:'Like Uranus, most of Neptune is a dense hot fluid of water, ammonia and methane under enormous pressure. Deeper down the pressure may crack methane into diamond.',sig:'Inferred from bulk density and gravity, not from reflected light.'},
+      surfLabel:'Clouds & haze',pigs:[],
+      compounds:[['Methane ice clouds','CH₄',65,'#bcd8f0','White cloud tops rising above the blue.'],['Hydrogen sulphide clouds','H₂S',18,'#d4dcd8','The deck below.'],['Photochemical haze','C₂H₂, C₂H₆',12,'#dde6ee','Thinner than Uranus\u2019s — the whole reason Neptune looks deeper blue.'],['Ammonia hydrates','NH₃·H₂O',3,'#dce8f0','Mixed into the mantle fluid.']],
+      bio:{title:'No biosignature',dot:'#c9b0bb',desc:'Cloud tops near −220 °C, no surface. Triton, captured and geologically active, is the more interesting target.'},
+      colorWhy:'The same methane absorption as Uranus, cutting away everything past 600 nm — but with a thinner haze layer above it, so less white light is scattered back to dilute the cyan. A 2024 reanalysis showed the two planets are far closer in true colour than the classic images suggested.',
+      note:'Neptune was found by mathematics before it was found by telescope: Le Verrier predicted where to point.'}
+  };
+  MINERAL_SETS = {
+    temperate:[['Plagioclase feldspar','(Ca,Na)Al₂Si₂O₈',38,'#ded7c6','Pale silicate rock, the bulk of a young crust.'],['Quartz','SiO₂',16,'#e8e4dc','Clear silica; reflects across the whole visible band, so quartz sand looks white.'],['Olivine','(Mg,Fe)₂SiO₄',12,'#8ea06a','Ferrous silicate with a broad 1 µm band — olive-green in hand, dark from orbit.'],['Calcite','CaCO₃',7,'#e4dfd0','Carbonate. On Earth it is nearly all biological in origin.'],['Halite','NaCl',3,'#eeeae4','Sea salt; leaves bright evaporite pans where shallow water dries out.']],
+    desert:[['Quartz sand','SiO₂',34,'#e6dcc4','Colourless grains — the pale base tone under everything.'],['Hematite','Fe₂O₃',14,'#b8502e','Ferric iron. Absorbs 400–550 nm, so even a thin dust coat turns the world red.'],['Gypsum','CaSO₄·2H₂O',9,'#e8e2d2','Evaporite; forms only where water sat and then left.'],['Jarosite','KFe₃(SO₄)₂(OH)₆',5,'#c8a94e','Needs acidic water to form — a fossil of past wet chemistry.'],['Pyroxene','(Mg,Fe)SiO₃',18,'#8a8574','Dark volcanic rock beneath the dust.']],
+    ice:[['Water ice','H₂O',52,'#dff0f7','Fresh ice reflects almost every visible wavelength — this is why ice caps are blinding white.'],['Carbon-dioxide ice','CO₂',14,'#e8f2f4','Dry-ice frost; sublimates straight back to gas when the sun reaches it.'],['Ammonia hydrate','NH₃·H₂O',8,'#e4eef2','Lowers the melting point, allowing slushy flow at very low temperatures.'],['Silicate dust','—',12,'#b7b2a6','Darkens the ice where it collects and speeds up melting.'],['Methane clathrate','CH₄·5.75H₂O',4,'#cfe9ea','Methane caged inside ice; releases gas as it warms.']],
+    lava:[['Basalt (pyroxene-rich)','(Mg,Fe)SiO₃',42,'#5f584f','Fresh dark lava. Iron-bearing silicate absorbs broadly, so young flows are nearly black.'],['Elemental sulphur','S₈',11,'#d8c14e','Absorbs violet and blue only — the reason sulphur deposits are vivid yellow.'],['Magnetite','Fe₃O₄',9,'#3f3d44','Opaque iron oxide; flat black at every wavelength.'],['Olivine','(Mg,Fe)₂SiO₄',13,'#8ea06a','Crystallises early from hot melt; a marker of very fresh volcanism.'],['Volcanic glass','—',7,'#4a4650','Quenched lava with no crystal structure; glossy and dark.']],
+    candy:[['Halite & sulphate salts','NaCl, MgSO₄',30,'#f0e6e8','Bright evaporite crusts left where shallow brine dried.'],['Hematite dust','Fe₂O₃',10,'#c9628a','Ferric iron absorbing blue-green; the pink in the pale flats.'],['Quartz','SiO₂',18,'#e8e4dc','Clear grains that scatter all colours and lift the overall brightness.'],['Water ice','H₂O',12,'#dff0f7','High-albedo frost at the poles and on night-side ground.'],['Organic tholins','CₓHᵦNᵧ',5,'#d99a6a','Sunlight-cooked organics; absorb blue, add an orange blush.']],
+    gas:[['Ammonia ice','NH₃',48,'#efe9de','Bright white top deck — reflects every visible wavelength evenly.'],['Ammonium hydrosulphide','NH₄SH',22,'#c19a68','Photolysis products absorb the blue end; the source of tan and brown banding.'],['Water ice','H₂O',14,'#cfe6f2','A deep cloud layer, only visible through breaks.'],['Hydrocarbon haze','C₂H₆, C₂H₂',12,'#dcc9a0','Methane smog above the clouds; mutes contrast and adds gold.']]
+  };
+  nmColor(nm){
+    if(nm>700) return '#4a3f47';
+    const t=[[380,'#3d0a63'],[420,'#3512c4'],[445,'#0038f5'],[470,'#0090ff'],[492,'#00cfd4'],[512,'#00e83f'],[545,'#7cf000'],[572,'#f0e800'],[592,'#ffb400'],[622,'#ff5e00'],[660,'#dc0d00'],[695,'#7a0500']];
+    let best=t[0];
+    for(let i=0;i<t.length;i++) if(Math.abs(t[i][0]-nm)<Math.abs(best[0]-nm)) best=t[i];
+    return best[1];
+  }
+  mkLine(a){
+    const nm=a[0], emit=!!a[3];
+    return {nm,label:a[1],desc:a[2],
+      nmLabel: nm>=1000?(nm/1000).toFixed(2)+' µm':(Math.round(nm*10)/10)+' nm',
+      bg:this.nmColor(nm), mark:emit?'rgba(255,255,255,.92)':'rgba(14,7,12,.85)',
+      x:Math.max(0.4,Math.min(99,(nm-380)/620*100)).toFixed(2)+'%'};
+  }
+  fmtPct(p){
+    if(p>=10) return (Math.round(p*10)/10)+'%';
+    if(p>=1) return (Math.round(p*100)/100)+'%';
+    if(p>=0.005) return (Math.round(p*1000)/1000)+'%';
+    const ppm=p*1e4;
+    if(ppm>=1) return Math.round(ppm)+' ppm';
+    if(ppm>=0.01) return (Math.round(ppm*100)/100)+' ppm';
+    return 'trace';
+  }
+  barW(p){ return Math.max(2.5,Math.min(100,Math.pow(p/100,0.32)*100)).toFixed(1)+'%'; }
+  ODDITIES = [
+    'Sunsets here last nine hours.',
+    'The mountains hum in thirds at dawn.',
+    'Rain falls upward every third day.',
+    'Its moons are shy and hide behind each other.',
+    'Compasses point wherever you are happiest.',
+    'The tides follow the mood of the sky.',
+    'Echoes return slightly kinder than they were sent.',
+    'Snow here lands only on things that hold still.'
+  ];
+  rng32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+  genName(r){
+    const A=['Blu','Mira','Twee','Nim','Pova','Zola','Cori','Fen','Lum','Tobo','Wim','Peri','Glim','Osha','Bram','Sula'];
+    const B=['belle','wick','moss','pip','dora','loo','va','kin','dust','fern','bee','nook','puff','tide','glow','pond'];
+    let n=A[(r()*A.length)|0]+B[(r()*B.length)|0];
+    if(r()<0.25) n+=' '+['II','III','IV','Minor','Prime'][(r()*5)|0];
+    return n.charAt(0).toUpperCase()+n.slice(1);
+  }
+  componentDidMount(){
+    try{
+      const cur=JSON.parse(localStorage.getItem('lw.current')||'null');
+      const worlds=(JSON.parse(localStorage.getItem('lw.worlds')||'[]')).map(w=>({...w,params:this.sanitize(w.params)}));
+      if(cur&&cur.params) this.setState({name:cur.name||this.state.name, params:this.sanitize({...this.state.params,...cur.params}), worlds});
+      else this.setState({worlds});
+    }catch(e){}
+    this.push();
+  }
+  componentDidUpdate(){ this.push(); }
+  push(){
+    if(this.view){
+      this.view.params={...this.state.params,
+        mode:this.state.view==='system'?'system':'single',
+        sizeMode:this.state.sizeMode,
+        autoRotate:this.props.autoRotate??true,
+        timeScale:this.state.timeScale??1,
+        stars:this.props.stars??true,
+        detail:this.props.detail??'standard'};
+    }
+    try{ localStorage.setItem('lw.current',JSON.stringify({name:this.state.name,params:this.state.params})); }catch(e){}
+  }
+  sanitize(p){
+    if(p&&p.texture&&p.texture.indexOf('images2k/')!==0){
+      const s=this.SOLAR.find(x=>x.key===p.preset&&x.params.texture);
+      if(s){p={...p,texture:s.params.texture,cloudTexture:s.params.cloudTexture};}
+      else{p={...p,texture:null,cloudTexture:null};}
+    }
+    return p;
+  }
+  viewRef=(el)=>{ if(el&&el!==this.view)el.addEventListener('planet-pick',(e)=>this.visitSolar(e.detail.index)); this.view=el; this.push(); };
+  visitSolar(i){ const p=this.SOLAR[i]; if(!p)return;
+    this.setState({name:p.name,params:{...this.state.params,preset:p.key,...p.params},scan:null,tab:'sculpt',view:'single'}); }
+  setP(k,v){ const clear=k==='seed'; this.setState(s=>({params:{...s.params,[k]:v,...(clear?{texture:null,cloudTexture:null}:{})},scan:null})); }
+  applyPreset(key){
+    const p=this.PRESETS.find(x=>x.key===key);
+    this.setState(s=>({params:{...s.params,preset:key,...p.def,texture:null,cloudTexture:null},scan:null}));
+  }
+  surprise=()=>{
+    const seed=(Math.random()*99999)|0;
+    const r=this.rng32(seed*2654435761);
+    const p=this.PRESETS[(r()*this.PRESETS.length)|0];
+    const j=(v)=>Math.max(0,Math.min(1,v+(r()-0.5)*0.4));
+    this.setState({
+      name:this.genName(r),
+      scan:null,
+      params:{seed,preset:p.key,mountains:j(p.def.mountains),water:j(p.def.water),roughness:j(p.def.roughness),clouds:j(p.def.clouds),glow:j(p.def.glow),ice:j(p.def.ice),rings:r()<0.18,moons:(r()*2.6)|0,atmoColor:null,texture:null,cloudTexture:null}
+    });
+  };
+  doScan=()=>{
+    if(this.state.scanning) return;
+    this.setState({scanning:true,scan:null,scanSec:'atmo'});
+    if(this.view) this.view.scan(2000);
+    setTimeout(()=>{ this.setState({scanning:false,scan:this.computeScan()}); },2100);
+  };
+  computeScan(){
+    const P=this.state.params;
+    const pi=this.PRESETS.findIndex(x=>x.key===P.preset);
+    const r=this.rng32(((P.seed|0)*7919 + Math.round(P.water*97)*131 + Math.round(P.mountains*89)*17 + Math.round(P.clouds*83)*57 + pi*911)|0);
+    const real=P.texture?this.REAL[P.preset]:null;
+    const prof=real||this.buildProfile(P,r);
+    const gases=prof.gases.filter(g=>g[1]>0).map(g=>{
+      const s=this.SPECIES[g[0]];
+      return {f:s.f,n:s.n,eff:s.eff,pct:this.fmtPct(g[1]),w:this.barW(g[1])};
+    });
+    const compounds=prof.compounds.map(c=>({
+      n:c[0],f:c[1],pct:c[2]>=1?Math.round(c[2])+'%':'traces',
+      w:this.barW(c[2]),bar:c[3],note:c[4]
+    }));
+    const seen={},lines=[];
+    const add=(a)=>{ const id=a[0]+'|'+a[1]; if(seen[id])return; seen[id]=1; lines.push(this.mkLine(a)); };
+    prof.gases.forEach(g=>{ if(g[1]>=0.0005) (this.SPECIES[g[0]].lines||[]).forEach(add); });
+    (prof.pigs||[]).forEach(k=>(this.PIG[k]||[]).forEach(add));
+    lines.sort((a,b)=>a.nm-b.nm);
+    return {atmoTitle:prof.atmoTitle,pressure:prof.pressure,atmoSummary:prof.atmoSummary,
+      gases,surfLabel:prof.surfLabel,compounds,water:prof.water,bio:prof.bio,
+      lines,colorWhy:prof.colorWhy,note:prof.note};
+  }
+  buildProfile(P,r){
+    const key=P.preset, t=this.typeOf(key), isGas=!!t.gas;
+    const bias={temperate:0.15,candy:0.1,ice:-0.05,desert:-0.12,lava:-0.28}[key]||0;
+    const score=(1-Math.abs(P.water-0.55)*1.6)*0.55 + P.clouds*0.25 + bias + (r()-0.5)*0.18;
+    const note=this.ODDITIES[(r()*this.ODDITIES.length)|0];
+    if(isGas){
+      const ch4=key==='gasMist'?1.4+P.glow*2.6:0.2+P.glow*0.6;
+      const h2=88-P.roughness*6-ch4*0.5, he=Math.max(4,100-h2-ch4-0.1);
+      return {atmoTitle:'Hydrogen–helium envelope',pressure:'no surface',
+        atmoSummary:'Roughly solar proportions of hydrogen and helium, with no ground anywhere. Pressure simply keeps rising with depth until hydrogen starts behaving like a liquid metal.',
+        gases:[['H2',h2],['He',he],['CH4',ch4],['NH3',0.02+P.clouds*0.05],['H2O',0.01+P.water*0.06],['C2H6',0.0007]],
+        surfLabel:'Cloud decks',compounds:this.MINERAL_SETS.gas,pigs:['ice'],
+        water:{state:'vapour and deep ice clouds',dot:'#a8cfe0',detail:'No ocean and no surface. Water condenses into a cloud deck far below the visible ammonia layer, and turns up as vapour wherever a warm downdraught clears a hole.',sig:'Read from the 940 nm and 1.4 µm vapour bands; the deep layer needs microwave sounding to see at all.'},
+        bio:{title:'No biosignature',dot:'#c9b0bb',desc:'No surface and no water–rock interface. In a system like this the interesting chemistry happens on the icy moons.'},
+        colorWhy:ch4>1.2
+          ?'Methane at '+ch4.toFixed(1)+'% absorbs nearly everything past 600 nm — orange, red and near-infrared — so only blue and green come back out. Same mechanism that makes Uranus and Neptune cyan.'
+          :'Ammonia-ice clouds reflect all visible wavelengths evenly, giving the pale zones. Where the deck thins you see down onto ammonium-hydrosulphide breakdown products that absorb the blue end, and those stripes read tan and brown.',
+        note};
+    }
+    const ice=P.ice, wet=P.water, cl=P.clouds;
+    const oxy=score>0.45;
+    const A={
+      temperate: oxy
+        ? {title:'Nitrogen–oxygen, out of equilibrium',bar:0.6+wet*0.8+cl*0.4,
+           sum:'A nitrogen atmosphere carrying percent-level free oxygen. O₂ is far too reactive to persist on its own — something is topping it up faster than rock and sunlight can remove it.',
+           gases:[['N2',76-score*4],['O2',11+score*13],['Ar',1.1],['H2O',0.2+cl*2.6],['CO2',0.03+ (1-score)*0.2],['CH4',0.0002],['O3',0.00005]]}
+        : {title:'Nitrogen and carbon dioxide',bar:0.4+wet*1.1+cl*0.5,
+           sum:'A quiet, anoxic atmosphere: nitrogen with a heavy dose of CO₂ and no free oxygen at all. This is what a rocky planet looks like before anything starts photosynthesising.',
+           gases:[['N2',66+wet*4],['CO2',22+(1-wet)*6],['Ar',1.9],['H2O',0.1+cl*2.2],['CH4',0.4+cl*0.6],['CO',0.05]]},
+      desert:{title:'Thin, dry carbon dioxide',bar:0.004+cl*0.9,
+        sum:'Barely there. Mostly CO₂ with noble gases, at a pressure low enough that liquid water would boil and freeze at the same time.',
+        gases:[['CO2',92+(1-cl)*3],['N2',3.4],['Ar',2.2],['O2',0.14],['CO',0.07],['H2O',0.01+cl*0.5]]},
+      ice:{title:'Frigid nitrogen with methane',bar:0.008+cl*0.25,
+        sum:'A thin nitrogen atmosphere so cold that methane and CO₂ frost out onto the ground each night and sublimate back in daylight.',
+        gases:[['N2',86+cl*2],['Ar',4.5],['CH4',3.2+P.glow*1.5],['CO2',2.4],['CO',1.1],['H2O',0.0008]]},
+      lava:{title:'Volcanic: carbon dioxide and sulphur',bar:12+cl*70,
+        sum:'Outgassing straight from the mantle. CO₂ and sulphur dioxide dominate, there is no free oxygen, and the greenhouse has run away with itself.',
+        gases:[['CO2',77-cl*4],['SO2',9+cl*7],['N2',4.4],['H2O',2.2+cl*2],['CO',2.1],['Ar',0.3]]},
+      candy:{title:'Hazy nitrogen with organics',bar:0.5+cl*1.2,
+        sum:'Nitrogen and water vapour under a photochemical organic haze — sunlight cracking methane and reassembling it into heavier compounds that never fully clear.',
+        gases:[['N2',62+wet*5],['CO2',13],['H2O',7+cl*4],['CH4',5+cl*2],['CH4h',2.5],['Ar',2.4]]}
+    }[key]||{};
+    let water;
+    if(key==='lava') water={state:'vapour only',dot:'#e0c49a',detail:'Any surface water flashed to steam long ago and the rest is locked into hot minerals. An enriched deuterium ratio would be the tell-tale that an ocean was once here.',sig:'Only the 1.4 µm and 1.9 µm vapour bands register — no liquid or ice absorption anywhere.'};
+    else if(wet<=0.06) water={state:'none detected',dot:'#c9b0bb',detail:'No standing water, no ice, nothing but a few parts per million bound into the rock. Raise the sea level and run the spectrometer again.',sig:'The 720 nm and 940 nm vapour bands come back flat.'};
+    else if(ice>0.72) water={state:'frozen, everywhere',dot:'#cfe6f2',detail:'Every drop is ice. Fresh surface ice is one of the most reflective natural materials there is, which keeps the planet cold enough to stay that way — a feedback that is hard to escape.',sig:'Identified by the 1.04 and 1.25 µm ice bands, quite distinct from vapour or liquid.'};
+    else if(ice>0.3) water={state:'liquid, with permanent ice caps',dot:'#7cbfe0',detail:'Open ocean across the middle latitudes with year-round ice at both poles. All three phases coexist, which needs a narrow band of pressure and temperature.',sig:'Liquid water absorbs red about 100× more strongly than blue, so the seas return blue; the caps show the 1.04 µm ice band instead.'};
+    else water={state:'liquid',dot:'#5aa8d8',detail:'Open water covering '+Math.round(wet*100)+'% of the surface, stable as a liquid — which means the pressure is above water\u2019s triple point and the temperature sits between its freezing and boiling points.',sig:'Confirmed by the depth of red absorption in the reflected spectrum, plus vapour bands at 720 and 940 nm.'};
+    const pigs=({temperate:[],desert:['hematite','olivine'],ice:['ice','co2ice'],lava:['sulfur','carbon','olivine'],candy:['hematite','ice']}[key]||[]).slice();
+    if(key==='temperate') pigs.push('olivine');
+    if(water.state.indexOf('liquid')===0||water.state.indexOf('liquid')>0) pigs.push('liquid');
+    if(ice>0.3&&key!=='ice') pigs.push('ice');
+    if(oxy&&key!=='lava') pigs.push('chloro');
+    let bio;
+    if(score<0.22) bio={title:'No biosignature',dot:'#c9b0bb',desc:'Nothing in the spectrum is out of chemical equilibrium — no free oxygen, no methane excess, no reflectance jump in the near-infrared. Everything here can be explained by rock and sunlight.'};
+    else if(score<0.45) bio={title:'Ambiguous',dot:'#8fd0c9',desc:'A faint methane excess with no oxygen to match it. That is not proof of anything: serpentinisation — hot water reacting with olivine — makes CH₄ with no help from biology.'};
+    else if(score<0.68) bio={title:'Possible',dot:'#a8cf70',desc:'Free O₂ alongside methane. The two destroy each other in sunlight within centuries, so finding both at once means something is actively resupplying at least one of them.'};
+    else bio={title:'Strong biosignature',dot:'#7fae62',desc:'Percent-level free oxygen, a methane excess, and a sharp reflectance rise past 700 nm — a vegetation red edge. Three independent lines of evidence pointing the same way.'};
+    const why={
+      temperate: oxy
+        ? 'Three overlapping effects. Nitrogen molecules scatter blue sunlight far more than red (∝ 1/λ⁴), which colours the sky; liquid water absorbs red roughly a hundred times harder than blue, which colours the seas; and chlorophyll absorbs at 430 and 662 nm while reflecting the green in between.'
+        : 'Nitrogen scattering gives a blue sky and liquid water gives blue seas, but with no chlorophyll and no vegetation red edge the land stays the grey-brown of bare feldspar and basalt.',
+      desert:'One mineral decides it. Ferric iron (Fe³⁺) in fine hematite dust absorbs strongly from 400 to 550 nm — the entire blue-green half of the spectrum — and reflects everything past 600 nm. Even a micron-thin coating turns a whole planet red.',
+      ice:'Fresh water ice reflects almost every visible wavelength at high efficiency, so it reads brilliant white. The faint blue in thick ice is the one exception: over a long path even ice absorbs a little red.',
+      lava:'Two opposing things at once. Fresh iron-rich basalt absorbs broadly across the visible band, so cooled flows are nearly black; the glowing cracks are thermal emission — hot rock radiating its own light at red and infrared wavelengths rather than reflecting sunlight. Sulphur deposits add the only true pigment, absorbing violet and blue to appear yellow.',
+      candy:'Bright salt and quartz flats scatter every wavelength, which lifts the overall brightness, while hematite dust removes blue-green and organic tholins remove blue. Subtract those from white light and what is left is the pink-and-peach cast.'
+    }[key]||'';
+    return {atmoTitle:A.title,pressure:(A.bar>=10?Math.round(A.bar):Math.round(A.bar*1000)/1000)+' bar',
+      atmoSummary:A.sum,gases:A.gases,surfLabel:'Surface composition',
+      compounds:this.MINERAL_SETS[key]||this.MINERAL_SETS.temperate,
+      pigs,water,bio,colorWhy:why,note};
+  }
+  saveWorld=()=>{
+    const p=this.typeOf(this.state.params.preset);
+    const w={id:Date.now(),name:this.state.name,params:{...this.state.params},dot:p.dot,sub:p.label+' · seed '+this.state.params.seed};
+    const worlds=[w,...this.state.worlds].slice(0,24);
+    this.setState({worlds,tab:'worlds'});
+    try{ localStorage.setItem('lw.worlds',JSON.stringify(worlds)); }catch(e){}
+  };
+  renderVals(){
+    const S=this.state,P=S.params;
+    const preset=this.typeOf(P.preset);
+    const sliderDefs=[['mountains','Mountains'],['water','Sea level'],['roughness','Roughness'],['clouds','Clouds'],['ice','Ice caps'],['glow','Sky glow']];
+    const orbit=S.view==='system';
+    const sel=(on)=>({bg:on?'#3a2e3f':'#fff',fg:on?'#fff8ee':'#4a3a4f',bc:on?'#3a2e3f':'#eaddca'});
+    const isReal=!!P.texture;
+    const realRinged=isReal&&['saturn','jupiter','uranus','neptune'].indexOf(P.preset)>=0;
+    const isGas=!!preset.gas;
+    const ATMOS=['#8fc7ff','#ffcf8f','#9fe8c9','#ff8fc7','#b9a8ff'];
+    return {
+      name:S.name, seedStr:String(P.seed), presetLabel:preset.label.toLowerCase(),
+      displayName:orbit?'The Solar System':S.name,
+      subLine:orbit?'click a planet to visit it':'seed '+P.seed+' · '+preset.label.toLowerCase()+' world',
+      isOrbit:orbit, notOrbit:!orbit,
+      viewList:()=>this.setState({view:'single'}),
+      viewOrbit:()=>this.setState({view:'system',sizeMode:this.state.sizeMode}),
+      vList:sel(!orbit), vOrbit:sel(orbit),
+      sizeSame:{...sel(S.sizeMode==='same'),onPick:()=>this.setState({sizeMode:'same'})},
+      sizeScale:{...sel(S.sizeMode==='scale'),onPick:()=>this.setState({sizeMode:'scale'})},
+      toggleRings:()=>{ if(!realRinged) this.setP('rings',!P.rings); },
+      ringsB:sel(realRinged||!!P.rings), ringsOp:realRinged?'0.5':'1',
+      ringsLabel:realRinged?'Real rings':(P.rings?'Rings on':'Rings off'),
+      resetView:()=>{ if(this.view&&this.view.resetView) this.view.resetView(); },
+      speeds:[['Pause',0,'Freeze time'],['½×',0.5,'Half speed'],['1×',1,'Real pace'],['4×',4,'Four times faster'],['20×',20,'Twenty times faster']].map(([label,v,title])=>({
+        label,title,onPick:()=>this.setState({timeScale:v}),
+        bg:(S.timeScale??1)===v?'#ff7a59':'transparent', fg:(S.timeScale??1)===v?'#2a1a24':'#c9b8d9'})),
+      lightSliders:[['lightAz','Sun angle',0.107],['lightEl','Sun height',0.639]].map(([k,label,dv])=>{
+        const v=P[k]??dv;
+        return {label,v100:Math.round(v*100),pct:Math.round(v*100)+'%',onInput:(e)=>this.setP(k,e.target.value/100)};
+      }),
+      lightReset:()=>this.setState(s=>({params:{...s.params,lightAz:0.107,lightEl:0.639}})),
+      ringDesign:!!P.rings&&!realRinged, realRings:realRinged,
+      ringNOpts:[1,2,3,4].map(n=>({label:String(n),...sel((P.ringN??2)===n),onPick:()=>this.setP('ringN',n)})),
+      ringSliders:[['ringInner','Inner edge',0.24],['ringWidth','Width',0.5],['ringTilt','Tilt',0.5],['ringGap','Gaps',0.35],['ringOpacity','Density',0.7]].map(([k,label,dv])=>{
+        const v=P[k]??dv;
+        const pct=k==='ringTilt'?Math.round((v-0.5)*90)+'°':Math.round(v*100)+'%';
+        return {label,v100:Math.round(v*100),pct,onInput:(e)=>this.setP(k,e.target.value/100)};
+      }),
+      spinOp:isReal?'0.42':'1',
+      spinFwd:{...sel((P.spinDir??1)!==-1),onPick:()=>{ if(!isReal) this.setP('spinDir',1); }},
+      spinRev:{...sel((P.spinDir??1)===-1),onPick:()=>{ if(!isReal) this.setP('spinDir',-1); }},
+      spinV100:Math.round((P.spinSpeed??0.5)*100),
+      spinPct:isReal?'real':(Math.round((P.spinSpeed??0.5)*200)/100)+'×',
+      spinInput:(e)=>{ if(!isReal) this.setP('spinSpeed',e.target.value/100); },
+      ringTints:['#e8d4a8','#c9b08a','#9fb6c9','#e8b9d0'].map(c=>({c,bc:P.ringColor===c?'#3a2e3f':'#eaddca',onPick:()=>this.setP('ringColor',c)})),
+      ringAutoB:sel(!P.ringColor), ringAuto:()=>this.setP('ringColor',null),
+      isReal, reshape:()=>this.setState(s=>({params:{...s.params,texture:null,cloudTexture:null},scan:null})),
+      moonOpts:['None','1','2','3'].map((label,n)=>({label,...sel((P.moons|0)===n),onPick:()=>{ if(!isReal) this.setP('moons',n); },
+        op:isReal?'0.5':'1'})),
+      atmoAuto:()=>this.setP('atmoColor',null),
+      autoB:sel(!P.atmoColor),
+      atmoOpts:ATMOS.map(c=>({c,bc:P.atmoColor===c?'#3a2e3f':'#eaddca',onPick:()=>this.setP('atmoColor',c)})),
+      onName:(e)=>this.setState({name:e.target.value}),
+      onSeed:(e)=>{ const v=parseInt(e.target.value,10); if(!isNaN(v)) this.setP('seed',v); },
+      rollSeed:()=>this.setP('seed',(Math.random()*99999)|0),
+      surprise:this.surprise,
+      viewRef:this.viewRef,
+      tabs:[['sculpt','Sculpt'],['scan','Scan'],['solar','Milky Way'],['worlds','Worlds']].map(([k,label])=>({
+        label,onClick:()=>this.setState(s=>({tab:k,view:k==='solar'?s.view:'single'})),
+        bg:S.tab===k?'#3a2e3f':'transparent', fg:S.tab===k?'#fff8ee':'#7a6a85', bc:S.tab===k?'#3a2e3f':'#e4d5c3'
+      })),
+      isSculpt:S.tab==='sculpt', isScan:S.tab==='scan', isWorlds:S.tab==='worlds', isSolar:S.tab==='solar',
+      solar:this.SOLAR.map((p,i)=>({name:p.name,sub:p.sub,dot:p.dot,onLoad:()=>this.visitSolar(i)})),
+      presets:this.PRESETS.map(p=>({label:p.label,dot:p.dot,onPick:()=>this.applyPreset(p.key),
+        bg:p.key===P.preset?'#3a2e3f':'#fff', fg:p.key===P.preset?'#fff8ee':'#4a3a4f', bc:p.key===P.preset?'#3a2e3f':'#eaddca'})),
+      sliders:sliderDefs.map(([k,label])=>{
+        const lock=(isReal&&['mountains','water','roughness','ice'].includes(k))
+          || (isGas&&['mountains','water','ice'].includes(k));
+        return {label,v100:Math.round(P[k]*100),pct:Math.round(P[k]*100)+'%',dis:lock,op:lock?'0.42':'1',
+          onInput:(e)=>{ if(!lock) this.setP(k,e.target.value/100); }};
+      }),
+      saveWorld:this.saveWorld,
+      doScan:this.doScan,
+      scanBtnLabel:S.scanning?'Reading spectrum…':'Run spectrometer on '+S.name,
+      scanning:S.scanning, hasScan:!!S.scan, scanEmpty:!S.scanning&&!S.scan,
+      scan:S.scan||{water:{},bio:{}},
+      scanSecs:[['atmo','Atmosphere'],['surf','Surface & water'],['light','Light']].map(([k,label])=>({
+        label,onPick:()=>this.setState({scanSec:k}),...sel(S.scanSec===k)})),
+      secAtmo:S.scanSec==='atmo', secSurf:S.scanSec==='surf', secLight:S.scanSec==='light',
+      worlds:S.worlds.map(w=>({name:w.name,sub:w.sub,dot:w.dot,
+        onLoad:()=>this.setState({name:w.name,params:{...w.params},scan:null,tab:'sculpt'}),
+        onDel:()=>{ const worlds=this.state.worlds.filter(x=>x.id!==w.id); this.setState({worlds}); try{localStorage.setItem('lw.worlds',JSON.stringify(worlds));}catch(e){} }})),
+      noWorlds:S.worlds.length===0
+    };
+  }
+}
+</script>
+</body>
+</html>
