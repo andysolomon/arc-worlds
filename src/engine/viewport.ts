@@ -84,6 +84,7 @@ export class PlanetViewport {
   private dirty = false
   private stopped = false
   private raf = 0
+  private frames = 0
 
   private seed: number | null = null
   private detail = ''
@@ -1088,5 +1089,14 @@ export class PlanetViewport {
     }
 
     this.renderer.render(this.scene, this.camera)
+
+    // Observability hook: WebGL does not preserve its drawing buffer, so the
+    // canvas cannot be read back after the frame. Publishing the frame count
+    // and triangles drawn gives tests (and debugging) a truthful signal that
+    // geometry is actually reaching the GPU.
+    this.frames++
+    const cv = this.renderer.domElement
+    cv.dataset.frames = String(this.frames)
+    cv.dataset.triangles = String(this.renderer.info.render.triangles)
   }
 }

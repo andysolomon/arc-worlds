@@ -56,8 +56,13 @@ const PRESET_KEYS = new Set<string>([
   'mercury', 'venus', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune',
 ])
 
+/**
+ * Clamp any real number into 0..1. Infinities clamp to the nearest bound
+ * rather than falling back, so an out-of-range value behaves the same way
+ * whether it is 5 or Infinity; only NaN and non-numbers use the default.
+ */
 const clamp01 = (v: unknown, fallback: number) =>
-  typeof v === 'number' && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : fallback
+  typeof v === 'number' && !Number.isNaN(v) ? Math.min(1, Math.max(0, v)) : fallback
 
 /**
  * Coerce arbitrary input into valid params. Used both on load from

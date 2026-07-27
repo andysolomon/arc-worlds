@@ -19,8 +19,9 @@ export function fail(res: VercelResponse, status: number, error: string) {
   return res.status(status).json({ error })
 }
 
-// Control characters, including DEL. Written as escapes so the source stays
-// readable and cannot be mangled in transit.
+// Control characters, including DEL. Matching these is the whole point — a
+// world name is user-supplied and ends up rendered in the gallery.
+// oxlint-disable-next-line no-control-regex
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/g
 
 /** Trim to a sane display length and strip control characters. */
