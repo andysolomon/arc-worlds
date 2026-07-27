@@ -5,9 +5,9 @@
  * also exactly what gets stored and shared. Everything visual regenerates from
  * it, which is why there are no thumbnails anywhere in this project.
  */
-import { mulberry32 } from '../engine/noise'
-import { PRESETS } from '../data/presets'
-import type { PlanetParams, PresetKey } from '../engine/types'
+import { mulberry32 } from '../engine/noise.js'
+import { PRESETS } from '../data/presets.js'
+import type { PlanetParams, PresetKey } from '../engine/types.js'
 
 /** Whimsical two-syllable world names, occasionally with a regnal suffix. */
 export function genName(r: () => number): string {

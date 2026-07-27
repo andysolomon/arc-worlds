@@ -1,10 +1,10 @@
 import { desc } from 'drizzle-orm'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { getDb } from '../../db/index'
-import { worlds } from '../../db/schema'
-import { cacheFor, cleanName, fail, makeSlug, makeToken } from '../_lib'
-import { sanitize } from '../../src/lib/params'
-import { PRESETS, SOLAR } from '../../src/data/presets'
+import { getDb } from '../../db/index.js'
+import { worlds } from '../../db/schema.js'
+import { cacheFor, cleanName, fail, makeSlug, makeToken } from '../_lib.js'
+import { sanitize } from '../../src/lib/params.js'
+import { PRESETS, SOLAR } from '../../src/data/presets.js'
 
 const MAX_LIMIT = 48
 

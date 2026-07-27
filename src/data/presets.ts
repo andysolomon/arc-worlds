@@ -1,5 +1,5 @@
 // Extracted verbatim from the original prototype — see prototype/.
-import type { PlanetParams, PresetKey } from "../engine/types"
+import type { PlanetParams, PresetKey } from "../engine/types.js"
 
 export interface Preset {
   key: PresetKey

@@ -1,8 +1,8 @@
 import { eq } from 'drizzle-orm'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { getDb } from '../../db/index'
-import { worlds } from '../../db/schema'
-import { cacheFor, fail } from '../_lib'
+import { getDb } from '../../db/index.js'
+import { worlds } from '../../db/schema.js'
+import { cacheFor, fail } from '../_lib.js'
 
 const SLUG_RE = /^[A-Za-z0-9_-]{3,64}$/
 
