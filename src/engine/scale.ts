@@ -1,0 +1,75 @@
+/**
+ * Scale models and orbital mechanics.
+ *
+ * Real distances in the solar system are unviewable: at true scale, either
+ * Neptune is off-screen or Mercury is a subpixel. Everything here is a
+ * deliberate, order-preserving compression — never a physical distance.
+ */
+
+/** Seconds of wall clock per planetary day (body spin). */
+export const DAY_SEC = 14
+/** Seconds of wall clock per day of moon orbital motion. */
+export const MOON_DAY = 2.2
+/** Seconds per Earth year in the orbit view. */
+export const YEAR_SEC = 14
+
+export const D2R = Math.PI / 180
+
+/** Compressed but order-preserving moon distance, in planet radii. */
+export function moonDist(a: number): number {
+  return 2.35 + 0.62 * Math.log(a / 2.8)
+}
+
+/** Moon render radius. Sub-linear so Phobos stays visible next to Titan. */
+export function moonRad(r: number): number {
+  return Math.max(0.01, 0.03 * Math.pow(r / 0.02, 0.42))
+}
+
+/**
+ * Long-period moons are eased in wall-clock time so Iapetus (79 days) and
+ * Nereid (360 days) still visibly move without hurrying the inner moons.
+ */
+export function moonPeriodSec(P: number): number {
+  const p = Math.abs(P)
+  return MOON_DAY * (p <= 20 ? p : 20 + 18 * Math.log(1 + (p - 20) / 18))
+}
+
+/**
+ * Solve Kepler's equation M = E - e·sin(E) for eccentric anomaly E.
+ * Newton-Raphson; five iterations is ample for e < 0.8.
+ */
+export function kepler(M: number, e: number): number {
+  let E = M
+  for (let i = 0; i < 5; i++) E = E - (E - e * Math.sin(E) - M) / (1 - e * Math.cos(E))
+  return E
+}
+
+/* --- Orbit-view scale models -------------------------------------------- */
+
+const VIS_BASE = 11.0
+const VIS_EXP = 0.62
+const SIZE_MIN = 0.3
+const SIZE_MAX = 2.8
+const SUN_KM = 696340
+const MIN_KM = 2440
+
+/**
+ * "To scale" radial remap: d = B·AU^0.62. Monotonic, so ordering and relative
+ * spacing survive, but the outer system is pulled in far enough to frame.
+ */
+export function visDist(au: number): number {
+  return VIS_BASE * Math.pow(au, VIS_EXP)
+}
+
+/** Logarithmic body-size map, so the Sun and Mercury are both visible. */
+export function sizeMap(km: number): number {
+  const t = (Math.log(km) - Math.log(MIN_KM)) / (Math.log(SUN_KM) - Math.log(MIN_KM))
+  return SIZE_MIN + Math.min(1, Math.max(0, t)) * (SIZE_MAX - SIZE_MIN)
+}
+
+/** "Same size" spacing — the cosier compressed model, every planet drawn alike. */
+export function sameDist(au: number): number {
+  return 1.9 + (2.9 * Math.log(1 + au * 3)) / Math.LN10
+}
+
+export { SIZE_MAX, SIZE_MIN }
