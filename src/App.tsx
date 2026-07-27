@@ -1,14 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { MilkyWayPanel } from './components/MilkyWayPanel'
 import { ScanPanel } from './components/ScanPanel'
 import { SculptPanel } from './components/SculptPanel'
+import { SystemsPanel } from './components/SystemsPanel'
 import { Viewport } from './components/Viewport'
 import { WorldsPanel } from './components/WorldsPanel'
-import { PRESETS, SOLAR, typeOf } from './data/presets'
+import { PRESETS, typeOf } from './data/presets'
+import { MILKY_WAY } from './data/systems'
 import { DEFAULT_PARAMS, sanitize, surprise } from './lib/params'
+import {
+  MAX_BODIES, bodyFromWorld, nextDistance, sanitizeSystem, sortByDistance,
+} from './lib/systems'
 import { computeScan, type ScanResult } from './lib/scan'
-import { getWorld, listWorlds, saveWorld, type SavedWorld } from './lib/api'
-import type { PlanetParams, PresetKey } from './engine/types'
+import {
+  getSystem, getWorld, listSystems, listWorlds, saveSystem, saveWorld,
+  type SavedSystem, type SavedWorld,
+} from './lib/api'
+import type { PlanetParams, PresetKey, SystemDef } from './engine/types'
 import './styles.css'
 
 type Tab = 'sculpt' | 'scan' | 'solar' | 'worlds'
@@ -16,7 +23,7 @@ type Tab = 'sculpt' | 'scan' | 'solar' | 'worlds'
 const TABS: Array<[Tab, string]> = [
   ['sculpt', 'Sculpt'],
   ['scan', 'Scan'],
-  ['solar', 'Milky Way'],
+  ['solar', 'Systems'],
   ['worlds', 'Worlds'],
 ]
 
@@ -28,16 +35,17 @@ const SPEEDS: Array<[number, string]> = [
   [20, '20×'],
 ]
 
-/** Read a world slug out of /w/:slug, if we were opened via a share link. */
-function slugFromLocation(): string | null {
-  const m = /^\/w\/([A-Za-z0-9_-]{3,64})$/.exec(window.location.pathname)
-  return m ? m[1] : null
+/** Read a share link out of the address bar: /w/:slug for a world, /s/:slug for a system. */
+function routeFromLocation(): { kind: 'w' | 's'; slug: string } | null {
+  const m = /^\/([ws])\/([A-Za-z0-9_-]{3,64})$/.exec(window.location.pathname)
+  return m ? { kind: m[1] as 'w' | 's', slug: m[2] } : null
 }
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('sculpt')
   const [name, setName] = useState('Peachmoss')
   const [params, setParams] = useState<PlanetParams>(DEFAULT_PARAMS)
+  const [system, setSystem] = useState<SystemDef>(MILKY_WAY)
   const [view, setView] = useState<'single' | 'system'>('single')
   const [sizeMode, setSizeMode] = useState<'same' | 'scale'>('same')
   const [timeScale, setTimeScale] = useState(1)
@@ -53,6 +61,12 @@ export default function App() {
   const [saving, setSaving] = useState(false)
   const [savedSlug, setSavedSlug] = useState<string | null>(null)
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null)
+
+  const [systems, setSystems] = useState<SavedSystem[]>([])
+  const [systemsLoading, setSystemsLoading] = useState(false)
+  const [systemsError, setSystemsError] = useState<string | null>(null)
+  const [systemSaving, setSystemSaving] = useState(false)
+  const [savedSystemSlug, setSavedSystemSlug] = useState<string | null>(null)
 
   const scanTimer = useRef<number | null>(null)
 
@@ -72,21 +86,33 @@ export default function App() {
   /* --- share links ------------------------------------------------------ */
 
   useEffect(() => {
-    const slug = slugFromLocation()
-    if (!slug) return
-    getWorld(slug)
-      .then((w) => {
-        setParams(sanitize(w.params))
-        setName(w.name)
-        setSavedSlug(w.slug)
-      })
-      .catch(() => {
-        // A dead link should still leave a usable app.
-        window.history.replaceState(null, '', '/')
-      })
+    const route = routeFromLocation()
+    if (!route) return
+    // A dead link should still leave a usable app, so every failure falls back
+    // to the plain sculptor rather than an error page.
+    const clear = () => window.history.replaceState(null, '', '/')
+
+    if (route.kind === 'w') {
+      getWorld(route.slug)
+        .then((w) => {
+          setParams(sanitize(w.params))
+          setName(w.name)
+          setSavedSlug(w.slug)
+        })
+        .catch(clear)
+    } else {
+      getSystem(route.slug)
+        .then((s) => {
+          setSystem(sanitizeSystem(s.def))
+          setSavedSystemSlug(s.slug)
+          setTab('solar')
+          setView('system')
+        })
+        .catch(clear)
+    }
   }, [])
 
-  /* --- gallery ---------------------------------------------------------- */
+  /* --- galleries -------------------------------------------------------- */
 
   const refreshGallery = useCallback(() => {
     setGalleryLoading(true)
@@ -97,9 +123,19 @@ export default function App() {
       .finally(() => setGalleryLoading(false))
   }, [])
 
+  const refreshSystems = useCallback(() => {
+    setSystemsLoading(true)
+    setSystemsError(null)
+    listSystems()
+      .then(setSystems)
+      .catch((e: Error) => setSystemsError(e.message))
+      .finally(() => setSystemsLoading(false))
+  }, [])
+
   useEffect(() => {
     if (tab === 'worlds') refreshGallery()
-  }, [tab, refreshGallery])
+    if (tab === 'solar') refreshSystems()
+  }, [tab, refreshGallery, refreshSystems])
 
   /* --- editing ---------------------------------------------------------- */
 
@@ -133,15 +169,67 @@ export default function App() {
     setTab('sculpt')
   }, [])
 
-  const visitSolar = useCallback((i: number) => {
-    const s = SOLAR[i]
-    if (!s) return
-    setParams((prev) => sanitize({ ...prev, ...s.params, preset: s.key }))
-    setName(s.name)
-    setScan(null)
-    setSavedSlug(null)
-    setView('single')
-    setTab('sculpt')
+  /* --- systems ---------------------------------------------------------- */
+
+  /** Select or replace the system on screen. */
+  const chooseSystem = useCallback((def: SystemDef) => {
+    setSystem(def)
+    setSavedSystemSlug(null)
+    if (window.location.pathname.startsWith('/s/')) window.history.replaceState(null, '', '/')
+  }, [])
+
+  /** Visit one of the bodies in the current system. */
+  const visitBody = useCallback(
+    (i: number) => {
+      const b = system.bodies[i]
+      if (!b) return
+      setParams(sanitize(b.params))
+      setName(b.name)
+      setScan(null)
+      setSavedSlug(null)
+      setView('single')
+      setTab('sculpt')
+    },
+    [system],
+  )
+
+  const addCurrentWorld = useCallback(() => {
+    const worldName = name.trim() || 'Untitled world'
+    const world = { ...params }
+    setSystem((s) => {
+      if (s.origin !== 'custom' || s.bodies.length >= MAX_BODIES) return s
+      const body = bodyFromWorld(worldName, world, nextDistance(s), s.star.mass)
+      return { ...s, bodies: sortByDistance([...s.bodies, body]) }
+    })
+    setSavedSystemSlug(null)
+    setView('system')
+  }, [name, params])
+
+  const onSaveSystem = useCallback(async () => {
+    setSystemSaving(true)
+    setSystemsError(null)
+    try {
+      const s = await saveSystem(system)
+      setSavedSystemSlug(s.slug)
+      window.history.replaceState(null, '', `/s/${s.slug}`)
+      try {
+        await navigator.clipboard?.writeText(`${window.location.origin}/s/${s.slug}`)
+      } catch {
+        // Clipboard permission is not essential — the URL bar already updated.
+      }
+      setSystems((prev) => [s, ...prev.filter((x) => x.slug !== s.slug)])
+    } catch (e) {
+      setSystemsError((e as Error).message)
+    } finally {
+      setSystemSaving(false)
+    }
+  }, [system])
+
+  const openSavedSystem = useCallback((s: SavedSystem) => {
+    setSystem(sanitizeSystem(s.def))
+    setSavedSystemSlug(s.slug)
+    setView('system')
+    window.history.replaceState(null, '', `/s/${s.slug}`)
   }, [])
 
   /* --- scan ------------------------------------------------------------- */
@@ -211,7 +299,7 @@ export default function App() {
   const preset = typeOf(params.preset)
   const subtitle =
     view === 'system'
-      ? 'click a planet to visit it'
+      ? `${system.sub} · click a planet to visit it`
       : `seed ${params.seed} · ${preset.label.toLowerCase()} world`
 
   return (
@@ -248,13 +336,14 @@ export default function App() {
 
           <Viewport
             params={enginePar}
+            system={system}
             scanNonce={scanNonce}
             resetNonce={resetNonce}
-            onPick={visitSolar}
+            onPick={visitBody}
           />
 
           <div className="view-title">
-            <h2>{view === 'system' ? 'The Solar System' : name}</h2>
+            <h2>{view === 'system' ? system.name : name}</h2>
             <p>{subtitle}</p>
           </div>
 
@@ -305,12 +394,23 @@ export default function App() {
             )}
 
             {tab === 'solar' && (
-              <MilkyWayPanel
+              <SystemsPanel
+                system={system}
                 view={view}
                 sizeMode={sizeMode}
                 onView={setView}
                 onSizeMode={setSizeMode}
-                onVisit={visitSolar}
+                onVisit={visitBody}
+                onSystem={chooseSystem}
+                onAddCurrent={addCurrentWorld}
+                currentWorld={name}
+                onSave={onSaveSystem}
+                saving={systemSaving}
+                savedSlug={savedSystemSlug}
+                systems={systems}
+                systemsLoading={systemsLoading}
+                systemsError={systemsError}
+                onOpenSaved={openSavedSystem}
               />
             )}
 

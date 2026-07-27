@@ -35,6 +35,17 @@ export function moonPeriodSec(P: number): number {
 }
 
 /**
+ * Kepler's third law: P² = a³ / M★, in years, AU and solar masses.
+ *
+ * Custom systems ask the user for a distance, not a period — a year is a
+ * consequence of where you put a planet, so deriving it keeps invented systems
+ * behaving like real ones instead of drifting into nonsense.
+ */
+export function periodFor(a: number, starMass = 1): number {
+  return Math.sqrt(Math.pow(Math.max(1e-4, a), 3) / Math.max(0.02, starMass))
+}
+
+/**
  * Solve Kepler's equation M = E - e·sin(E) for eccentric anomaly E.
  * Newton-Raphson; five iterations is ample for e < 0.8.
  */

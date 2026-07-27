@@ -55,7 +55,7 @@ test('surprise me produces a different world', async ({ page }) => {
 
 test('the spectrometer reports a real planet with its measured profile', async ({ page }) => {
   await page.goto('/')
-  await page.getByRole('tab', { name: 'Milky Way' }).click()
+  await page.getByRole('tab', { name: 'Systems' }).click()
   await page.getByRole('button', { name: /Saturn/ }).click()
   await expect(page.getByRole('heading', { name: 'Saturn' })).toBeVisible()
 
@@ -72,7 +72,7 @@ test('the spectrometer reports a real planet with its measured profile', async (
 
 test('the orbit view renders the solar system', async ({ page }) => {
   await page.goto('/')
-  await page.getByRole('tab', { name: 'Milky Way' }).click()
+  await page.getByRole('tab', { name: 'Systems' }).click()
   await page.getByRole('button', { name: 'Orbit view' }).click()
   await expect(page.getByRole('heading', { name: 'The Solar System' })).toBeVisible()
   await page.waitForTimeout(3000)
@@ -90,7 +90,7 @@ test('every planet texture loads', async ({ page }) => {
   })
 
   await page.goto('/')
-  await page.getByRole('tab', { name: 'Milky Way' }).click()
+  await page.getByRole('tab', { name: 'Systems' }).click()
   await page.getByRole('button', { name: 'Orbit view' }).click()
   await page.waitForTimeout(4000)
 
@@ -106,6 +106,50 @@ test('every planet texture loads', async ({ page }) => {
   for (const f of ['mercury.jpg', 'venus.jpg', 'earth.jpg', 'mars.jpg', 'jupiter.jpg', 'saturn.jpg', 'uranus.jpg', 'neptune.jpg']) {
     expect(loaded).toContain(f)
   }
+})
+
+test('a system built from your own worlds renders in orbit', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Systems' }).click()
+  await page.getByRole('button', { name: 'New, empty' }).click()
+
+  // Nothing orbits it yet, so there is nothing to save.
+  await expect(page.getByRole('button', { name: /Save & share/ })).toBeDisabled()
+
+  for (let i = 0; i < 3; i++) {
+    await page.getByRole('button', { name: /^\+ Add/ }).click()
+    await page.getByRole('button', { name: 'Surprise me' }).click()
+    await page.getByRole('tab', { name: 'Systems' }).click()
+  }
+
+  await expect(page.getByLabel('Name of world 3')).toBeVisible()
+  await expect(page.getByRole('button', { name: /Save & share/ })).toBeEnabled()
+
+  await page.getByRole('button', { name: 'Orbit view' }).click()
+  await page.waitForTimeout(3000)
+  expect(await hasDrawnGeometry(page)).toBe(true)
+
+  // Each world orbits further out than the last, so a year gets longer too.
+  await page.getByRole('button', { name: 'Body list' }).click()
+  const cards = page.locator('.card .sub')
+  const au = await cards.evaluateAll((els) =>
+    els.map((e) => Number(/([\d.]+) AU/.exec(e.textContent ?? '')?.[1] ?? NaN)),
+  )
+  expect(au.length).toBeGreaterThanOrEqual(3)
+  for (let i = 1; i < au.length; i++) expect(au[i]).toBeGreaterThan(au[i - 1])
+})
+
+test('an imagined system is never presented as a measured one', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Systems' }).click()
+
+  await expect(page.getByText(/every number measured/)).toBeVisible()
+
+  await page.getByRole('button', { name: 'Andromeda' }).click()
+  await expect(page.getByText(/not a measured system/)).toBeVisible()
+  await page.getByRole('button', { name: 'Orbit view' }).click()
+  await page.waitForTimeout(3000)
+  expect(await hasDrawnGeometry(page)).toBe(true)
 })
 
 test('the gallery degrades gracefully when the API is unavailable', async ({ page }) => {

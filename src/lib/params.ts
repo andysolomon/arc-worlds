@@ -98,7 +98,8 @@ export function sanitize(input: unknown): PlanetParams {
 
 const TEXTURE_RE = /^images2k\/[a-z]+\.(jpg|png)$/
 
-function safeTexture(v: unknown): string | null {
+/** Asset paths are only ever accepted if they name one of our own textures. */
+export function safeTexture(v: unknown): string | null {
   return typeof v === 'string' && TEXTURE_RE.test(v) ? v : null
 }
 
@@ -109,9 +110,9 @@ function safeTexture(v: unknown): string | null {
  * mud — this picks a world type and jitters that type's defaults by ±0.2, so
  * the result still reads as a coherent Meadow or Ember world.
  */
-export function surprise(seed = (Math.random() * 99999) | 0) {
+export function surprise(seed = (Math.random() * 99999) | 0, forced?: PresetKey) {
   const r = mulberry32(seed * 2654435761)
-  const preset = PRESETS[(r() * PRESETS.length) | 0]
+  const preset = (forced && PRESETS.find((p) => p.key === forced)) || PRESETS[(r() * PRESETS.length) | 0]
   const def = preset.def
   const j = (v: number | undefined) => Math.max(0, Math.min(1, (v ?? 0.5) + (r() - 0.5) * 0.4))
 

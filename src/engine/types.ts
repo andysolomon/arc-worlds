@@ -126,3 +126,65 @@ export interface RealBody {
 
 /** name, a (AU), period (yr), eccentricity, inclination, node, perihelion, radius (Earth radii). */
 export type OrbitRow = [string, number, number, number, number, number, number, number]
+
+/**
+ * One body in orbit: the world it is, and the path it takes.
+ *
+ * A world on its own has no position — `PlanetParams` describes a planet, not
+ * a place. Everything that only means something relative to a star lives here
+ * instead, which is why a world can be dropped into any system unchanged.
+ */
+export interface SystemBody {
+  name: string
+  /** Semi-major axis, AU. */
+  a: number
+  /** Orbital period in Earth years. */
+  period: number
+  /** Orbital eccentricity, 0 is circular. */
+  e: number
+  /** Inclination to the system's reference plane, degrees. */
+  inc: number
+  /** Longitude of ascending node, degrees. */
+  node: number
+  /** Longitude of perihelion, degrees. */
+  peri: number
+  /** Equatorial radius in Earth radii. */
+  radius: number
+  /** Axial tilt, degrees. */
+  tilt: number
+  /** Oblateness (flattening). */
+  flattening: number
+  /** Sidereal rotation period in hours; negative is retrograde. */
+  day: number
+  /** The world itself — what the sculptor edits and the spectrometer reads. */
+  params: PlanetParams
+  /** Measured bodies carry a photographic map; sculpted ones are baked. */
+  texture?: string | null
+  /** A hand-built ring, for measured bodies. Sculpted worlds derive theirs. */
+  ring?: RingConfig | null
+}
+
+export interface Star {
+  name: string
+  /** Tint applied to the star's surface shader. White leaves it as the Sun. */
+  color: number
+  /** Mass in solar masses. Sets how fast everything else orbits. */
+  mass: number
+}
+
+/**
+ * Where a system's numbers come from. The Solar System is measured and this
+ * project is careful about saying so, which means anything invented has to be
+ * marked as invented rather than sitting alongside it unlabelled.
+ */
+export type SystemOrigin = 'measured' | 'imagined' | 'custom'
+
+export interface SystemDef {
+  id: string
+  name: string
+  /** One-line caption shown under the name. */
+  sub: string
+  origin: SystemOrigin
+  star: Star
+  bodies: SystemBody[]
+}

@@ -2,10 +2,10 @@
 
 Sculpt a planet, then see who lives there.
 
-A browser-based 3D planet sculptor and solar-system viewer built on Three.js. Generate procedural worlds from a seed and shape them with a handful of sliders, run a spectrometer over them to find out what the atmosphere is made of, or leave your own worlds behind and go visit the eight real planets — rendered from measured data, moons and rings included.
+A browser-based 3D planet sculptor and star-system builder on Three.js. Generate procedural worlds from a seed and shape them with a handful of sliders, run a spectrometer over them to find out what the atmosphere is made of, visit the eight real planets rendered from measured data, then arrange worlds of your own into a system and set them orbiting.
 
-The renderer runs entirely in the browser. Saving a world stores its parameters in Postgres and
-gives you a permanent link to it, so worlds can be shared and browsed in a public gallery.
+The renderer runs entirely in the browser. Saving a world or a system stores its parameters in
+Postgres and gives you a permanent link, so both can be shared and browsed.
 
 ## Running it
 
@@ -16,13 +16,13 @@ bun install
 bun dev
 ```
 
-The gallery needs a Postgres database. Everything else — sculpting, scanning,
-the whole solar system — works without one; the Worlds tab simply reports that
-it cannot reach the gallery.
+Saving and sharing needs a Postgres database. Everything else — sculpting,
+scanning, the Solar System, building a system of your own — works without one;
+the affected panels simply report that they cannot reach the gallery.
 
 ```sh
 vercel env pull .env.local   # DATABASE_URL, provisioned by the Neon integration
-bun run db:push              # create the worlds table
+bun run db:push              # create the worlds and systems tables
 ```
 
 | Command | What it does |
@@ -45,10 +45,20 @@ serve the repo over HTTP and open `prototype/Little Worlds.dc.html`.
 
 **Scan** — a spectrometer readout for whatever world is currently on screen, split across Atmosphere, Surface & water, and Light. It reports composition by volume with a per-gas explanation, surface mineralogy, the state of any water, a biosignature assessment, and the specific absorption lines that would give each result away. The chemistry responds to the sliders: push sea level and cloud cover up on a Meadow world and you get a nitrogen–oxygen atmosphere flagged as out of equilibrium; drop them and the same seed reads as anoxic nitrogen–CO₂.
 
-**Milky Way** — the real solar system, in two views.
+**Systems** — a star and the worlds that orbit it, in two views.
 
-- *Planet list* — visit any of the eight planets and see it rendered from its real texture, then hit **Reshape** to pull it into the sculptor and start editing.
-- *Orbit view* — all eight orbiting a procedural sun on their real elliptical, inclined paths, at real relative orbital pace (one Earth year ≈ 14 seconds). **Same size** draws every planet alike so the small ones stay findable; **To scale** ranks them by true size. Click any planet to visit it.
+- *Body list* — visit any world in the system and see it rendered on its own, then hit **Reshape** to pull it into the sculptor and start editing.
+- *Orbit view* — everything orbiting its star on real elliptical, inclined paths at the pace its own orbit implies (one Earth year ≈ 14 seconds). **Same size** draws every planet alike so the small ones stay findable; **To scale** ranks them by true size. Click any planet to visit it.
+
+Three kinds of system sit side by side, and the tab is careful about which is which:
+
+- **The Solar System** — ours, every number measured. Read-only; duplicating it gives you an editable copy.
+- **Andromeda** — an invented system around an orange dwarf, labelled as invented wherever it appears.
+- **Yours** — duplicate an existing system, roll a whole one from a seed, or start empty and add the world you are sculpting. Set each world's distance, size and orbital stretch, pick a star, and save it for a permanent `/s/:slug` link.
+
+A world knows nothing about where it is: `PlanetParams` describes a planet, and everything that
+only means something relative to a star — distance, eccentricity, inclination, axial tilt — lives on
+the system's body instead. That is what lets any world drop into any system unchanged.
 
 **Worlds** — the gallery of recently saved worlds. Saving gives you a permanent `/w/:slug` link
 you can send to anyone; opening one regenerates it in full 3D from its stored parameters. No
@@ -65,20 +75,27 @@ The real planets are driven by measured values in `src/engine/planets.ts` rather
 
 Long-period moons are eased in wall-clock time so Iapetus and Nereid still visibly move without rushing the inner moons, and orbital distances are compressed — order-preserving, but not to scale, so that everything stays in frame.
 
+Invented systems get the same treatment. You give a world a distance and its year follows from
+Kepler's third law, `P² = a³ / M★` — so moving a planet outward slows it down, and making the star
+heavier speeds everything up. The same law reproduces all eight measured periods to the nearest
+year, which is what makes it fair to use for the imagined ones.
+
 ## Layout
 
 ```
 src/engine/      the renderer, with no knowledge of React
-  types.ts       PlanetParams — the entire description of a world
+  types.ts       PlanetParams and SystemDef — the whole description of a world and of a system
   noise.ts       seeded PRNG, 3D simplex noise, fbm
-  scale.ts       scale models and Kepler solving
+  scale.ts       scale models, Kepler solving, orbital periods
   planets.ts     measured data for the real bodies
   palettes.ts    colour ramps per world type
-  shaders.ts     GLSL for rings, gas giants, the sun and atmospheres
+  surface.ts     what a world looks like, as a function of direction
+  bake.ts        that surface rendered to a map, for orbit-view planets
+  shaders.ts     GLSL for rings, gas giants, stars and atmospheres
   materials.ts   ring/moon geometry and texture generation
   viewport.ts    PlanetViewport — owns the scene and the animation loop
-src/data/        PRESETS, SOLAR, and the spectrometer datasets
-src/lib/         params (defaults, validation, randomisation), scan, api client
+src/data/        PRESETS, SOLAR, the built-in systems, and the spectrometer datasets
+src/lib/         params and systems (defaults, validation, generation), scan, api client
 src/components/  React UI, one component per tab
 api/             Vercel Functions
 db/              Drizzle schema and lazy Neon client
@@ -94,13 +111,29 @@ drift out of date the moment the renderer changed, whereas params always render
 correctly against the engine as it exists today. Opening a shared world
 regenerates it in full 3D rather than showing a picture of it.
 
-`PlanetViewport` owns its canvas, its GPU resources and its own animation loop.
-React creates it once and feeds it params imperatively — re-rendering React
-never rebuilds the scene.
+**One surface, two views.** `engine/surface.ts` is the only place that decides
+what a sculpted world looks like. The single-world view feeds it sphere
+vertices and writes vertex colours; the orbit view feeds it equirectangular
+texels and bakes a small map, because at a few dozen pixels across a planet
+does not need displaced geometry and its own water, cloud and atmosphere
+shells. Sharing the function is the point — otherwise the same seed could read
+as two different planets depending on which view you were in. `surface.test.ts`
+holds 66 samples captured from the renderer *before* that code was extracted,
+so the refactor is provably invisible to anyone's saved world.
 
-Params arriving over the wire are re-sanitised on the server with the same
-`sanitize()` the UI uses, so a hand-crafted payload cannot push an out-of-range
-value or an arbitrary asset path into anyone else's renderer.
+`PlanetViewport` owns its canvas, its GPU resources and its own animation loop.
+React creates it once and feeds it params and a system imperatively —
+re-rendering React never rebuilds the scene. The engine diffs a system in two
+layers: appearance and orbits. Changing a distance moves a planet without
+re-baking any textures; only a world's own identity triggers a rebuild.
+
+Params and systems arriving over the wire are re-sanitised on the server with
+the same functions the UI uses, so a hand-crafted payload cannot push an
+out-of-range value or an arbitrary asset path into anyone else's renderer.
+`sanitizeSystem()` additionally forces `origin` back to `custom` and re-derives
+every orbital period from the distance and the star: a payload can neither
+claim its invented numbers are measured ones, nor orbit at a speed its own
+geometry cannot justify.
 
 ## Deployment
 

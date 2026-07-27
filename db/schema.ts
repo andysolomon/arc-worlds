@@ -31,3 +31,31 @@ export const worlds = pgTable(
 
 export type World = typeof worlds.$inferSelect
 export type NewWorld = typeof worlds.$inferInsert
+
+/**
+ * A saved system: a star and the worlds that orbit it.
+ *
+ * Same bargain as `worlds` — `def` holds the whole thing, including each
+ * body's params, so opening a shared system rebuilds it in 3D rather than
+ * showing a picture of one. It is a few kilobytes rather than one, because a
+ * system is several worlds plus their orbits.
+ */
+export const systems = pgTable(
+  'systems',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** Short, URL-safe public identifier used in /s/:slug. */
+    slug: text('slug').notNull().unique(),
+    name: text('name').notNull(),
+    def: jsonb('def').notNull(),
+    /** Accent colour and caption, denormalised so the list needs no joins. */
+    dot: text('dot').notNull(),
+    sub: text('sub').notNull(),
+    editToken: text('edit_token').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('systems_created_at_idx').on(t.createdAt)],
+)
+
+export type System = typeof systems.$inferSelect
+export type NewSystem = typeof systems.$inferInsert

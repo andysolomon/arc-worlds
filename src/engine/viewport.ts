@@ -1,14 +1,16 @@
 import * as THREE from 'three'
+import { bakeWorld } from './bake'
 import { customRing, moonGeo, ringGeo, ringMaterial, toneTex } from './materials'
-import { fbm, makeNoise, mulberry32, type Noise3 } from './noise'
-import { ORBITS, REAL, realKeyFor } from './planets'
+import { mulberry32, type Noise3 } from './noise'
+import { cloudAt, makeSurface, noiseFor } from './surface'
+import { REAL } from './planets'
 import { isGas, PALETTES } from './palettes'
 import {
   D2R, DAY_SEC, kepler, moonDist, moonPeriodSec, moonRad,
   sameDist, SIZE_MAX, sizeMap, visDist, YEAR_SEC,
 } from './scale'
 import { ATMO_FRAG, ATMO_VERT, GAS_FRAG, GAS_VERT, SUN_FRAG, SUN_VERT } from './shaders'
-import type { Moon, PlanetParams, RingConfig } from './types'
+import type { Moon, PlanetParams, RingConfig, SystemBody, SystemDef } from './types'
 
 interface MoonInstance {
   orbit: THREE.Group
@@ -21,9 +23,14 @@ interface MoonInstance {
 
 interface SysNode {
   index: number
+  plane: THREE.Group
   node: THREE.Group
   tilt: THREE.Group
   spin: THREE.Group
+  mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>
+  ringMesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial> | null
+  /** Baked map, owned by this node so it can be freed on rebuild. */
+  baked: THREE.Texture | null
   a: number
   e: number
   period: number
@@ -35,8 +42,25 @@ interface SysNode {
   angle: number
   day: number
   f: number
-  lineSame: THREE.Line
-  lineScale: THREE.Line
+  lineSame: THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>
+  lineScale: THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>
+}
+
+/**
+ * Identity of a body's *appearance*. Changing any of it means the meshes have
+ * to be rebuilt; changing only its orbit does not, which is what keeps
+ * dragging a distance slider from re-baking every planet in the system.
+ */
+function bodyKey(b: SystemBody): string {
+  const p = b.params
+  const params = (Object.keys(p) as Array<keyof PlanetParams>)
+    .sort()
+    .map((k) => `${k}=${String(p[k])}`)
+    .join(',')
+  return [
+    b.name, b.radius, b.tilt, b.flattening, b.day,
+    b.texture ?? '', JSON.stringify(b.ring ?? null), params,
+  ].join('|')
 }
 
 /**
@@ -75,10 +99,23 @@ export class PlanetViewport {
   private dirs: Float32Array | null = null
 
   private sys?: THREE.Group
+  private sysRoot?: THREE.Group
   private sunMesh?: THREE.Mesh
   private sunMat?: THREE.ShaderMaterial
+  private sysGeo?: THREE.SphereGeometry
   private sysPlanets: THREE.Mesh[] = []
   private sysNodes: SysNode[] = []
+  private sysDef: SystemDef | null = null
+  private sysId = ''
+  private sysShape = ''
+  private sysOrbitKey = ''
+  private sysCount = -1
+  /** Set when the view has changed enough that the camera should refit. */
+  private needFrame = false
+  /** Pending texture bakes, drained one per frame so a rebuild never stutters. */
+  private sysBakes: Array<() => void> = []
+  private fitSame = 11
+  private fitScale = 86
 
   private p: PlanetParams | null = null
   private dirty = false
@@ -292,6 +329,15 @@ export class PlanetViewport {
     this.dirty = true
   }
 
+  /**
+   * Hand the orbit view a system to draw. Held by reference and diffed on the
+   * next frame, so passing an unchanged definition costs nothing.
+   */
+  setSystem(def: SystemDef) {
+    this.sysDef = def
+    this.dirty = true
+  }
+
   /** Run the spectrometer sweep animation. */
   scan(dur = 2000) {
     this.scanT0 = performance.now()
@@ -308,6 +354,7 @@ export class PlanetViewport {
     this.stopped = true
     cancelAnimationFrame(this.raf)
     this.ro.disconnect()
+    this.clearBodies()
     for (const t of Object.values(this.texCache)) t.dispose()
     this.scene.traverse((o) => {
       const m = o as THREE.Mesh
@@ -384,7 +431,8 @@ export class PlanetViewport {
   }
 
   private zMax() {
-    return this.p?.mode === 'system' ? 260 : 9
+    // Far enough out to see the whole system, whatever shape it is.
+    return this.p?.mode === 'system' ? Math.max(260, this.fitScale * 3) : 9
   }
 
   private pick(e: PointerEvent) {
@@ -494,13 +542,14 @@ export class PlanetViewport {
     return maxD
   }
 
+  /** Create the star and the container everything orbits in, once. */
   private ensureSystem() {
     if (this.sys) return
     this.sys = new THREE.Group()
     this.group.add(this.sys)
 
     this.sunMat = new THREE.ShaderMaterial({
-      uniforms: { uTime: { value: 0 } },
+      uniforms: { uTime: { value: 0 }, uTint: { value: new THREE.Color(0xffffff) } },
       vertexShader: SUN_VERT,
       fragmentShader: SUN_FRAG,
     })
@@ -514,88 +563,199 @@ export class PlanetViewport {
     sunLight.decay = 0
     this.sys.add(sunLight)
 
-    this.sysPlanets = []
+    // One sphere serves every planet; only the material and scale differ.
+    this.sysGeo = new THREE.SphereGeometry(1, 48, 32)
+    this.sysRoot = new THREE.Group()
+    this.sys.add(this.sysRoot)
+  }
+
+  /** Tear down the current bodies. Called before rebuilding, and on dispose. */
+  private clearBodies() {
+    for (const u of this.sysNodes) {
+      u.mesh.material.dispose()
+      u.baked?.dispose()
+      if (u.ringMesh) {
+        u.ringMesh.geometry.dispose()
+        u.ringMesh.material.dispose()
+      }
+      for (const l of [u.lineSame, u.lineScale]) {
+        l.geometry.dispose()
+        l.material.dispose()
+      }
+      u.plane.removeFromParent()
+    }
     this.sysNodes = []
+    this.sysPlanets = []
+    this.sysBakes = []
+  }
 
-    for (let i = 0; i < 8; i++) {
-      const o = ORBITS[i]
-      const key = realKeyFor(o[0])
-      const R = REAL[key]
+  /**
+   * Build one mesh per body. Measured bodies get their photographic map;
+   * sculpted ones get a map baked from the very same `Surface` the single-world
+   * view uses, so a world looks like itself wherever you meet it.
+   */
+  private buildBodies(def: SystemDef) {
+    this.clearBodies()
 
-      const aSame = sameDist(o[1])
-      const aScale = visDist(o[1])
-
+    def.bodies.forEach((b, i) => {
       const plane = new THREE.Group()
-      plane.rotation.y = o[5] * D2R // longitude of ascending node
-      plane.rotation.x = o[4] * D2R // inclination to the ecliptic
-      this.sys.add(plane)
+      this.sysRoot!.add(plane)
 
       const node = new THREE.Group()
       plane.add(node)
       const tilt = new THREE.Group()
-      tilt.rotation.z = R.ob * D2R
+      tilt.rotation.z = b.tilt * D2R
       node.add(tilt)
       const spin = new THREE.Group()
       tilt.add(spin)
 
-      const m = new THREE.Mesh(
-        new THREE.SphereGeometry(1, 48, 32),
-        new THREE.MeshStandardMaterial({
-          map: this.loadTex(`images2k/${o[0]}.jpg`), roughness: 1, metalness: 0,
-        }),
-      )
-      m.scale.set(1, 1 - R.f, 1)
+      const pal = PALETTES[b.params.preset] ?? PALETTES.temperate
+      const mat = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0 })
+      if (b.texture) {
+        mat.map = this.loadTex(b.texture)
+      } else {
+        // Until the bake lands, show the world's own mid-tone rather than a
+        // placeholder grey, so the system reads correctly on the first frame.
+        mat.color.set(isGas(pal) ? pal.bands[(pal.bands.length / 2) | 0][1] : pal.mid)
+      }
+      const m = new THREE.Mesh(this.sysGeo!, mat)
+      m.scale.set(1, 1 - b.flattening, 1)
       spin.add(m)
 
-      const peri = (o[6] - o[5]) * D2R
-      const cp = Math.cos(peri)
-      const spp = Math.sin(peri)
-      const ecc = o[3]
-
-      const mkLine = (AA: number) => {
-        const pts: THREE.Vector3[] = []
-        for (let k = 0; k <= 200; k++) {
-          const E = (k / 200) * 6.2832
-          const x = AA * (Math.cos(E) - ecc)
-          const z = AA * Math.sqrt(1 - ecc * ecc) * Math.sin(E)
-          pts.push(new THREE.Vector3(x * cp - z * spp, 0, x * spp + z * cp))
-        }
-        return new THREE.Line(
-          new THREE.BufferGeometry().setFromPoints(pts),
+      const mkLine = () =>
+        new THREE.Line(
+          new THREE.BufferGeometry(),
           new THREE.LineBasicMaterial({ color: 0x6a5a80, transparent: true, opacity: 0.4 }),
         )
-      }
-
-      const lineSame = mkLine(aSame)
-      const lineScale = mkLine(aScale)
-      lineScale.visible = false
+      const lineSame = mkLine()
+      const lineScale = mkLine()
       plane.add(lineSame)
       plane.add(lineScale)
 
+      const ring = b.ring ?? (b.params.rings ? customRing(b.params, pal) : null)
+      let ringMesh: SysNode['ringMesh'] = null
+      if (ring) {
+        ringMesh = new THREE.Mesh(ringGeo(ring.inner, ring.outer), ringMaterial())
+        // Rings lie in the body's equatorial plane; a sculpted world may cant
+        // them further, exactly as it does in the single-world view.
+        ringMesh.rotation.x = -Math.PI / 2
+        ringMesh.rotation.z = b.ring ? 0 : ((b.params.ringTilt ?? 0.5) - 0.5) * 1.5708
+        const u = ringMesh.material.uniforms
+        u.uColor.value.set(ring.color)
+        u.uOpacity.value = ring.opacity
+        u.uProfile.value = ring.profile || 0
+        u.uBandCount.value = ring.bands ? ring.bands.length : 0
+        if (ring.bands) {
+          for (let k = 0; k < ring.bands.length; k++) {
+            const bd = ring.bands[k]
+            u.uBands.value[k].set(bd[0], bd[1], bd[2], bd[3])
+          }
+        }
+        if (ring.map) {
+          u.uMap.value = this.loadTex(ring.map)
+          u.uHasMap.value = 1
+        }
+        u.uL.value.set(1, 0, 0)
+        tilt.add(ringMesh)
+      }
+
       const ud: SysNode = {
-        index: i, node, tilt, spin, a: aSame, e: o[3], period: o[2],
-        aSame, aScale, rSame: 0.24, rScale: sizeMap(o[7] * 6371) * 0.85,
-        peri, angle: Math.random() * 6.283, day: R.day, f: R.f, lineSame, lineScale,
+        index: i, plane, node, tilt, spin, mesh: m, ringMesh, baked: null,
+        a: 0, e: b.e, period: b.period, aSame: 0, aScale: 0,
+        rSame: 0.24, rScale: sizeMap(b.radius * 6371) * 0.85,
+        peri: 0, angle: (i * 2.3994) % 6.2832, day: b.day, f: b.flattening,
+        lineSame, lineScale,
       }
       m.userData = ud
 
-      if (R.ring) {
-        const rm = new THREE.Mesh(ringGeo(R.ring.inner, R.ring.outer), ringMaterial())
-        rm.rotation.x = -Math.PI / 2
-        rm.material.uniforms.uColor.value.set(R.ring.color)
-        rm.material.uniforms.uOpacity.value = R.ring.opacity
-        rm.material.uniforms.uProfile.value = R.ring.profile || 0
-        if (R.ring.map) {
-          rm.material.uniforms.uMap.value = this.loadTex(R.ring.map)
-          rm.material.uniforms.uHasMap.value = 1
-        }
-        rm.material.uniforms.uL.value.set(1, 0, 0)
-        tilt.add(rm)
+      if (!b.texture) {
+        const P = b.params
+        this.sysBakes.push(() => {
+          ud.baked = bakeWorld(P)
+          mat.map = ud.baked
+          mat.color.set(0xffffff)
+          mat.needsUpdate = true
+        })
       }
 
       this.sysPlanets.push(m)
       this.sysNodes.push(ud)
+    })
+  }
+
+  /** Apply the orbital elements, which can change without a rebuild. */
+  private applyOrbits(def: SystemDef) {
+    this.fitSame = 0
+    this.fitScale = 0
+
+    def.bodies.forEach((b, i) => {
+      const u = this.sysNodes[i]
+      if (!u) return
+
+      u.plane.rotation.y = b.node * D2R // longitude of ascending node
+      u.plane.rotation.x = b.inc * D2R // inclination to the reference plane
+      u.e = b.e
+      u.period = b.period
+      u.peri = (b.peri - b.node) * D2R
+      u.aSame = sameDist(b.a)
+      u.aScale = visDist(b.a)
+
+      const cp = Math.cos(u.peri)
+      const sp = Math.sin(u.peri)
+      const apo = 1 + b.e
+      this.fitSame = Math.max(this.fitSame, u.aSame * apo)
+      this.fitScale = Math.max(this.fitScale, u.aScale * apo)
+
+      const shape = (line: THREE.Line<THREE.BufferGeometry>, AA: number) => {
+        const pts: THREE.Vector3[] = []
+        for (let k = 0; k <= 200; k++) {
+          const E = (k / 200) * 6.2832
+          const x = AA * (Math.cos(E) - b.e)
+          const z = AA * Math.sqrt(1 - b.e * b.e) * Math.sin(E)
+          pts.push(new THREE.Vector3(x * cp - z * sp, 0, x * sp + z * cp))
+        }
+        line.geometry.dispose()
+        line.geometry = new THREE.BufferGeometry().setFromPoints(pts)
+      }
+      shape(u.lineSame, u.aSame)
+      shape(u.lineScale, u.aScale)
+    })
+  }
+
+  /**
+   * How far back to sit so the whole system is on screen.
+   *
+   * A system is a disc seen from above at `rotX`, so its on-screen height is
+   * only a fraction of its radius and the width is what binds. Deriving this
+   * rather than hard-coding a distance is what lets a five-world system you
+   * built yourself frame as well as the eight-planet one.
+   */
+  private frameFor(radius: number): number {
+    const halfV = Math.tan((this.camera.fov * D2R) / 2)
+    const byWidth = radius / (halfV * Math.max(0.4, this.camera.aspect))
+    const byHeight = (radius * Math.abs(Math.sin(this.rotX)) + 1.2) / halfV
+    return Math.max(byWidth, byHeight) * 1.06
+  }
+
+  /**
+   * Frame the system. "Same size" fits the whole thing; "to scale" deliberately
+   * starts inside the outermost orbit, because at true relative spacing a view
+   * wide enough to contain Neptune leaves the inner planets subpixel.
+   */
+  private applySizeMode(sm: 'same' | 'scale', reframe: boolean) {
+    this.sizeMode = sm
+    const scaled = sm === 'scale'
+    for (const u of this.sysNodes) {
+      u.a = scaled ? u.aScale : u.aSame
+      u.tilt.scale.setScalar(scaled ? u.rScale : u.rSame) // scales rings too
+      u.lineSame.visible = !scaled
+      u.lineScale.visible = scaled
     }
+    this.sunMesh!.scale.setScalar(scaled ? SIZE_MAX : 1.15)
+
+    const fit = scaled ? this.fitScale * 0.97 : this.frameFor(this.fitSame)
+    this.fitZ = Math.max(4, fit)
+    if (reframe) this.camZ = this.fitZ
   }
 
   /* --- regeneration ----------------------------------------------------- */
@@ -630,9 +790,10 @@ export class PlanetViewport {
       this.detail = det
     }
     if (P.seed !== this.seed) {
-      this.n1 = makeNoise(P.seed | 0)
-      this.n2 = makeNoise((P.seed | 0) ^ 0x51ed270b)
-      this.nc = makeNoise((P.seed | 0) + 777)
+      const n = noiseFor(P.seed)
+      this.n1 = n.n1
+      this.n2 = n.n2
+      this.nc = n.nc
       this.seed = P.seed
       this.cloudKey = ''
     }
@@ -739,98 +900,27 @@ export class PlanetViewport {
     const pa = this.geo!.attributes.position.array as Float32Array
     const ca = this.geo!.attributes.color.array as Float32Array
     const dirs = this.dirs!
-    const f = 1.15 + (P.roughness || 0) * 2.5
-    const amp = 0.12
-    const sea = (P.water || 0) * 1.5 - 0.75
-    const mtn = P.mountains || 0
-    const n1 = this.n1!
-    const n2 = this.n2!
+    const surface = makeSurface(P, this.n1!, this.n2!)
     const tmp = new THREE.Color()
 
-    if (isGas(pal)) {
-      const gasStops = pal.bands.map((b) => [b[0], new THREE.Color(b[1])] as const)
-      for (let i = 0; i < dirs.length; i += 3) {
-        const gx = dirs[i], gy = dirs[i + 1], gz = dirs[i + 2]
-        const wob =
-          (fbm(n1, gx * 2.2, gy * 7, gz * 2.2, 4) * 0.07 +
-            fbm(n2, gx * 4 + 9, gy * 4 + 9, gz * 4 + 9, 3) * 0.03) *
-          (0.35 + (P.roughness || 0) * 1.7)
-        const gt = Math.min(1, Math.max(0, gy * 0.5 + 0.5 + wob))
-        const gr = 1 + fbm(n1, gx * 1.3, gy * 1.3, gz * 1.3, 3) * 0.012
-        pa[i] = gx * gr
-        pa[i + 1] = gy * gr
-        pa[i + 2] = gz * gr
-
-        let a = gasStops[0]
-        let b = gasStops[gasStops.length - 1]
-        for (let gs = 0; gs < gasStops.length - 1; gs++) {
-          if (gt >= gasStops[gs][0] && gt <= gasStops[gs + 1][0]) {
-            a = gasStops[gs]
-            b = gasStops[gs + 1]
-            break
-          }
-        }
-        tmp.copy(a[1]).lerp(b[1], Math.min(1, (gt - a[0]) / Math.max(1e-6, b[0] - a[0])))
-        ca[i] = tmp.r
-        ca[i + 1] = tmp.g
-        ca[i + 2] = tmp.b
-      }
-    } else {
-      const C = (k: keyof typeof pal) => new THREE.Color(pal[k] as number)
-      const cDeep = C('deep'), cWater = C('water'), cSand = C('sand')
-      const cLow = C('low'), cMid = C('mid'), cHigh = C('high'), cSnow = C('snow')
-      const cShal = cWater.clone().lerp(cSand, 0.5)
-      const stops: Array<[number, THREE.Color]> = [
-        [0, cSand], [0.1, cSand], [0.18, cLow], [0.45, cMid],
-        [0.72, cHigh], [0.88, cSnow], [1.01, cSnow],
-      ]
-
-      for (let i = 0; i < dirs.length; i += 3) {
-        const x = dirs[i], y = dirs[i + 1], z = dirs[i + 2]
-        const cont = fbm(n1, x * f, y * f, z * f, 5)
-        const rr = 1 - Math.abs(fbm(n2, x * f * 1.8 + 5.2, y * f * 1.8 + 5.2, z * f * 1.8 + 5.2, 4))
-        const e = cont * 0.62 + rr * rr * mtn * 0.9 - mtn * 0.2
-        const r = 1 + e * amp
-        pa[i] = x * r
-        pa[i + 1] = y * r
-        pa[i + 2] = z * r
-
-        if (e < sea) {
-          tmp.copy(cShal).lerp(cDeep, Math.min(1, (sea - e) * 3.5))
-        } else {
-          const t = Math.min(1, (e - sea) / Math.max(0.25, (1 - sea) * 0.95))
-          let a = stops[0]
-          let b = stops[stops.length - 1]
-          for (let s = 0; s < stops.length - 1; s++) {
-            if (t >= stops[s][0] && t <= stops[s + 1][0]) {
-              a = stops[s]
-              b = stops[s + 1]
-              break
-            }
-          }
-          tmp.copy(a[1]).lerp(b[1], Math.min(1, (t - a[0]) / Math.max(1e-6, b[0] - a[0])))
-        }
-
-        const ay = Math.abs(y)
-        const iceAmt = P.ice || 0
-        const iceTh = 1 - iceAmt * 0.6
-        if (iceAmt > 0 && ay > iceTh) {
-          tmp.lerp(cSnow, Math.min(1, (ay - iceTh) / 0.08) * 0.95)
-        }
-        ca[i] = tmp.r
-        ca[i + 1] = tmp.g
-        ca[i + 2] = tmp.b
-      }
+    for (let i = 0; i < dirs.length; i += 3) {
+      const x = dirs[i], y = dirs[i + 1], z = dirs[i + 2]
+      const r = surface.sample(x, y, z, tmp)
+      pa[i] = x * r
+      pa[i + 1] = y * r
+      pa[i + 2] = z * r
+      ca[i] = tmp.r
+      ca[i + 1] = tmp.g
+      ca[i + 2] = tmp.b
     }
 
     this.geo!.attributes.position.needsUpdate = true
     this.geo!.attributes.color.needsUpdate = true
     this.geo!.computeVertexNormals()
 
-    const wr = 1 + sea * amp
     const wmat = this.water.material as THREE.MeshPhongMaterial
     this.water.visible = !isGas(pal) && (P.water || 0) > 0.03
-    this.water.scale.setScalar(Math.max(0.88, wr))
+    this.water.scale.setScalar(Math.max(0.88, surface.seaRadius))
     if (!isGas(pal)) {
       wmat.color.set(pal.water)
       wmat.emissive.set(pal.emissive ?? 0x000000)
@@ -859,6 +949,10 @@ export class PlanetViewport {
   }
 
   private regenSystem(P: PlanetParams) {
+    const def = this.sysDef
+    // Nothing to draw until a system has been handed to us. Falling back to a
+    // built-in here would make the engine depend on the app's data.
+    if (!def) return
     this.ensureSystem()
     if (this.mode !== 'system') {
       this.mode = 'system'
@@ -867,8 +961,36 @@ export class PlanetViewport {
       this.velX = 0
       this.velY = 0
       this.sizeMode = ''
+      // Arriving from the single-world view, the camera is still parked a
+      // planet's width away. It has to be pulled back to see a whole system.
+      this.needFrame = true
     }
     this.sys!.visible = true
+
+    this.sunMat!.uniforms.uTint.value.set(def.star.color)
+    if (def.id !== this.sysId) {
+      this.sysId = def.id
+      this.needFrame = true
+    }
+
+    const shape = def.bodies.map(bodyKey).join('~')
+    if (shape !== this.sysShape) {
+      // A system gaining or losing a world should come back into frame; nudging
+      // an existing one's distance should not yank the camera about.
+      if (def.bodies.length !== this.sysCount) this.needFrame = true
+      this.sysCount = def.bodies.length
+      this.sysShape = shape
+      this.buildBodies(def)
+      this.sysOrbitKey = ''
+    }
+    const orbits = def.bodies
+      .map((b) => `${b.a}:${b.e}:${b.inc}:${b.node}:${b.peri}:${b.period}`)
+      .join('~')
+    if (orbits !== this.sysOrbitKey) {
+      this.sysOrbitKey = orbits
+      this.applyOrbits(def)
+      this.sizeMode = '' // distances moved, so the size mode has to be reapplied
+    }
     this.amb.intensity = 0.16
     this.sun.visible = false
     this.sunDir.set(5, 3, 4).normalize()
@@ -884,16 +1006,11 @@ export class PlanetViewport {
 
     const sm = P.sizeMode === 'scale' ? 'scale' : 'same'
     if (sm !== this.sizeMode) {
-      this.sizeMode = sm
-      this.camZ = sm === 'scale' ? 86 : 11
-      this.fitZ = this.camZ
-      for (const u of this.sysNodes) {
-        u.a = sm === 'scale' ? u.aScale : u.aSame
-        u.tilt.scale.setScalar(sm === 'scale' ? u.rScale : u.rSame) // scales rings too
-        u.lineSame.visible = sm === 'same'
-        u.lineScale.visible = sm === 'scale'
-      }
-      this.sunMesh!.scale.setScalar(sm === 'scale' ? SIZE_MAX : 1.15)
+      // `sizeMode` is also blanked when the orbits move, so this runs on any
+      // change; whether the camera actually jumps is a separate question.
+      if (this.sizeMode !== '') this.needFrame = true
+      this.applySizeMode(sm, this.needFrame)
+      this.needFrame = false
     }
     this.stars.visible = P.stars !== false
   }
@@ -909,7 +1026,6 @@ export class PlanetViewport {
     const ctx = cv.getContext('2d')!
     const img = ctx.createImageData(w, h)
     const cov = P.clouds || 0
-    const th = 0.78 - cov * 0.55
 
     for (let y = 0; y < h; y++) {
       const phi = ((y + 0.5) / h) * Math.PI
@@ -917,8 +1033,7 @@ export class PlanetViewport {
       const cp = Math.cos(phi)
       for (let x = 0; x < w; x++) {
         const t2 = ((x + 0.5) / w) * 2 * Math.PI
-        const v = fbm(n, sp * Math.cos(t2) * 1.7, cp * 1.7, sp * Math.sin(t2) * 1.7, 4) * 0.5 + 0.5
-        const a = Math.min(1, Math.max(0, (v - th) / 0.22))
+        const a = cloudAt(n, cov, sp * Math.cos(t2), cp, sp * Math.sin(t2))
         const o = (y * w + x) * 4
         img.data[o] = 255
         img.data[o + 1] = 255
@@ -977,6 +1092,10 @@ export class PlanetViewport {
       this.cloudLast = now
       this.makeClouds()
     }
+
+    // One baked world per frame. A system of eight would otherwise cost a
+    // visible hitch the moment you opened it.
+    this.sysBakes.shift()?.()
 
     if (!this.dragging) {
       if (this.tgt) {
@@ -1082,10 +1201,7 @@ export class PlanetViewport {
       this.gasMesh.material.uniforms.uLL.value.copy(this.sunDir).applyMatrix3(this.m3g).normalize()
     }
     if (this.sys?.visible) {
-      for (const child of this.sysPlanets[5].userData.tilt.children as THREE.Object3D[]) {
-        const m = child as THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>
-        if (m.material?.uniforms?.uFace) this.ringLight(m)
-      }
+      for (const u of this.sysNodes) if (u.ringMesh) this.ringLight(u.ringMesh)
     }
 
     this.renderer.render(this.scene, this.camera)

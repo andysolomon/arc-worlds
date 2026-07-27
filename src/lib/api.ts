@@ -1,4 +1,4 @@
-import type { PlanetParams } from '../engine/types'
+import type { PlanetParams, SystemDef } from '../engine/types'
 
 export interface SavedWorld {
   slug: string
@@ -38,4 +38,37 @@ export async function saveWorld(name: string, params: PlanetParams): Promise<Sav
   })
   const body = await json<{ world: SavedWorld }>(res)
   return body.world
+}
+
+/* --- systems ------------------------------------------------------------- */
+
+export interface SavedSystem {
+  slug: string
+  name: string
+  def: SystemDef
+  dot: string
+  sub: string
+  createdAt: string
+}
+
+export async function listSystems(limit = 24): Promise<SavedSystem[]> {
+  const res = await fetch(`/api/systems?limit=${limit}`)
+  const body = await json<{ systems: SavedSystem[] }>(res)
+  return body.systems
+}
+
+export async function getSystem(slug: string): Promise<SavedSystem> {
+  const res = await fetch(`/api/systems/${encodeURIComponent(slug)}`)
+  const body = await json<{ system: SavedSystem }>(res)
+  return body.system
+}
+
+export async function saveSystem(def: SystemDef): Promise<SavedSystem> {
+  const res = await fetch('/api/systems', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ def }),
+  })
+  const body = await json<{ system: SavedSystem }>(res)
+  return body.system
 }

@@ -127,7 +127,7 @@ void main(){vP=normalize(position);vec4 w=modelMatrix*vec4(position,1.0);vW=w.xy
 `
 
 export const SUN_FRAG = /* glsl */ `${GNOISE}
-uniform float uTime;varying vec3 vP;varying vec3 vW;varying vec3 vC;
+uniform float uTime;uniform vec3 uTint;varying vec3 vP;varying vec3 vW;varying vec3 vC;
 void main(){
  vec3 n=vP; float t=uTime*0.06;
  float g=fbm3(n*8.0+vec3(0.0,t,0.0));
@@ -140,7 +140,9 @@ void main(){
  vec3 vd=normalize(cameraPosition-vW);
  float mu=max(dot(normalize(vW-vC),vd),0.0);
  c*=0.52+0.48*pow(mu,0.42);
- gl_FragColor=vec4(c,1.0);}
+ // Star colour. White leaves the Sun exactly as it was; cooler and hotter
+ // stars pull the whole granulation ramp with them rather than washing over it.
+ gl_FragColor=vec4(c*uTint,1.0);}
 `
 
 /** Rim-lit atmospheric shell, brighter on the sunward limb. */
