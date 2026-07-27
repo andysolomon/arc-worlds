@@ -129,9 +129,11 @@ export function SystemsPanel(props: Props) {
 
       <div className="note">
         <strong>{system.name}</strong> — {system.sub}.{' '}
-        {system.origin === 'measured'
-          ? 'Duplicate it to move the planets around; the original stays as it is.'
-          : 'Every number in it was invented, including the star.'}
+        {system.origin === 'measured' &&
+          'Duplicate it to move the planets around; the original stays as it is.'}
+        {system.origin === 'imagined' && 'Every number in it was invented, including the star.'}
+        {system.origin === 'custom' &&
+          'Yours to change — move the worlds about, add the one you are sculpting, then save it for a link.'}
       </div>
 
       <Segmented<'single' | 'system'>
