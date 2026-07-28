@@ -70,15 +70,17 @@ adds to whatever system the Systems tab is showing.
 Built-in presets alongside the existing eight world types, rendered
 procedurally so the Scan tab chemistry can agree with the story each one tells:
 
-- [ ] Archean Earth (~3 Gya): global ocean, island arcs, orange methane haze,
-      anoxic N₂–CO₂–CH₄ atmosphere, no ice caps.
-- [ ] Proterozoic Earth (~1 Gya): continents, barren land, rising but low
-      oxygen.
-- [ ] Noachian Mars (~4 Gya): northern ocean, thicker CO₂ atmosphere, valley
-      networks, water clouds.
-- [ ] New palettes in `src/engine/palettes.ts` where the existing eight cannot
-      produce the look; spectrometer datasets in `src/data/` extended so scans
-      report the right composition and biosignature verdicts.
+- [x] Archean Earth (~3 Gya): global iron-tinted ocean, basalt island arcs,
+      orange methane haze, anoxic N₂–CO₂–CH₄ atmosphere, no ice caps.
+- [x] Proterozoic Earth (~1 Gya): continents with nothing living on them,
+      ~1% oxygen, red beds, blue sky at last.
+- [x] Noachian Mars (~4 Gya): northern ocean, ~1 bar CO₂, water clouds, clays
+      and valley networks.
+- [x] Three new palettes; hand-written ANCIENT_PROFILES reconstructions that
+      open with "Reconstructed:" — gated by the same canonical-seed identity
+      rule as Pluto, detaching into an ordinary world of their family
+      (FAMILY map) on reseed. Loaded whole from an Ancient worlds chip row
+      on the Sculpt tab.
 
 ### 5. Exoplanets collection
 
