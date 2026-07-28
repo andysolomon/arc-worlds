@@ -139,6 +139,50 @@ test('a system built from your own worlds renders in orbit', async ({ page }) =>
   for (let i = 1; i < au.length; i++) expect(au[i]).toBeGreaterThan(au[i - 1])
 })
 
+test('a system can be filled without ever leaving the Systems tab', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Systems' }).click()
+  await page.getByRole('button', { name: 'New, empty' }).click()
+  await expect(page.getByRole('button', { name: /Save & share/ })).toBeDisabled()
+
+  // One click per world, and not one trip through the sculptor.
+  for (const type of ['Meadow', 'Frost', 'Storm giant']) {
+    await page.getByRole('button', { name: type, exact: true }).click()
+  }
+  await page.getByTitle('Roll a new world of any type into orbit').click()
+
+  await expect(page.getByLabel('Name of world 4')).toBeVisible()
+  await expect(page.getByRole('button', { name: /Save & share/ })).toBeEnabled()
+
+  // A duplicate joins the same line of worlds, on its own orbit further out.
+  const first = await page.getByLabel('Name of world 1').inputValue()
+  await page.locator('.scan-card').first().getByRole('button', { name: /^Duplicate/ }).click()
+  await expect(page.getByLabel('Name of world 5')).toHaveValue(`${first} II`)
+
+  await page.getByRole('button', { name: 'Orbit view' }).click()
+  await page.waitForTimeout(3000)
+  expect(await hasDrawnGeometry(page)).toBe(true)
+})
+
+test('adding a world never edits a read-only system in place', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Systems' }).click()
+
+  // The Solar System offers no way to add to it at all …
+  await expect(page.getByRole('button', { name: 'Meadow', exact: true })).toHaveCount(0)
+
+  // … and duplicating it is what makes those controls appear.
+  await page.getByRole('button', { name: 'Duplicate & edit' }).click()
+  await expect(page.getByText(/The Solar System \(copy\)/).first()).toBeVisible()
+  await page.getByRole('button', { name: 'Meadow', exact: true }).click()
+  await expect(page.getByLabel('Name of world 9')).toBeVisible()
+
+  // The original is still there, still measured, still eight planets.
+  await page.getByRole('button', { name: 'The Solar System', exact: true }).click()
+  await expect(page.getByText(/every number measured/)).toBeVisible()
+  await expect(page.getByRole('button', { name: /Visit/ })).toHaveCount(8)
+})
+
 test('an imagined system is never presented as a measured one', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('tab', { name: 'Systems' }).click()

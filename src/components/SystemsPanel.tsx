@@ -5,8 +5,8 @@ import {
   A_MAX, A_MIN, MASS_MAX, MASS_MIN, MAX_BODIES, STAR_KINDS,
   duplicateSystem, emptySystem, retime, rollSystem,
 } from '../lib/systems'
-import type { SavedSystem } from '../lib/api'
-import type { SystemBody, SystemDef } from '../engine/types'
+import type { SavedSystem, SavedWorld } from '../lib/api'
+import type { PresetKey, SystemBody, SystemDef } from '../engine/types'
 import { Field, Segmented, Slider } from './ui'
 
 interface Props {
@@ -20,7 +20,15 @@ interface Props {
   onSystem: (def: SystemDef) => void
   /** Drop the world currently in the sculptor into this system. */
   onAddCurrent: () => void
+  /** Roll a new world of a given type — or of any type — straight into orbit. */
+  onAddRolled: (preset?: PresetKey) => void
+  /** Add one of the saved worlds from the gallery. */
+  onAddSaved: (w: SavedWorld) => void
+  /** Another world like the one at this index, further out. */
+  onDuplicate: (index: number) => void
   currentWorld: string
+  worlds: SavedWorld[]
+  worldsError: string | null
   onSave: () => void
   saving: boolean
   savedSlug: string | null
@@ -80,7 +88,8 @@ function bodyDot(b: SystemBody): string {
 export function SystemsPanel(props: Props) {
   const {
     system, view, sizeMode, onView, onSizeMode, onVisit, onSystem, onAddCurrent,
-    currentWorld, onSave, saving, savedSlug, systems, systemsLoading, systemsError, onOpenSaved,
+    onAddRolled, onAddSaved, onDuplicate, currentWorld, worlds, worldsError,
+    onSave, saving, savedSlug, systems, systemsLoading, systemsError, onOpenSaved,
   } = props
 
   const editable = system.origin === 'custom'
@@ -148,7 +157,7 @@ export function SystemsPanel(props: Props) {
           'Duplicate it to move the planets around; the original stays as it is.'}
         {system.origin === 'imagined' && 'Every number in it was invented, including the star.'}
         {system.origin === 'custom' &&
-          'Yours to change — move the worlds about, add the one you are sculpting, then save it for a link.'}
+          'Yours to change — add worlds, move them about, then save it for a link.'}
       </div>
 
       <Segmented<'single' | 'system'>
@@ -179,7 +188,8 @@ export function SystemsPanel(props: Props) {
         </>
       ) : system.bodies.length === 0 ? (
         <p className="empty">
-          Nothing orbits {system.star.name} yet. Sculpt a world, then add it here.
+          Nothing orbits {system.star.name} yet.
+          {editable ? ' Pick a world type below and one will appear.' : ''}
         </p>
       ) : (
         system.bodies.map((b, i) => (
@@ -269,6 +279,89 @@ export function SystemsPanel(props: Props) {
             grows or shrinks with it: a heavier star is a bigger one.
           </div>
 
+          {/* --- adding worlds ------------------------------------------------
+              Above the per-world editors deliberately: with a full system there
+              are a dozen of those, and burying the way in under them is the
+              problem this is meant to solve. */}
+          <div>
+            <div className="field-label">Add a world</div>
+            {full ? (
+              <p className="empty" style={{ padding: '4px 2px', textAlign: 'left' }}>
+                Full — {MAX_BODIES} worlds is the limit. Remove one to make room.
+              </p>
+            ) : (
+              <>
+                <div className="chips">
+                  {PRESETS.map((p) => (
+                    <button
+                      key={p.key}
+                      className="chip"
+                      type="button"
+                      title={`Roll a new ${p.label.toLowerCase()} into orbit`}
+                      onClick={() => onAddRolled(p.key)}
+                    >
+                      <span className="dot" style={{ background: p.dot }} />
+                      {p.label}
+                    </button>
+                  ))}
+                  <button
+                    className="chip"
+                    type="button"
+                    title="Roll a new world of any type into orbit"
+                    onClick={() => onAddRolled()}
+                  >
+                    🎲 Any
+                  </button>
+                </div>
+                <div className="note" style={{ marginTop: 10 }}>
+                  Each of these rolls a whole new world and puts it in orbit outside everything
+                  already here — no trip through the sculptor. Every world is still yours to
+                  reshape afterwards: click it in the body list to open it up.
+                </div>
+              </>
+            )}
+          </div>
+
+          {!full && (
+            <button className="btn-primary" type="button" onClick={onAddCurrent}>
+              + Add “{currentWorld}” from the sculptor
+            </button>
+          )}
+
+          {!full && (
+            <details className="picker">
+              <summary>Or one of your saved worlds</summary>
+              {worldsError ? (
+                <p className="empty">Could not reach the gallery. {worldsError}</p>
+              ) : worlds.length === 0 ? (
+                <p className="empty">
+                  Nothing saved yet. Save a world from the sculptor and it will show up here.
+                </p>
+              ) : (
+                worlds.map((w) => (
+                  <div className="card" key={w.slug} style={{ cursor: 'default' }}>
+                    <span
+                      className="globe"
+                      style={{ background: `radial-gradient(circle at 34% 30%, #fff6, ${w.dot})` }}
+                    />
+                    <span className="body">
+                      <span className="title">{w.name}</span>
+                      <span className="sub">{w.sub}</span>
+                    </span>
+                    <button
+                      className="go"
+                      type="button"
+                      aria-label={`Add ${w.name} to this system`}
+                      onClick={() => onAddSaved(w)}
+                    >
+                      Add
+                    </button>
+                  </div>
+                ))
+              )}
+            </details>
+          )}
+
           {system.bodies.map((b, i) => (
             <div className="scan-card" key={`edit-${b.name}-${i}`}>
               <div className="row">
@@ -282,7 +375,22 @@ export function SystemsPanel(props: Props) {
                     />
                   </Field>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
+                  <button
+                    className="icon-btn"
+                    style={{ height: 44 }}
+                    type="button"
+                    disabled={full}
+                    title={
+                      full
+                        ? `Full — ${MAX_BODIES} worlds is the limit`
+                        : `Another world like ${b.name}, further out`
+                    }
+                    aria-label={`Duplicate ${b.name}`}
+                    onClick={() => onDuplicate(i)}
+                  >
+                    ⧉
+                  </button>
                   <button
                     className="icon-btn"
                     style={{ height: 44 }}
@@ -317,10 +425,6 @@ export function SystemsPanel(props: Props) {
               </div>
             </div>
           ))}
-
-          <button className="btn-primary" type="button" disabled={full} onClick={onAddCurrent}>
-            {full ? `Full — ${MAX_BODIES} worlds is the limit` : `+ Add “${currentWorld}” to this system`}
-          </button>
 
           <button
             className="btn-save"

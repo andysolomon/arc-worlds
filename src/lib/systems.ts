@@ -198,7 +198,98 @@ export function dayFor(params: PlanetParams): number {
 /** Where a newly added body should go: comfortably outside everything else. */
 export function nextDistance(def: SystemDef): number {
   const outer = def.bodies.reduce((m, b) => Math.max(m, b.a), 0)
-  return outer ? Math.min(A_MAX, outer * 1.7) : 0.6
+  if (!outer) return 0.6
+  // Geometric spacing runs out of room before the world limit does — at 1.7×
+  // a step, the eleventh world is already past the outer edge — and clamping
+  // would stack the last few at exactly the same distance. Past that point
+  // each new world closes half the remaining gap instead, so every orbit stays
+  // distinct however full the system gets.
+  const next = outer * 1.7
+  return next <= A_MAX ? next : outer + (A_MAX - outer) / 2
+}
+
+/** True while the system will still take another world. */
+export function hasRoom(def: SystemDef): boolean {
+  return def.origin === 'custom' && def.bodies.length < MAX_BODIES
+}
+
+/**
+ * Make a system editable, if it is not already.
+ *
+ * The measured Solar System and the invented Andromeda are both read-only, so
+ * adding a world to either can only mean adding it to a copy. The alternative
+ * is refusing the click, which from the world gallery — where the system you
+ * are adding to is not even on screen — would be inexplicable.
+ */
+export function editableCopy(def: SystemDef): SystemDef {
+  return def.origin === 'custom' ? def : duplicateSystem(def)
+}
+
+/**
+ * Put a world into a system, on an orbit outside everything already there.
+ *
+ * Every route into a system comes through here — the sculptor, the world
+ * types, the gallery — so a world joins a system in exactly one way however
+ * you asked for it. A full system is returned untouched rather than quietly
+ * dropping the world or, worse, copying a read-only system to no purpose.
+ */
+export function addWorld(def: SystemDef, name: string, params: PlanetParams): SystemDef {
+  const s = editableCopy(def)
+  if (!hasRoom(s)) return def
+  const world = { ...params }
+  const body = bodyFromWorld(text(name, 'Untitled world', 40), world, nextDistance(s), s.star.mass)
+  return { ...s, bodies: sortByDistance([...s.bodies, body]) }
+}
+
+/**
+ * Roll a fresh world straight into the system, of a given type or of any.
+ *
+ * This is the one that removes the round trip: a system can be populated
+ * without a world ever passing through the sculptor.
+ */
+export function addRolledWorld(def: SystemDef, preset?: PresetKey, seed?: number): SystemDef {
+  const { params, name } = surprise(seed, preset)
+  return addWorld(def, name, params)
+}
+
+/** The regnal suffixes world names already carry, in order. */
+const REGNAL = ['II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII']
+const REGNAL_SUFFIX = new RegExp(` (?:${REGNAL.join('|')})$`)
+
+/**
+ * The next name in a line: Mirabelle, then Mirabelle II, then Mirabelle III.
+ *
+ * Names here already come with regnal suffixes now and then, so a copy reads
+ * as another world in the same family rather than as “Mirabelle (copy)”. The
+ * search starts after the suffix the world already carries — a copy of
+ * Wimpond III is Wimpond IV — and only wraps back to the start of the line if
+ * everything above is taken.
+ */
+function nextInLine(name: string, taken: Set<string>): string {
+  const base = name.replace(REGNAL_SUFFIX, '')
+  const at = REGNAL.indexOf(name.slice(base.length + 1))
+  return [...REGNAL.slice(at + 1), ...REGNAL]
+    .map((r) => `${base} ${r}`)
+    .find((n) => !taken.has(n)) ?? base
+}
+
+/**
+ * Copy a world already in orbit onto a new orbit further out — another one
+ * like that, ready to be changed, without a trip back through the sculptor.
+ */
+export function duplicateBody(def: SystemDef, index: number): SystemDef {
+  const b = def.bodies[index]
+  if (!b || !hasRoom(def)) return def
+  const a = nextDistance(def)
+  const copy: SystemBody = {
+    ...b,
+    name: nextInLine(b.name, new Set(def.bodies.map((x) => x.name))),
+    a,
+    period: periodFor(a, def.star.mass),
+    params: { ...b.params },
+    ring: b.ring ? { ...b.ring } : null,
+  }
+  return { ...def, bodies: sortByDistance([...def.bodies, copy]) }
 }
 
 /* --- generation ---------------------------------------------------------- */

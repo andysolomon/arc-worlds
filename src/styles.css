@@ -209,13 +209,30 @@ input[type='range']:disabled { opacity: 0.42; }
 }
 .card:hover { background: var(--panel-2); }
 .card .globe { width: 30px; height: 30px; border-radius: 50%; flex: none; }
-.card .body { flex: 1; min-width: 0; }
-.card .title { font-family: 'Baloo 2', cursive; font-weight: 700; font-size: 15px; color: var(--ink); }
-.card .sub { font-size: 12px; color: var(--muted); margin-top: 1px; }
+/* Left-aligned here rather than only on .card: in the gallery the globe and
+   text sit inside a display:contents button, whose centring still inherits. */
+.card .body { flex: 1; min-width: 0; text-align: left; }
+/* Both are spans, so without this the name and its subtitle run together on
+   one line — “Mercury0.39 AU” — and the sub's margin does nothing. */
+.card .title { display: block; font-family: 'Baloo 2', cursive; font-weight: 700; font-size: 15px; color: var(--ink); }
+.card .sub { display: block; font-size: 12px; color: var(--muted); margin-top: 1px; }
 .card .go {
   font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 12.5px; color: #fff;
   background: #b8508a; border: none; border-radius: 999px; padding: 7px 14px; flex: none;
 }
+/* A second action on a card, kept quieter than the first so the pair still
+   reads as one primary choice rather than two competing ones. */
+.card .go.ghost { color: var(--ink-2); background: #fff; border: 1.5px solid var(--line); }
+.card .go:disabled { filter: grayscale(0.6) opacity(0.55); cursor: default; }
+
+/* A disclosure, so the world gallery can live inside the systems panel without
+   pushing the controls below it off the bottom. */
+.picker > summary {
+  font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted); font-weight: 700; cursor: pointer; padding: 2px;
+}
+.picker > summary:hover { color: var(--ink-2); }
+.picker[open] > *:not(summary) { margin-top: 8px; }
 
 .empty { text-align: center; color: var(--muted); font-size: 13.5px; line-height: 1.6; padding: 24px 8px; }
 

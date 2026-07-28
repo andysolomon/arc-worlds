@@ -8,7 +8,7 @@ import { PRESETS, typeOf } from './data/presets'
 import { MILKY_WAY } from './data/systems'
 import { DEFAULT_PARAMS, sanitize, surprise } from './lib/params'
 import {
-  MAX_BODIES, bodyFromWorld, nextDistance, sanitizeSystem, sortByDistance,
+  addRolledWorld, addWorld, duplicateBody, sanitizeSystem,
 } from './lib/systems'
 import { computeScan, type ScanResult } from './lib/scan'
 import {
@@ -61,6 +61,7 @@ export default function App() {
   const [saving, setSaving] = useState(false)
   const [savedSlug, setSavedSlug] = useState<string | null>(null)
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null)
+  const [addedSlug, setAddedSlug] = useState<string | null>(null)
 
   const [systems, setSystems] = useState<SavedSystem[]>([])
   const [systemsLoading, setSystemsLoading] = useState(false)
@@ -134,7 +135,12 @@ export default function App() {
 
   useEffect(() => {
     if (tab === 'worlds') refreshGallery()
-    if (tab === 'solar') refreshSystems()
+    // The systems tab can now add a saved world without leaving, so it needs
+    // the world gallery as well as the system one.
+    if (tab === 'solar') {
+      refreshSystems()
+      refreshGallery()
+    }
   }, [tab, refreshGallery, refreshSystems])
 
   /* --- editing ---------------------------------------------------------- */
@@ -193,17 +199,43 @@ export default function App() {
     [system],
   )
 
+  /*
+   * Four ways in, one destination. Adding no longer forces the view to change:
+   * both views already show the new world — a card in the body list, a planet
+   * in orbit — and being thrown into the orbit view on every click made adding
+   * several in a row unpleasant. Any of them invalidates the share link, since
+   * the saved system no longer matches the one on screen.
+   */
+
+  /** Drop the world currently in the sculptor into the system. */
   const addCurrentWorld = useCallback(() => {
-    const worldName = name.trim() || 'Untitled world'
-    const world = { ...params }
-    setSystem((s) => {
-      if (s.origin !== 'custom' || s.bodies.length >= MAX_BODIES) return s
-      const body = bodyFromWorld(worldName, world, nextDistance(s), s.star.mass)
-      return { ...s, bodies: sortByDistance([...s.bodies, body]) }
-    })
+    setSystem((s) => addWorld(s, name, params))
     setSavedSystemSlug(null)
-    setView('system')
   }, [name, params])
+
+  /** Roll a new world of a given type — or of any type — straight into orbit. */
+  const addRolled = useCallback((preset?: PresetKey) => {
+    // Seeded out here rather than inside the updater: under StrictMode React
+    // runs an updater twice, and a random seed drawn in there would roll two
+    // different worlds and keep whichever ran last.
+    const seed = (Math.random() * 99999) | 0
+    setSystem((s) => addRolledWorld(s, preset, seed))
+    setSavedSystemSlug(null)
+  }, [])
+
+  /** Add a world from the gallery, from either the systems or the worlds tab. */
+  const addSavedWorld = useCallback((w: SavedWorld) => {
+    setSystem((s) => addWorld(s, w.name, sanitize(w.params)))
+    setSavedSystemSlug(null)
+    setAddedSlug(w.slug)
+    window.setTimeout(() => setAddedSlug(null), 1600)
+  }, [])
+
+  /** Another world like the one already in orbit, further out. */
+  const duplicateWorld = useCallback((i: number) => {
+    setSystem((s) => duplicateBody(s, i))
+    setSavedSystemSlug(null)
+  }, [])
 
   const onSaveSystem = useCallback(async () => {
     setSystemSaving(true)
@@ -403,7 +435,12 @@ export default function App() {
                 onVisit={visitBody}
                 onSystem={chooseSystem}
                 onAddCurrent={addCurrentWorld}
+                onAddRolled={addRolled}
+                onAddSaved={addSavedWorld}
+                onDuplicate={duplicateWorld}
                 currentWorld={name}
+                worlds={worlds}
+                worldsError={galleryError}
                 onSave={onSaveSystem}
                 saving={systemSaving}
                 savedSlug={savedSystemSlug}
@@ -422,6 +459,9 @@ export default function App() {
                 onOpen={openWorld}
                 onCopyLink={copyLink}
                 copiedSlug={copiedSlug}
+                system={system}
+                onAdd={addSavedWorld}
+                addedSlug={addedSlug}
               />
             )}
           </div>

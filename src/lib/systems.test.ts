@@ -4,8 +4,8 @@ import { ORBITS } from '../engine/planets'
 import { periodFor, starRadius, starSize } from '../engine/scale'
 import {
   A_MAX, MASS_MAX, MASS_MIN, MAX_BODIES, STAR_KINDS,
-  bodyFromWorld, dayFor, duplicateSystem, nextDistance, retime, rollSystem,
-  sanitizeSystem, sortByDistance,
+  addRolledWorld, addWorld, bodyFromWorld, dayFor, duplicateBody, duplicateSystem,
+  emptySystem, hasRoom, nextDistance, retime, rollSystem, sanitizeSystem, sortByDistance,
 } from './systems'
 import { DEFAULT_PARAMS } from './params'
 
@@ -222,6 +222,95 @@ describe('bodyFromWorld', () => {
     const dists = def.bodies.map((b) => b.a)
     expect(dists).toEqual([...dists].sort((x, y) => x - y))
     expect(new Set(dists).size).toBe(3)
+  })
+})
+
+describe('adding a world', () => {
+  /** A system filled to the limit, one rolled world at a time. */
+  const filled = () => {
+    let s = emptySystem(3)
+    for (let i = 0; i < MAX_BODIES; i++) s = addRolledWorld(s, undefined, i)
+    return s
+  }
+
+  it('rolls the type it was asked for, straight into orbit', () => {
+    // The point of this route is that a world need never pass through the
+    // sculptor at all, so the system has to come back with one already in it.
+    const s = addRolledWorld(emptySystem(7), 'ice', 42)
+    expect(s.bodies).toHaveLength(1)
+    expect(s.bodies[0].params.preset).toBe('ice')
+  })
+
+  it('is reproducible from its seed', () => {
+    expect(addRolledWorld(emptySystem(7), 'lava', 9)).toEqual(addRolledWorld(emptySystem(7), 'lava', 9))
+  })
+
+  it('keeps every orbit distinct even when the system is filled to the limit', () => {
+    // Geometric spacing alone overshoots the outer limit around the tenth
+    // world; clamping there would stack the last few at the same distance.
+    const dists = filled().bodies.map((b) => b.a)
+    expect(dists).toHaveLength(MAX_BODIES)
+    for (let i = 1; i < dists.length; i++) expect(dists[i]).toBeGreaterThan(dists[i - 1])
+    expect(Math.max(...dists)).toBeLessThanOrEqual(A_MAX)
+  })
+
+  it('refuses a full system rather than dropping the world in silence', () => {
+    const s = filled()
+    expect(hasRoom(s)).toBe(false)
+    expect(addWorld(s, 'One more', DEFAULT_PARAMS)).toBe(s)
+  })
+
+  it('adds to an editable copy when the system is read-only', () => {
+    // From the world gallery the system is not even on screen, so refusing the
+    // click would be inexplicable — copying the Solar System is the honest move.
+    const out = addWorld(MILKY_WAY, 'Peachmoss', DEFAULT_PARAMS)
+    expect(out.origin).toBe('custom')
+    expect(out.bodies).toHaveLength(MILKY_WAY.bodies.length + 1)
+    expect(out.bodies.at(-1)?.name).toBe('Peachmoss')
+    expect(out.bodies.at(-1)!.a).toBeGreaterThan(MILKY_WAY.bodies.at(-1)!.a)
+
+    expect(MILKY_WAY.origin).toBe('measured')
+    expect(MILKY_WAY.bodies).toHaveLength(8)
+  })
+
+  it('never leaves a world nameless', () => {
+    expect(addWorld(emptySystem(1), '   ', DEFAULT_PARAMS).bodies[0].name).toBe('Untitled world')
+  })
+})
+
+describe('duplicateBody', () => {
+  const base = addWorld(emptySystem(5), 'Mirabelle', DEFAULT_PARAMS)
+  const dup = duplicateBody(base, 0)
+
+  it('copies the world onto its own orbit further out', () => {
+    expect(dup.bodies).toHaveLength(2)
+    expect(dup.bodies[1].a).toBeGreaterThan(dup.bodies[0].a)
+    expect(dup.bodies[1].period).toBeCloseTo(periodFor(dup.bodies[1].a, dup.star.mass), 6)
+    expect(dup.bodies[1].params).toEqual(base.bodies[0].params)
+  })
+
+  it('carries the name on down the line rather than calling it a copy', () => {
+    expect(dup.bodies[1].name).toBe('Mirabelle II')
+    expect(duplicateBody(dup, 0).bodies.at(-1)?.name).toBe('Mirabelle III')
+    // A world that already has a suffix carries on from where it is, rather
+    // than backfilling a lower numeral: a copy of Mirabelle II is Mirabelle III.
+    expect(duplicateBody(dup, 1).bodies.at(-1)?.name).toBe('Mirabelle III')
+    const iv = addWorld(emptySystem(5), 'Mirabelle IV', DEFAULT_PARAMS)
+    expect(duplicateBody(iv, 0).bodies.at(-1)?.name).toBe('Mirabelle V')
+    // Names a sculpted world happens to carry are never mistaken for numerals.
+    const minor = addWorld(emptySystem(5), 'Glimkin Minor', DEFAULT_PARAMS)
+    expect(duplicateBody(minor, 0).bodies.at(-1)?.name).toBe('Glimkin Minor II')
+  })
+
+  it('does not share state with the world it copied', () => {
+    const d = duplicateBody(base, 0)
+    d.bodies[1].params.seed = 999
+    expect(base.bodies[0].params.seed).not.toBe(999)
+  })
+
+  it('refuses an index that is not a world, or a system it may not edit', () => {
+    expect(duplicateBody(base, 9)).toBe(base)
+    expect(duplicateBody(MILKY_WAY, 0)).toBe(MILKY_WAY)
   })
 })
 

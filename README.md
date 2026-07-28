@@ -54,7 +54,16 @@ Three kinds of system sit side by side, and the tab is careful about which is wh
 
 - **The Solar System** — ours, every number measured. Read-only; duplicating it gives you an editable copy.
 - **Andromeda** — an invented system around an orange dwarf, labelled as invented wherever it appears.
-- **Yours** — duplicate an existing system, roll a whole one from a seed, or start empty and add the world you are sculpting. Set each world's distance, size and orbital stretch, pick a star, and save it for a permanent `/s/:slug` link.
+- **Yours** — duplicate an existing system, roll a whole one from a seed, or start empty. Set each world's distance, size and orbital stretch, pick a star, and save it for a permanent `/s/:slug` link.
+
+Worlds go into a system four ways, and none of them needs a trip through the sculptor first: pick
+one of the eight world types and a new world of that type is rolled straight into orbit; add the
+world you happen to be sculpting; add one of your saved worlds, from either the Systems tab or the
+Worlds gallery; or duplicate something already orbiting, which carries the name on down the line —
+Mirabelle, Mirabelle II, Mirabelle III. Every new world lands on its own orbit outside everything
+already there, and every one of them stays fully sculptable afterwards. Adding from the gallery to
+a read-only system gives you an editable copy of it rather than refusing the click: the system
+being added to is on another tab, so the Worlds panel names it before you touch anything.
 
 A world knows nothing about where it is: `PlanetParams` describes a planet, and everything that
 only means something relative to a star — distance, eccentricity, inclination, axial tilt — lives on
