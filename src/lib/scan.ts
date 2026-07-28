@@ -8,7 +8,7 @@
 import { mulberry32 } from '../engine/noise'
 import { realFor } from '../engine/planets'
 import {
-  ANCIENT_PROFILES, MINERAL_SETS, ODDITIES, PIG, REAL_PROFILES, SPECIES,
+  MINERAL_SETS, ODDITIES, PIG, SPECIES,
   type BioReading, type Profile, type SpectralLine, type WaterReading,
 } from '../data/spectrometer'
 import { ANCIENT, PRESETS, typeOf } from '../data/presets'
@@ -255,8 +255,14 @@ function buildProfile(P: PlanetParams, r: () => number): Profile {
   }
 }
 
-/** Run the spectrometer over a world. Pure — same params, same reading. */
-export function computeScan(P: PlanetParams): ScanResult {
+/**
+ * Run the spectrometer over a world. Deterministic — same params, same
+ * reading. Async because the hand-written profile prose lives in its own
+ * chunk, fetched the first time anyone actually runs a spectrometer; it has
+ * no business on the first-load path.
+ */
+export async function computeScan(P: PlanetParams): Promise<ScanResult> {
+  const { REAL_PROFILES, ANCIENT_PROFILES } = await import('../data/profiles')
   const pi = PRESETS.findIndex((x) => x.key === P.preset)
   const r = mulberry32(
     ((P.seed | 0) * 7919 +

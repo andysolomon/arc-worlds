@@ -1,7 +1,8 @@
 {
   "bundle": {
     "entryGzipBytes": 256000,
-    "workerRawBytes": 102400
+    "workerRawBytes": 102400,
+    "lazyChunkGzipBytes": 16384
   },
   "browser": {
     "firstSystemFrameMs": {

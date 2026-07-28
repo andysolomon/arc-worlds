@@ -302,8 +302,12 @@ export default function App() {
     setScanNonce((n) => n + 1)
     if (scanTimer.current) window.clearTimeout(scanTimer.current)
     scanTimer.current = window.setTimeout(() => {
-      setScan(computeScan(params))
-      setScanning(false)
+      // The sweep animation has been masking the wait, so the profile chunk
+      // has had 2.1 s of runway; a failed fetch just yields no reading.
+      computeScan(params)
+        .then(setScan)
+        .catch(() => setScan(null))
+        .finally(() => setScanning(false))
     }, 2100)
   }, [scanning, params])
 

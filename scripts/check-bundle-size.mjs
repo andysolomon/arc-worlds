@@ -29,13 +29,27 @@ const workers = await Promise.all(workerNames.map(async (name) => {
   return { name, rawBytes: (await stat(path)).size }
 }))
 
+// Everything else is a lazily-fetched chunk (the spectrometer profiles were
+// the first). Splitting moves bytes off first load rather than removing
+// them, so each chunk carries its own budget — otherwise this guard would go
+// blind to exactly the code it pushed out of sight.
+const entryName = entryMatch[1].split('/').at(-1)
+const lazyNames = assetNames.filter(
+  (name) => name.endsWith('.js') && name !== entryName && !workerNames.includes(name),
+)
+const lazy = await Promise.all(lazyNames.map(async (name) => {
+  const path = resolve(dist, 'assets', name)
+  return { name, gzipBytes: gzipSync(await readFile(path)).byteLength }
+}))
+
 const result = {
   entry: {
-    name: entryMatch[1].split('/').at(-1),
+    name: entryName,
     rawBytes: entry.byteLength,
     gzipBytes: gzipSync(entry).byteLength,
   },
   workers,
+  lazy,
   budgets: budget,
 }
 
@@ -55,6 +69,13 @@ for (const worker of workers) {
     )
   }
 }
+for (const chunk of lazy) {
+  if (chunk.gzipBytes > budget.lazyChunkGzipBytes) {
+    failures.push(
+      `${chunk.name} gzip ${chunk.gzipBytes} B exceeds ${budget.lazyChunkGzipBytes} B`,
+    )
+  }
+}
 
 console.table([
   {
@@ -68,6 +89,12 @@ console.table([
     measurement: 'raw',
     bytes: worker.rawBytes,
     budget: budget.workerRawBytes,
+  })),
+  ...lazy.map((chunk) => ({
+    asset: chunk.name,
+    measurement: 'gzip',
+    bytes: chunk.gzipBytes,
+    budget: budget.lazyChunkGzipBytes,
   })),
 ])
 
