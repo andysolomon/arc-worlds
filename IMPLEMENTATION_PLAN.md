@@ -88,15 +88,26 @@ Well-known exoplanets as built-in systems, with the tab's usual honesty about
 provenance — these need a labelling nuance the current origins lack:
 **measured orbit, imagined surface**.
 
-- [ ] TRAPPIST-1 as a complete built-in system (seven planets, measured periods
-      and distances, red-dwarf star).
-- [ ] Individual famous worlds: Proxima Centauri b, 51 Pegasi b (hot Jupiter),
-      Kepler-452b.
-- [ ] Label treatment distinguishing measured orbital elements from invented
-      appearances, distinct from both "measured" (Solar System) and "invented"
-      (Andromeda).
-- [ ] Star kinds must cover a red dwarf cool enough for TRAPPIST-1; extend the
-      star mass/colour model if the current five kinds bottom out too hot.
+- [x] TRAPPIST-1 as a complete built-in system: seven planets with measured
+      distances, periods, eccentricities, radii and tidally-locked days,
+      around its 0.0898 M☉ star.
+- [x] Individual famous worlds as their own observed systems: Proxima
+      Centauri b, 51 Pegasi b (hot Jupiter), Kepler-452 b. Every observed
+      period is unit-tested to be Kepler-consistent with its distance.
+- [x] New `observed` origin: "orbits and years measured; the worlds wearing
+      them are imagined — nobody has seen these surfaces." Read-only like the
+      other built-ins; duplicating notes what it was built from.
+- [x] Ember dwarf star kind (0.1 M☉); A_MIN lowered to 0.01 AU so a
+      duplicated compact system survives sanitisation with its orbits intact.
+- [x] Engine adaptation the plan didn't foresee: `systemStretch` and
+      `tempoFor` in scale.ts — a system fitting inside 1 AU is stretched to
+      fill the frame and slowed until its fastest orbit is watchable, one
+      factor each so internal ratios stay exact and the Solar System is
+      provably untouched.
+- [x] The phase-4 bundle flag, closed: profile prose now loads as its own
+      chunk during the spectrometer sweep; entry fell below the phase-1
+      baseline, and the size guard gained a per-lazy-chunk budget so split
+      code can never again grow unwatched.
 
 ### 6. Pop-culture worlds
 

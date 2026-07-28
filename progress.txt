@@ -296,3 +296,44 @@ NEXT
 - Phase 5: exoplanets — needs the "measured orbit, imagined surface"
   provenance label and possibly a cooler red dwarf star kind.
 - Consider the profile-text code split before phase 5/6 add more prose.
+
+2026-07-28 phase 5: observed systems, compact-system engine, bundle split
+
+DONE
+- Four observed systems: TRAPPIST-1 (all seven planets, measured a/P/e/
+  radius, tidally locked days), Proxima Centauri, 51 Pegasi, Kepler-452.
+  New 'observed' origin says it plainly: orbits measured, surfaces
+  imagined, nobody has seen one. Ember dwarf star kind (0.1 M☉); A_MIN
+  0.04 -> 0.01 so duplicated compact systems sanitise intact; sub-10-day
+  years quoted to one decimal ("1.5 day year", not "2").
+- Compact-system engine adaptation (scale.ts): systemStretch fills the
+  frame for systems inside 1 AU; tempoFor slows the clock until the
+  fastest orbit takes 0.2 drawn years. One factor each per system, so
+  internal ratios stay exact; Solar System provably untouched (both 1).
+- Phase-4 bundle flag closed: REAL_PROFILES + ANCIENT_PROFILES moved to
+  data/profiles.ts behind a dynamic import inside computeScan (now
+  async, awaited during the 2.1 s sweep). Entry 234,294 B gzip (91.5%),
+  below the phase-1 baseline; profiles chunk 10.2 kB gzip.
+- Size guard blind spot closed: check-bundle-size.mjs now budgets every
+  lazily-fetched chunk (16 kB gzip each) — split code cannot grow
+  unwatched again.
+- The two sculpt-round-trip specs marked test.slow(): 4 failures in 9
+  full parallel runs while finishing within a second of the default cap
+  was contention, not defect; the tripled cap ends the coin flips.
+
+VERIFIED (full suite delegated to an Opus 5 agent)
+- typecheck, lint, 99 unit tests (6 new), build (43 modules), both
+  bundle budgets + new lazy budget, e2e 22/22 on the confirming run,
+  perf green across six smoke runs at fps 23.3.
+- The agent nearly called a perf regression on first read: post-e2e hot
+  runs showed +31% firstSystemFrame. Settled re-runs landed exactly on
+  the phase-4 baseline — machine state, not code. Worth remembering:
+  longTaskMax reached 469/500 ms hot; perf:ci runs cool, but a throttled
+  shared runner would trip that row first.
+- bun run db:push against the migrated Neon database: "No changes
+  detected" — schema in sync, owner_key migration confirmed live.
+
+NEXT
+- Phase 6: pop-culture worlds — the binary-star question (Tatooine)
+  must be decided before scoping.
+- Google Fonts on the first-load critical path remains open.
