@@ -62,6 +62,12 @@ export type PresetKey =
   | 'archean'
   | 'proterozoic'
   | 'noachian'
+  | 'tatooine'
+  | 'hoth'
+  | 'mustafar'
+  | 'erid'
+  | 'adrian'
+  | 'pandora'
 
 export interface RockyPalette {
   gas?: false

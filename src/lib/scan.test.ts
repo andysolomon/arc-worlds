@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ANCIENT, SOLAR } from '../data/presets'
+import { ANCIENT, FICTION, SOLAR } from '../data/presets'
 import type { PlanetParams } from '../engine/types'
 import { DEFAULT_PARAMS } from './params'
 import { computeScan } from './scan'
@@ -51,6 +51,35 @@ describe('ancient reconstructions', () => {
     for (const a of ANCIENT) {
       const scan = await computeScan(paramsFor({ ...a.params, preset: a.key, seed: a.params.seed! + 1 }))
       expect(scan.atmoTitle, a.name).not.toMatch(/^Reconstructed/)
+    }
+  })
+})
+
+describe('story worlds', () => {
+  it('reads every story world as fiction, and says so', async () => {
+    for (const f of FICTION) {
+      const scan = await computeScan(paramsFor({ ...f.params, preset: f.key }))
+      expect(scan.atmoTitle, f.name).toMatch(/^Fiction:/)
+    }
+  })
+
+  it('gives Erid the novel’s 29 bars and no visible surface', async () => {
+    const f = FICTION.find((x) => x.key === 'erid')!
+    const scan = await computeScan(paramsFor({ ...f.params, preset: f.key }))
+    expect(scan.pressure).toMatch(/29 bar/)
+    expect(scan.surfLabel).toMatch(/unobservable/)
+  })
+
+  it('fills Pandora’s air with xenon a human could not survive', async () => {
+    const f = FICTION.find((x) => x.key === 'pandora')!
+    const scan = await computeScan(paramsFor({ ...f.params, preset: f.key }))
+    expect(scan.gases.map((g) => g.n)).toContain('Xenon')
+  })
+
+  it('detaches on reseed into an ordinary world of its family', async () => {
+    for (const f of FICTION) {
+      const scan = await computeScan(paramsFor({ ...f.params, preset: f.key, seed: f.params.seed! + 1 }))
+      expect(scan.atmoTitle, f.name).not.toMatch(/^Fiction:/)
     }
   })
 })

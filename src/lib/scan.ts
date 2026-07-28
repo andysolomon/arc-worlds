@@ -11,7 +11,7 @@ import {
   MINERAL_SETS, ODDITIES, PIG, SPECIES,
   type BioReading, type Profile, type SpectralLine, type WaterReading,
 } from '../data/spectrometer'
-import { ANCIENT, PRESETS, typeOf } from '../data/presets'
+import { ANCIENT, FICTION, PRESETS, typeOf } from '../data/presets'
 import type { PlanetParams, PresetKey } from '../engine/types'
 
 /**
@@ -24,6 +24,12 @@ const FAMILY: Partial<Record<PresetKey, PresetKey>> = {
   archean: 'temperate',
   proterozoic: 'temperate',
   noachian: 'desert',
+  tatooine: 'desert',
+  hoth: 'ice',
+  mustafar: 'lava',
+  erid: 'desert',
+  adrian: 'lava',
+  pandora: 'temperate',
 }
 
 export interface GasReading {
@@ -273,14 +279,19 @@ export async function computeScan(P: PlanetParams): Promise<ScanResult> {
   )
 
   // A real planet scans as itself, using its measured profile; an ancient
-  // world at its canonical seed scans as its reconstruction, which says so.
-  // Only a sculpted world gets a reading derived from the sliders — and
-  // changing the seed is what turns either of the others into one.
+  // world at its canonical seed scans as its reconstruction, which says so;
+  // a story world at its canonical seed scans as its fiction, which also says
+  // so. Only a sculpted world gets a reading derived from the sliders — and
+  // changing the seed is what turns any of the others into one. The fiction
+  // prose rides its own chunk, fetched only when a story world is scanned.
   const real = realFor(P) ? REAL_PROFILES[P.preset] ?? null : null
   const ancient = ANCIENT.some((a) => a.key === P.preset && a.params.seed === P.seed)
     ? ANCIENT_PROFILES[P.preset] ?? null
     : null
-  const prof = real ?? ancient ?? buildProfile(P, r)
+  const story = FICTION.some((f) => f.key === P.preset && f.params.seed === P.seed)
+    ? (await import('../data/fiction')).FICTION_PROFILES[P.preset] ?? null
+    : null
+  const prof = real ?? ancient ?? story ?? buildProfile(P, r)
 
   const gases: GasReading[] = prof.gases
     .filter((g) => g[1] > 0)

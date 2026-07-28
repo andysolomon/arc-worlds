@@ -504,6 +504,48 @@ test('an ancient world loads whole and scans as a reconstruction', async ({ page
   await expect(page.getByText('Alive, but not advertising')).toBeVisible()
 })
 
+test('the Outer Rim gathers its fictions under one invented sun', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Systems' }).click()
+  await page.getByRole('button', { name: 'Outer Rim' }).click()
+
+  // Labelled invented like Andromeda, with all three worlds present.
+  await expect(page.getByText(/Every number in it was invented/)).toBeVisible()
+  await expect(page.getByRole('button', { name: /Visit/ })).toHaveCount(3)
+
+  await page.getByRole('button', { name: /Tatooine/ }).click()
+  await expect(page.getByRole('heading', { name: 'Tatooine' })).toBeVisible()
+
+  // The scan opens with the word Fiction, and the closing note owes the
+  // missing second sun out loud — the single-star scope, stated in-app.
+  await page.getByRole('tab', { name: 'Scan' }).click()
+  await page.getByRole('button', { name: /Run spectrometer on Tatooine/ }).click()
+  await expect(page.getByText('Fiction: dry nitrogen, farmed for its dew')).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByText(/owes it the other/)).toBeVisible()
+})
+
+test('Pandora rides beside the planet it cannot orbit', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Systems' }).click()
+  await page.getByRole('button', { name: 'Alpha Centauri A' }).click()
+
+  // Moons only render in the single-world view, so Pandora gets its own
+  // orbit — and the caption says so rather than pretending otherwise.
+  await expect(page.getByText(/Pandora is Polyphemus’s moon/)).toBeVisible()
+  await expect(page.getByRole('button', { name: /Visit/ })).toHaveCount(2)
+
+  await page.getByRole('button', { name: /Pandora/ }).click()
+  await expect(page.getByRole('heading', { name: 'Pandora' })).toBeVisible()
+
+  await page.getByRole('tab', { name: 'Scan' }).click()
+  await page.getByRole('button', { name: /Run spectrometer on Pandora/ }).click()
+  await expect(page.getByText('Fiction: rich air, wrong for us')).toBeVisible({ timeout: 15_000 })
+
+  // The biosignature verdict renders in the surface section, not the default.
+  await page.getByRole('button', { name: 'Surface & water' }).click()
+  await expect(page.getByText('Strong — and networked')).toBeVisible()
+})
+
 test('display choices survive a reload', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('tab', { name: 'Systems' }).click()

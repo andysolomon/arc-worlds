@@ -337,3 +337,52 @@ NEXT
 - Phase 6: pop-culture worlds — the binary-star question (Tatooine)
   must be decided before scoping.
 - Google Fonts on the first-load critical path remains open.
+
+2026-07-28 phase 6: pop-culture worlds — homage systems, labelled fiction
+
+DONE
+- Decided: single-star scope. Tatooine orbits Tatoo I alone, and its
+  scan note owes the fiction its second sun out loud ("This engine
+  draws one, and owes it the other"). Binary stars remain a possible
+  future engine task, not a blocker.
+- Four homage systems, all origin 'imagined': Outer Rim (Mustafar,
+  Tatooine, Hoth), 40 Eridani (Erid) and Tau Ceti (Adrian) from
+  Project Hail Mary on real star masses, Alpha Centauri A for Avatar —
+  Polyphemus (gasMist giant) plus Pandora, added at the user's request.
+  Pandora is really Polyphemus's moon and moons only render in the
+  single-world view, so it rides its own orbit and the caption says so.
+- Six new presets with palettes and canonical seeds (tatooine 1977,
+  hoth 1980, mustafar 2005, erid 2021, adrian 1021, pandora 2009);
+  same identity rule as Pluto/ancient: reseed detaches into the FAMILY
+  fallback (desert/ice/lava/desert/lava/temperate).
+- FICTION_PROFILES in data/fiction.ts, every atmoTitle opening
+  "Fiction:" — Erid at the novel's 29 bar with an unobservable surface,
+  Adrian's biosignature the Petrova line rather than a pigment, Pandora
+  with the xenon that makes rich air unbreathable (new Xe species).
+  Loaded via a conditional dynamic import inside computeScan: its own
+  5.1 kB gzip chunk, fetched only when a story world actually scans.
+- Opus finding fixed before commit: Pandora at 1.6 AU interpenetrated
+  Polyphemus in same-size mode (drawn gap 0.236 vs the 0.480 two
+  0.24-radius discs need — ~2 s of clipping per minute of viewing).
+  Moved to 2.2 AU (gap 0.592, and the scale-mode 1.01x graze widens to
+  comfortable); regression unit test pins the gap via sameDist itself.
+
+VERIFIED (full suite delegated to the same Opus 5 agent)
+- typecheck, lint, 109 unit tests (10 new), build (44 modules), all
+  four bundle budgets (entry 235,934 gzip 92.2%; fiction chunk 31.2%),
+  e2e 24/24 (one aim-flake rerun clean, see NEXT), perf 8/8 green at
+  fps 23.3, bun run db:push "No changes detected".
+- Compact-system engine confirmed on the new systems: 40 Eridani
+  stretch 23.85 / tempo 1.74, Tau Ceti 20.80 / 1.42, Solar System
+  exactly 1/1. Fiction chunk confirmed absent from the network until a
+  story world scans. All five homage/observed systems survive
+  duplicate + re-sanitise with orbits intact.
+
+NEXT
+- longTaskMax creep: 486/500 ms hot this session (469 last phase).
+  perf:ci runs cool, but this trips first on a throttled runner —
+  consider profiling the bake warmup before phase 7's animated fluids.
+- First-ever flake of the hover-reveal spec (pointer sweep missed all
+  frozen planets; 8/8 in isolation). Aim-based fragility, fifth member
+  of the fragile-test family — worth a deterministic aiming helper.
+- Google Fonts on the first-load critical path remains open.

@@ -50,7 +50,7 @@ serve the repo over HTTP and open `prototype/Little Worlds.dc.html`.
 - *Body list* — visit any world in the system and see it rendered on its own, then hit **Reshape** to pull it into the sculptor and start editing.
 - *Orbit view* — everything orbiting its star on real elliptical, inclined paths at the pace its own orbit implies (one Earth year ≈ 14 seconds). **Same size** draws every planet alike so the small ones stay findable; **To scale** ranks them by true size. Click any planet to visit it.
 
-Four kinds of system sit side by side, and the tab is careful about which is which:
+Five kinds of system sit side by side, and the tab is careful about which is which:
 
 - **The Solar System** — ours, every number measured. Read-only; duplicating it gives you an editable copy.
 - **Observed systems** — TRAPPIST-1, Proxima Centauri, 51 Pegasi and Kepler-452: real exoplanet
@@ -60,6 +60,14 @@ Four kinds of system sit side by side, and the tab is careful about which is whi
   fill the frame and slowed just enough to watch — one factor each for distance and time, so every
   internal ratio stays exact and TRAPPIST-1 h still orbits 12.4× slower than b.
 - **Andromeda** — an invented system around an orange dwarf, labelled as invented wherever it appears.
+- **Homage systems** — original interpretations of famous fictions, labelled invented like
+  Andromeda: the Outer Rim (Tatooine, Hoth and Mustafar under one sun — the engine draws single
+  stars, and Tatooine's scan owes the fiction its second one out loud), 40 Eridani and Tau Ceti
+  (Erid and Adrian from *Project Hail Mary*, on real star masses), and Alpha Centauri A
+  (Polyphemus with Pandora from *Avatar* — Pandora is really its moon, so it rides its own orbit
+  just outside and the caption says so). Each scans with chemistry from its fiction, opening with
+  the word **Fiction**; reseed one and it detaches into an ordinary world of its family, exactly
+  like Pluto and the ancient reconstructions.
 - **Yours** — duplicate an existing system, roll a whole one from a seed, or start empty. Set each world's distance, size and orbital stretch, pick a star, and save it for a permanent `/s/:slug` link.
 
 Worlds go into a system four ways, and none of them needs a trip through the sculptor first: pick

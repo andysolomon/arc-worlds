@@ -25,6 +25,7 @@ export const SPECIES: Record<string, Species> = {
     SO2:{n:'Sulphur dioxide',f:'SO₂',eff:'Drinks violet and ultraviolet light hard, leaving a creamy yellow cast over everything below.',lines:[[390,'SO₂','Sulphur-dioxide absorption — violet and UV',0]]},
     H2S:{n:'Hydrogen sulphide',f:'H₂S',eff:'Condenses into a pale cloud deck under the methane haze; confirmed at Uranus in 2018.',lines:[]},
     Ar:{n:'Argon',f:'Ar',eff:'Utterly inert. Its build-up is a clock for how long an atmosphere has been outgassing.',lines:[[696.5,'Ar I','Argon emission — deep red',1]]},
+    Xe:{n:'Xenon',f:'Xe',eff:'A heavy noble gas — inert and colourless, but dense enough that a few percent of it noticeably thickens the air.',lines:[[823.2,'Xe I','Xenon emission — at the far red edge of sight',1]]},
     Na:{n:'Sodium',f:'Na',eff:'The loudest colour trick in the solar system: sodium re-emits sunlight at 589 nm as pure amber.',lines:[[589,'Na D','Sodium emission — amber, the same line as a street lamp',1]]},
     K:{n:'Potassium',f:'K',eff:'Emits in the far red, right at the edge of what an eye can register.',lines:[[766.5,'K','Potassium emission',1]]},
     O:{n:'Atomic oxygen',f:'O',eff:'Single atoms knocked off the ground by sunlight and the solar wind; glows green at 558 nm.',lines:[[557.7,'O I','Atomic-oxygen emission — auroral green',1]]},

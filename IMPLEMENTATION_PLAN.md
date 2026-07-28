@@ -111,17 +111,24 @@ provenance — these need a labelling nuance the current origins lack:
 
 ### 6. Pop-culture worlds
 
-Homage systems from film and TV — Star Wars (Tatooine, Hoth, Mustafar) and
-Project Hail Mary (Erid at 40 Eridani, Adrian at Tau Ceti) — labelled invented,
-like Andromeda.
+Homage systems from film and TV — Star Wars (Tatooine, Hoth, Mustafar),
+Project Hail Mary (Erid at 40 Eridani, Adrian at Tau Ceti) and Avatar
+(Pandora at Alpha Centauri A) — labelled invented, like Andromeda.
 
-- [ ] Original procedural interpretations only: no copyrighted imagery or
+- [x] Original procedural interpretations only: no copyrighted imagery or
       textures; short fictional names used referentially.
-- [ ] Tatooine's binary sunset is the icon of the whole idea, and the engine is
-      single-star. Decide up front: scope this collection to single-star systems,
-      or take on binary-star support as its own engine task first.
-- [ ] Each world gets Scan-tab chemistry consistent with its fiction where the
-      fiction says (Erid's thick atmosphere, Adrian's Astrophage-warmed orbit).
+- [x] Decided: scoped to single-star systems. Tatooine's star is named
+      Tatoo I and its scan note owes the fiction its second sun out loud;
+      binary rendering stays a possible future engine task, not a blocker.
+- [x] Avatar's Pandora is a moon of the gas giant Polyphemus, and moons only
+      render in the single-world view — so Pandora gets its own orbit just
+      outside its planet, and the system caption says exactly that.
+- [x] Each world gets Scan-tab chemistry consistent with its fiction where the
+      fiction says (Erid's thick atmosphere, Adrian's Astrophage-warmed orbit,
+      Pandora's xenon-heavy unbreathable air). Profiles open with "Fiction:"
+      — same honesty rule as the ancient reconstructions — gated by canonical
+      seeds, detaching into ordinary worlds of their family on reseed, and
+      loaded as their own lazy chunk so the profiles chunk stays in budget.
 
 ### 7. Sculpting — animated fluids and two rendering tiers
 

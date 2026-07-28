@@ -22,6 +22,12 @@ describe('sanitize', () => {
     expect(sanitize({ preset: 'saturn' }).preset).toBe('saturn')
   })
 
+  it('keeps the story-world presets, so a saved homage survives the trip', () => {
+    for (const key of ['tatooine', 'hoth', 'mustafar', 'erid', 'adrian', 'pandora']) {
+      expect(sanitize({ preset: key }).preset).toBe(key)
+    }
+  })
+
   // The texture field becomes a URL the browser fetches, so it is the one
   // place a hostile payload could point the app somewhere it should not go.
   it('accepts only known-good texture paths', () => {

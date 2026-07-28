@@ -10,7 +10,7 @@ import { ORBITS, REAL, realKeyFor } from '../engine/planets'
 import { periodFor } from '../engine/scale'
 import type { PlanetParams, PresetKey, SystemBody, SystemDef } from '../engine/types'
 import { DEFAULT_PARAMS } from '../lib/params'
-import { PRESETS, SOLAR } from './presets'
+import { FICTION, PRESETS, SOLAR } from './presets'
 
 export const MILKY_WAY_ID = 'milky-way'
 export const ANDROMEDA_ID = 'andromeda'
@@ -84,11 +84,12 @@ function body(
   radius: number,
   params: PlanetParams,
   over: Partial<Omit<SystemBody, 'name' | 'a' | 'radius' | 'params'>> = {},
+  mass: number = HALCYON_MASS,
 ): SystemBody {
   return {
     name,
     a,
-    period: periodFor(a, HALCYON_MASS),
+    period: periodFor(a, mass),
     e: 0,
     inc: 0,
     node: 0,
@@ -175,8 +176,84 @@ export const KEPLER_452: SystemDef = {
   ],
 }
 
+/** A homage world, loaded whole from its FICTION entry at its canonical seed. */
+function storyWorld(key: PresetKey): PlanetParams {
+  const f = FICTION.find((x) => x.key === key)
+  return { ...DEFAULT_PARAMS, ...(f?.params ?? {}), preset: key } as PlanetParams
+}
+
+const TATOO_MASS = 1.02
+
+/**
+ * Three famous Star Wars worlds gathered under one invented sun. The fiction
+ * scatters them across a galaxy and gives Tatooine two suns; this engine draws
+ * single stars, so the star is Tatoo I and the scan notes own what is missing.
+ */
+export const OUTER_RIM: SystemDef = {
+  id: 'outer-rim',
+  name: 'Outer Rim',
+  sub: 'imagined · three worlds from Star Wars, drawn from memory',
+  origin: 'imagined',
+  star: { name: 'Tatoo I', color: 0xfff2c9, mass: TATOO_MASS },
+  bodies: [
+    body('Mustafar', 0.42, 0.66, storyWorld('mustafar'), { e: 0.03, inc: 1.8, node: 40, peri: 210, tilt: 2.1, day: 36 }, TATOO_MASS),
+    body('Tatooine', 0.95, 1.04, storyWorld('tatooine'), { e: 0.04, inc: 0.9, node: 118, peri: 12, tilt: 11.3, day: 23 }, TATOO_MASS),
+    body('Hoth', 2.9, 0.92, storyWorld('hoth'), { e: 0.05, inc: 2.6, node: 240, peri: 155, tilt: 32, day: 23 }, TATOO_MASS),
+  ],
+}
+
+/**
+ * Project Hail Mary puts its planets at real stars, so these two systems wear
+ * real star masses — 40 Eridani A and Tau Ceti — under invented worlds and
+ * invented orbits. Origin stays `imagined`: a story is not a measurement.
+ */
+export const ERIDANI_40: SystemDef = {
+  id: '40-eridani',
+  name: '40 Eridani',
+  sub: 'imagined · a real star wearing a story — Project Hail Mary',
+  origin: 'imagined',
+  star: { name: '40 Eridani A', color: 0xffc98a, mass: 0.78 },
+  bodies: [
+    body('Erid', 0.218, 1.9, storyWorld('erid'), { e: 0.01, inc: 0.4, node: 68, peri: 300, tilt: 2.8, day: 122, flattening: 0.006 }, 0.78),
+  ],
+}
+
+export const TAU_CETI: SystemDef = {
+  id: 'tau-ceti',
+  name: 'Tau Ceti',
+  sub: 'imagined · the Astrophage nursery from Project Hail Mary',
+  origin: 'imagined',
+  star: { name: 'Tau Ceti', color: 0xfff0d8, mass: 0.783 },
+  bodies: [
+    body('Adrian', 0.25, 1.15, storyWorld('adrian'), { e: 0.02, inc: 1.1, node: 190, peri: 88, tilt: 3.4, day: 700 }, 0.783),
+  ],
+}
+
+const ALPHA_CEN_MASS = 1.08
+
+/**
+ * Avatar's Pandora is a moon of the gas giant Polyphemus, and moons only
+ * render in the single-world view — so here Pandora rides its own orbit just
+ * outside its planet, and the caption says so rather than pretending. Its
+ * distance is chosen for the drawing, not the fiction: in same-size mode the
+ * orbits of 1.25 and 2.2 AU stay far enough apart that a conjunction never
+ * pushes Pandora through the giant's drawn surface.
+ */
+export const ALPHA_CENTAURI: SystemDef = {
+  id: 'alpha-centauri-a',
+  name: 'Alpha Centauri A',
+  sub: 'imagined · Pandora is Polyphemus’s moon; here it gets its own orbit',
+  origin: 'imagined',
+  star: { name: 'Alpha Centauri A', color: 0xfff6e0, mass: ALPHA_CEN_MASS },
+  bodies: [
+    body('Polyphemus', 1.25, 11.5, world('gasMist', 2154, { rings: false, glow: 0.5, roughness: 0.6 }), { e: 0.02, inc: 0.8, node: 150, peri: 30, tilt: 7.6, flattening: 0.06, day: 16 }, ALPHA_CEN_MASS),
+    body('Pandora', 2.2, 0.72, storyWorld('pandora'), { e: 0.015, inc: 1.2, node: 152, peri: 40, tilt: 18.5, day: 26 }, ALPHA_CEN_MASS),
+  ],
+}
+
 export const BUILT_IN_SYSTEMS: SystemDef[] = [
-  MILKY_WAY, TRAPPIST, PROXIMA, PEGASI_51, KEPLER_452, ANDROMEDA,
+  MILKY_WAY, TRAPPIST, PROXIMA, PEGASI_51, KEPLER_452,
+  OUTER_RIM, ERIDANI_40, TAU_CETI, ALPHA_CENTAURI, ANDROMEDA,
 ]
 
 export function builtInSystem(id: string): SystemDef | null {

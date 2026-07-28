@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { ANDROMEDA, KEPLER_452, MILKY_WAY, PEGASI_51, PROXIMA, TRAPPIST } from '../data/systems'
+import {
+  ALPHA_CENTAURI, ANDROMEDA, ERIDANI_40, KEPLER_452, MILKY_WAY,
+  OUTER_RIM, PEGASI_51, PROXIMA, TAU_CETI, TRAPPIST,
+} from '../data/systems'
 import { ORBITS } from '../engine/planets'
-import { periodFor, starRadius, starSize } from '../engine/scale'
+import { periodFor, sameDist, starRadius, starSize } from '../engine/scale'
 import {
   A_MAX, MASS_MAX, MASS_MIN, MAX_BODIES, STAR_KINDS,
   addRolledWorld, addWorld, bodyFromWorld, dayFor, duplicateBody, duplicateSystem,
@@ -133,6 +136,52 @@ describe('the built-in systems', () => {
     // keeps its measured distance rather than shoving it outward.
     expect(out.bodies[0].a).toBeCloseTo(0.01154, 5)
     expect(out.star.mass).toBeCloseTo(0.0898, 4)
+  })
+
+  it('marks every homage system as imagined, with no photographic maps', () => {
+    for (const s of [OUTER_RIM, ERIDANI_40, TAU_CETI, ALPHA_CENTAURI]) {
+      expect(s.origin, s.name).toBe('imagined')
+      expect(s.sub, s.name).toMatch(/imagined/)
+      for (const b of s.bodies) expect(b.texture, b.name).toBeNull()
+    }
+  })
+
+  it('derives every homage year from its own star, like everything else', () => {
+    // The fictions are invented but the physics is not negotiable: a saved
+    // copy re-derives periods on sanitisation, so they must already agree.
+    for (const s of [OUTER_RIM, ERIDANI_40, TAU_CETI, ALPHA_CENTAURI]) {
+      for (const b of s.bodies) {
+        const derived = periodFor(b.a, s.star.mass)
+        expect(Math.abs(derived - b.period) / b.period, b.name).toBeLessThan(0.001)
+      }
+    }
+  })
+
+  it('gives every story world its canonical seed, so its scan is the fiction', () => {
+    const seeds: Record<string, number | undefined> = {
+      Mustafar: 2005, Tatooine: 1977, Hoth: 1980, Erid: 2021, Adrian: 1021, Pandora: 2009,
+    }
+    for (const s of [OUTER_RIM, ERIDANI_40, TAU_CETI, ALPHA_CENTAURI]) {
+      for (const b of s.bodies) {
+        if (seeds[b.name] !== undefined) expect(b.params.seed, b.name).toBe(seeds[b.name])
+      }
+    }
+  })
+
+  it('keeps Pandora outside Polyphemus, since it cannot ride it as a moon', () => {
+    const [polyphemus, pandora] = ALPHA_CENTAURI.bodies
+    expect(polyphemus.name).toBe('Polyphemus')
+    expect(pandora.name).toBe('Pandora')
+    expect(pandora.a).toBeGreaterThan(polyphemus.a)
+    expect(ALPHA_CENTAURI.sub).toMatch(/moon/)
+  })
+
+  it('draws Pandora clear of Polyphemus even at conjunction', () => {
+    // In same-size mode every planet is a 0.24-radius disc, so these two
+    // drawn orbits need at least 0.48 of separation or a conjunction pushes
+    // the moon through its own planet's surface, once a minute, on screen.
+    const [polyphemus, pandora] = ALPHA_CENTAURI.bodies
+    expect(sameDist(pandora.a) - sameDist(polyphemus.a)).toBeGreaterThan(0.48)
   })
 
   it('marks Andromeda as imagined and gives it no photographic maps', () => {

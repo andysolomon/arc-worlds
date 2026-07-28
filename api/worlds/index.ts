@@ -4,7 +4,7 @@ import { getDb } from '../../db/index.js'
 import { worlds } from '../../db/schema.js'
 import { cachePrivate, cleanName, fail, makeSlug, makeToken, readOwnerKey } from '../_lib.js'
 import { sanitize } from '../../src/lib/params.js'
-import { ANCIENT, PRESETS, SOLAR } from '../../src/data/presets.js'
+import { ANCIENT, FICTION, PRESETS, SOLAR } from '../../src/data/presets.js'
 
 const MAX_LIMIT = 48
 
@@ -13,7 +13,8 @@ function describe(preset: string, seed: number) {
   const p =
     PRESETS.find((x) => x.key === preset) ??
     SOLAR.find((x) => x.key === preset) ??
-    ANCIENT.find((x) => x.key === preset)
+    ANCIENT.find((x) => x.key === preset) ??
+    FICTION.find((x) => x.key === preset)
   return { dot: p?.dot ?? '#7fae62', sub: `${p?.label ?? 'Meadow'} · seed ${seed}` }
 }
 
