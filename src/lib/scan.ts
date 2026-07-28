@@ -6,6 +6,7 @@
  * reveal each. Deterministic: the same world always scans the same way.
  */
 import { mulberry32 } from '../engine/noise'
+import { realFor } from '../engine/planets'
 import {
   MINERAL_SETS, ODDITIES, PIG, REAL_PROFILES, SPECIES,
   type BioReading, type Profile, type SpectralLine, type WaterReading,
@@ -133,7 +134,9 @@ function gasProfile(P: PlanetParams, key: string, note: string): Profile {
 }
 
 function buildProfile(P: PlanetParams, r: () => number): Profile {
-  const key = P.preset
+  // A pluto-preset world that lost its measured identity (reseeded) derives
+  // its reading as the icy world it now is.
+  const key = P.preset === 'pluto' ? 'ice' : P.preset
   const t = typeOf(key)
   const note = ODDITIES[(r() * ODDITIES.length) | 0]
   if ('gas' in t && t.gas) return gasProfile(P, key, note)
@@ -254,8 +257,9 @@ export function computeScan(P: PlanetParams): ScanResult {
   )
 
   // A real planet scans as itself, using its measured profile. Only a sculpted
-  // world gets one derived from the sliders.
-  const real = P.texture ? REAL_PROFILES[P.preset] : null
+  // world gets one derived from the sliders. Identity follows realFor: the
+  // photographic map, or the canonical seed for texture-less Pluto.
+  const real = realFor(P) ? REAL_PROFILES[P.preset] ?? null : null
   const prof = real ?? buildProfile(P, r)
 
   const gases: GasReading[] = prof.gases

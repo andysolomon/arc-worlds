@@ -27,6 +27,22 @@ describe('sameDist', () => {
   })
 })
 
+describe('the drawn solar system', () => {
+  it("keeps Pluto's perihelion inside Neptune's orbit in both scale models", () => {
+    // The engine draws an ellipse of semi-axis model(a), scaled by (1-e) at
+    // perihelion — the same arithmetic as applyOrbits. Both compressions are
+    // monotonic but nonlinear, so the crossing has to be checked, not assumed:
+    // it is the whole point of putting Pluto in the sky.
+    const [, plutoA, , plutoE] = ORBITS.find((o) => o[0] === 'pluto')!
+    const [, neptuneA] = ORBITS.find((o) => o[0] === 'neptune')!
+    expect(visDist(plutoA) * (1 - plutoE)).toBeLessThan(visDist(neptuneA))
+    expect(sameDist(plutoA) * (1 - plutoE)).toBeLessThan(sameDist(neptuneA))
+    // And it still frames: ordering by semi-major axis is preserved.
+    expect(visDist(plutoA)).toBeGreaterThan(visDist(neptuneA))
+    expect(sameDist(plutoA)).toBeGreaterThan(sameDist(neptuneA))
+  })
+})
+
 describe('sizeMap', () => {
   it('clamps below the smallest body and at the Sun', () => {
     expect(sizeMap(100)).toBeCloseTo(0.3, 5)

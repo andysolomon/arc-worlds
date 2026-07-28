@@ -39,7 +39,10 @@ export const SOLAR: SolarBody[] = [
     {key:'jupiter',name:'Jupiter',label:'Gas giant',dot:'#c9a06a',sub:'a storm bigger than Earth',params:{seed:55,mountains:0,water:0,roughness:.5,clouds:0,glow:.15,ice:0,rings:false,moons:3,atmoColor:null,texture:'images2k/jupiter.jpg',cloudTexture:null}},
     {key:'saturn',name:'Saturn',label:'Gas giant',dot:'#d9c49a',sub:'rings of ice and dust',params:{seed:66,mountains:0,water:0,roughness:.5,clouds:0,glow:.12,ice:0,rings:false,moons:3,atmoColor:null,texture:'images2k/saturn.jpg',cloudTexture:null}},
     {key:'uranus',name:'Uranus',label:'Gas giant',dot:'#9fd8dc',sub:'rolls around on its side · faint rings',params:{seed:77,mountains:0,water:0,roughness:.4,clouds:0,glow:.2,ice:0,rings:false,moons:2,atmoColor:null,texture:'images2k/uranus.jpg',cloudTexture:null}},
-    {key:'neptune',name:'Neptune',label:'Gas giant',dot:'#3f6fd0',sub:'the windiest place we know',params:{seed:88,mountains:0,water:0,roughness:.5,clouds:0,glow:.22,ice:0,rings:false,moons:1,atmoColor:null,texture:'images2k/neptune.jpg',cloudTexture:null}}
+    {key:'neptune',name:'Neptune',label:'Gas giant',dot:'#3f6fd0',sub:'the windiest place we know',params:{seed:88,mountains:0,water:0,roughness:.5,clouds:0,glow:.22,ice:0,rings:false,moons:1,atmoColor:null,texture:'images2k/neptune.jpg',cloudTexture:null}},
+    // No CC BY photographic map exists in our texture set, so Pluto is
+    // procedural: seed 99 is its canonical identity (see realFor).
+    {key:'pluto',name:'Pluto',label:'Dwarf',dot:'#cfa87f',sub:'a dwarf planet with a heart of ice',params:{seed:99,mountains:.45,water:0,roughness:.5,clouds:0,glow:.1,ice:.6,rings:false,moons:1,atmoColor:0x9fc9ec,texture:null,cloudTexture:null}}
   ]
 
 export function typeOf(key: string): Preset | SolarBody {

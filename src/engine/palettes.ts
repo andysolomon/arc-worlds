@@ -27,6 +27,10 @@ export const PALETTES: Record<PresetKey, Palette> = {
     atmo: 0xb48fff, cloudO: 0.25,
   },
 
+  // Tholin tans and rusts under bright nitrogen-ice plains, below a haze that
+  // really is blue — the ramp runs Cthulhu Macula to Sputnik Planitia.
+  pluto: { water: 0x8a6f5a, deep: 0x5f4a3c, sand: 0xcfa87f, low: 0xb5895f, mid: 0x9a7350, high: 0xe0d5c4, snow: 0xf7f4ee, atmo: 0x9fc9ec, waterOpacity: 0.8, cloudO: 0.2 },
+
   mercury: { water: 0x555055, deep: 0x3a3538, sand: 0x8f8788, low: 0x7a7274, mid: 0x655d60, high: 0x9a9294, snow: 0xb8b0b2, atmo: 0x8a8090, waterOpacity: 0.7, cloudO: 0.2 },
   venus: { water: 0xc98f4f, deep: 0x8a5f2f, sand: 0xe8c088, low: 0xd0a060, mid: 0xb08048, high: 0x8f6538, snow: 0xf0d8a8, atmo: 0xffd98f, waterOpacity: 0.8, cloudO: 1, cloudTint: 0xf0dca8 },
   mars: { water: 0x7a5f50, deep: 0x5f4438, sand: 0xd08858, low: 0xc07040, mid: 0x9a5530, high: 0x784028, snow: 0xe8d8c8, atmo: 0xe8a878, waterOpacity: 0.75, cloudO: 0.25 },

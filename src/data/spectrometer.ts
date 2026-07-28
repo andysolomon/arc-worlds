@@ -97,9 +97,9 @@ export interface Profile {
 }
 
 /**
- * Hand-written spectroscopic profiles for the eight real planets — measured
- * facts, not values derived from the sculptor sliders. Earth is keyed
- * `temperate`, matching the preset it doubles as.
+ * Hand-written spectroscopic profiles for the measured bodies — the eight
+ * planets and Pluto — facts, not values derived from the sculptor sliders.
+ * Earth is keyed `temperate`, matching the preset it doubles as.
  */
 export const REAL_PROFILES: Record<string, Profile> = {
     mercury:{atmoTitle:'No real atmosphere',pressure:'~10⁻¹⁵ bar',
@@ -173,5 +173,14 @@ export const REAL_PROFILES: Record<string, Profile> = {
       compounds:[['Methane ice clouds','CH₄',65,'#bcd8f0','White cloud tops rising above the blue.'],['Hydrogen sulphide clouds','H₂S',18,'#d4dcd8','The deck below.'],['Photochemical haze','C₂H₂, C₂H₆',12,'#dde6ee','Thinner than Uranus\u2019s — the whole reason Neptune looks deeper blue.'],['Ammonia hydrates','NH₃·H₂O',3,'#dce8f0','Mixed into the mantle fluid.']],
       bio:{title:'No biosignature',dot:'#c9b0bb',desc:'Cloud tops near −220 °C, no surface. Triton, captured and geologically active, is the more interesting target.'},
       colorWhy:'The same methane absorption as Uranus, cutting away everything past 600 nm — but with a thinner haze layer above it, so less white light is scattered back to dilute the cyan. A 2024 reanalysis showed the two planets are far closer in true colour than the classic images suggested.',
-      note:'Neptune was found by mathematics before it was found by telescope: Le Verrier predicted where to point.'}
+      note:'Neptune was found by mathematics before it was found by telescope: Le Verrier predicted where to point.'},
+    pluto:{atmoTitle:'Thin nitrogen, seasonally alive',pressure:'~13 µbar',
+      atmoSummary:'A hundred-thousandth of Earth’s pressure, and it is not permanent: the air is nitrogen evaporating off the surface ice, thickest near perihelion and expected to mostly freeze back out as Pluto swings away from the Sun. Haze layers stack more than 200 km deep.',
+      gases:[['N2',99],['CH4',0.5],['CO',0.05],['CH4h',0.01]],
+      water:{state:'ice — as bedrock',dot:'#bcd7e8',detail:'At −230 °C water ice is as rigid as granite, and Pluto uses it that way: mountains of it stand 6 km over Sputnik Planitia, floating in denser nitrogen ice like icebergs. A liquid ocean may survive far beneath the heart.',sig:'Water-ice bands at 1.5 and 2.0 µm show through wherever the nitrogen and methane frosts thin out.'},
+      surfLabel:'Surface ices',pigs:['ice'],
+      compounds:[['Nitrogen ice','N₂',55,'#e8f0f4','Sputnik Planitia — the western lobe of the heart — is a churning glacier of it, its polygonal convection cells overturning every ~500,000 years.'],['Methane ice','CH₄',20,'#dfe8dc','Frosts ridges and crater rims, and builds the bladed terrain of Tartarus Dorsa.'],['Water ice','H₂O',15,'#cfe6f2','The bedrock and the mountains; too rigid at these temperatures to flow at all.'],['Carbon-monoxide ice','CO',5,'#e4e8ea','Mixed into the nitrogen plains — a marker of the freshest ice.'],['Tholins','CₓHᵦNᵧ',4,'#b5713f','Sunlight-cooked organics, staining Cthulhu Macula the red-brown of old varnish.']],
+      bio:{title:'No biosignature',dot:'#c9b0bb',desc:'The surface is −230 °C and the air is a whisper. The one ambiguity worth naming sits underneath: if the subsurface ocean is real, it has been dark and sealed for four billion years.'},
+      colorWhy:'Tholins do the painting: sunlight breaking methane and nitrogen apart builds organics that absorb blue, so the old terrains read tan to red-brown. The heart stays bright because fresh nitrogen ice reflects everything. And the haze scatters blue exactly the way a thin atmosphere should — photographed against the dark, Pluto’s sky is a ring of blue.',
+      note:'New Horizons crossed 4.8 billion km over nine and a half years for one afternoon of close-ups — and the heart was visible from the first approach frames.'}
   }
