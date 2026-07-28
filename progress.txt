@@ -1,0 +1,110 @@
+2026-07-28 performance implementation
+
+DONE
+- Diagnosed Safari paint/composite pressure, synchronous procedural bakes, and
+  first-use WebGL program compilation from the supplied profiles.
+- Moved world and cloud pixel generation to transferable worker jobs.
+- Added stable mapped placeholders, async shader warmup, and reusable moon assets.
+- Narrowed surface/system invalidation to parameters that affect those outputs.
+- Added 30fps passive rendering, paused/offscreen suspension, DPR/MSAA controls,
+  adaptive DPR fallback, and reduced DOM/compositor work.
+- Added immutable share caching and aligned Vercel functions with the database region.
+- Added deterministic bake tests.
+
+VERIFIED
+- bun run typecheck
+- bun run lint
+- bun run test: 68 passed
+- bun run build
+- bun run test:e2e: 13 passed, including worker-backed custom systems and idle pause
+
+DEPLOYED
+- Vercel production deployment: dpl_E3Aj8PLaJfS61jsLj8rbdnZpS4YR
+- Production alias: https://little-worlds-delta.vercel.app
+- Status: Ready; functions built in iad1
+- Live smoke test: WebGL rendered 57,812 triangles and loaded bake.worker-B96fjZqW.js
+- Immutable world response verified with one-year browser caching
+
+MEASURED
+- A/B compared revision 1755783 with production over three alternating runs,
+  at DPR 2 and both native speed and 4x CPU stress.
+- Native median interaction duration: 320 ms -> 40 ms (88% lower).
+- Native median total long-task time: 4,736 ms -> 458 ms (90% lower).
+- Native median main-thread task time: 8,046 ms -> 1,787 ms (78% lower).
+- Orbit action completion plus observable system frame: 1,996 ms -> 592 ms (70% faster).
+- Pause: 47 frames and 3,055 ms task time per 3 s -> zero observed work.
+- Full methodology and limitations: PERFORMANCE_RESULTS.md
+
+NEXT
+- Re-run Safari and Chrome performance recordings against production to validate
+  the hardware-level INP and frame-time targets.
+
+2026-07-28 performance guardrails
+
+DONE
+- Added performance-budget.json for interaction, long-task, main-thread,
+  renderer-idle, worker, console-error, entry-bundle, and worker-bundle limits.
+- Added a repeatable headless Chromium benchmark with one-run smoke and
+  three-run median modes.
+- Added bundle and browser budget checkers, including optional same-runner
+  regression comparison with a 10% limit.
+- Added a Performance GitHub workflow for pull requests, main, nightly, and
+  manual runs. Pull requests compare the candidate with their base revision.
+- Added a pull request performance checklist.
+- Added repository-specific performance requirements and commands to AGENTS.md.
+
+VERIFIED
+- Entry bundle: 234,202 B gzip <= 256,000 B.
+- Bake worker: 90,901 B raw <= 102,400 B.
+- Three-run median: first system frame 476.7 ms; interaction 32 ms;
+  total/max long task 420 ms; main-thread task time 1,583 ms.
+- Passive renderer 23.3 fps; paused frames and paused task time both zero.
+- Worker and Event Timing instrumentation loaded; no browser errors.
+- Relative budget comparison path passes with a same-result control.
+- bun run typecheck
+- bun run lint
+- bun run test: 74 passed
+- bun run build
+- bun run test:e2e: 13 passed
+
+NEXT
+- Require the Performance workflow as a branch-protection check after its first
+  successful GitHub run establishes that hosted-runner variance fits the budgets.
+- Re-profile production on the original Safari hardware.
+
+2026-07-28 per-browser galleries
+
+CONTEXT
+- The Worlds and Systems lists were global: GET /api/worlds and /api/systems
+  selected the newest rows with no owner filter, so every visitor saw every world
+  anyone had ever saved. Nothing in the schema recorded who saved what.
+
+DONE
+- Added a nullable owner_key column plus an (owner_key, created_at) index to both
+  worlds and systems. Nullable only for pre-existing rows, which belong to nobody
+  and are now reachable by their /w/:slug or /s/:slug link alone.
+- Added src/lib/owner.ts: a random base64url key the browser issues to itself and
+  keeps in localStorage, with an in-memory fallback for private browsing.
+- listWorlds/listSystems/saveWorld/saveSystem now send it as x-owner-key. Fetching
+  one thing by slug deliberately does not, so shared links still work for anyone
+  and stay immutably cacheable.
+- List handlers filter by the key, reject an ownerless POST with 400, and answer a
+  keyless GET with an empty list.
+- List responses moved from `public, s-maxage=10` to `private, no-store` with
+  `vary: x-owner-key`. Deliberate: a shared CDN entry would serve one visitor's
+  gallery to the next. Slug routes keep their one-year immutable caching, so the
+  performance plan's share-link criterion is unaffected.
+- Reworded the Worlds and Systems panel copy from "recently saved" to the
+  visitor's own, and said that links still open for anyone.
+
+VERIFIED
+- bun run typecheck
+- bun run lint
+- vitest run: 74 passed, including 6 new owner-key tests
+- playwright: gallery degradation and per-browser key isolation both pass
+
+NEXT
+- Run `bun run db:push` to add owner_key before deploying; the API writes it on
+  every insert, so the column must exist first.
+- Decide whether the anonymous key should later be claimable by a real account,
+  which is the only way a gallery survives a new device or cleared site data.

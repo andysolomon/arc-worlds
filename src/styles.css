@@ -65,7 +65,8 @@ a:hover { color: #d95f3f; }
 .time-bar {
   position: absolute; top: 16px; left: 22px; z-index: 2;
   display: flex; align-items: center; gap: 4px;
-  background: rgba(28, 20, 36, 0.72); backdrop-filter: blur(8px);
+  background: rgba(28, 20, 36, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 999px; padding: 6px 8px;
 }
 .time-bar .lbl { font-size: 10.5px; letter-spacing: 0.09em; color: #a493b0; padding: 0 6px; font-weight: 700; }
@@ -87,8 +88,9 @@ a:hover { color: #d95f3f; }
 }
 .btn-ghost {
   font-family: 'Quicksand', sans-serif; font-weight: 600; font-size: 13px;
-  color: #e8dcef; background: rgba(28, 20, 36, 0.72); backdrop-filter: blur(8px);
-  border: none; border-radius: 999px; padding: 9px 16px; cursor: pointer;
+  color: #e8dcef; background: rgba(28, 20, 36, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 999px; padding: 9px 16px; cursor: pointer;
 }
 .btn-ghost:hover { background: rgba(48, 34, 60, 0.86); }
 .hint { font-size: 12px; color: #9a89a6; }

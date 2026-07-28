@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { getDb } from '../../db/index.js'
 import { worlds } from '../../db/schema.js'
-import { cacheFor, fail } from '../_lib.js'
+import { cacheImmutable, fail } from '../_lib.js'
 
 const SLUG_RE = /^[A-Za-z0-9_-]{3,64}$/
 
@@ -32,7 +32,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!row) return fail(res, 404, 'No such world')
 
     // A world never changes once saved, so this can cache hard.
-    cacheFor(res, 300)
+    cacheImmutable(res)
     return res.status(200).json({ world: row })
   } catch (e) {
     console.error('[api/worlds/:slug]', e)

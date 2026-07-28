@@ -1,0 +1,75 @@
+name: Performance
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '23 7 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: performance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  budget:
+    name: Browser and bundle budgets
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out candidate
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install --frozen-lockfile
+
+      - name: Install Playwright browser
+        run: bunx playwright install chromium --with-deps
+
+      - name: Build and enforce candidate budgets
+        run: bun run perf:ci
+
+      - name: Check out pull request base
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .performance-base
+
+      - name: Install and build pull request base
+        if: github.event_name == 'pull_request'
+        working-directory: .performance-base
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+
+      - name: Benchmark pull request base
+        if: github.event_name == 'pull_request'
+        run: >
+          bun scripts/run-performance.mjs
+          --project-dir .performance-base
+          --port 4175
+          --runs 3
+          --output .artifacts/performance/baseline.json
+
+      - name: Reject regressions over ten percent
+        if: github.event_name == 'pull_request'
+        run: >
+          bun scripts/check-performance-budget.mjs
+          --results .artifacts/performance/results.json
+          --baseline .artifacts/performance/baseline.json
+
+      - name: Upload performance evidence
+        uses: actions/upload-artifact@v5
+        if: ${{ !cancelled() }}
+        with:
+          name: performance-results
+          path: .artifacts/performance/
+          retention-days: 30
+          if-no-files-found: error

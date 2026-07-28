@@ -1,0 +1,61 @@
+# Arc Worlds repository guidance
+
+Follow the global agent instructions in addition to this file.
+
+## Runtime and verification
+
+- Use Bun for dependency, build, test, and script commands.
+- This is a Vite application: use Vitest for unit tests and Playwright for browser tests.
+- Before handing off an implementation, run `bun run typecheck`, `bun run lint`,
+  and `bun run test`. Run relevant end-to-end tests for user-facing behavior.
+- Do not push, merge, or deploy unless the user explicitly requests it.
+- Keep `IMPLEMENTATION_PLAN.md` and `progress.txt` synchronized whenever scope
+  or delivery status changes.
+
+## Performance is an acceptance criterion
+
+Treat performance as part of feature correctness, especially for changes to
+`src/engine`, procedural generation, WebGL materials, the orbit transition,
+continuous animation, or UI layered over the canvas.
+
+Before implementing a feature, identify:
+
+- what runs on the main thread and whether CPU-heavy work belongs in a worker;
+- what invalidates geometry, textures, materials, or shader topology;
+- whether rendering can stop while paused, hidden, or offscreen;
+- which resources can be cached and reused rather than recreated;
+- the expected bundle-size and interaction cost.
+
+While implementing:
+
+- Do not add unconditional `requestAnimationFrame` loops.
+- Keep procedural pixel/noise loops in module workers and transfer large buffers.
+- Keep interaction paths free of shader compilation and avoid setting
+  `material.needsUpdate` for value-only changes.
+- Reuse and explicitly dispose Three.js geometry, materials, textures, workers,
+  observers, and event listeners.
+- Preserve narrow invalidation keys: presentation-only edits must not trigger
+  procedural rebakes.
+- Cap resolution and rendering cadence according to the existing viewport policy.
+- Avoid backdrop filters and other full-canvas compositor effects over live WebGL.
+
+## Performance budgets and commands
+
+`performance-budget.json` is the source of truth for enforceable budgets.
+
+- `bun run size:check` checks the built entry bundle and worker sizes.
+- `bun run perf:smoke` runs one local browser sample for fast iteration.
+- `bun run perf:benchmark` records a three-run median in
+  `.artifacts/performance/results.json`.
+- `bun run perf:budget` checks the recorded median.
+- `bun run perf:ci` builds and runs all absolute bundle/browser budgets.
+
+For performance-sensitive changes, include before/after measurements from the
+same machine and browser. A regression greater than 10% requires a fix or an
+explicit, documented product tradeoff. Do not loosen a budget merely to make CI
+pass; update it only with measured evidence and record the decision in
+`PERFORMANCE_RESULTS.md`.
+
+The Performance GitHub workflow enforces absolute budgets on every pull request,
+push to `main`, nightly schedule, and manual run. Pull requests also benchmark
+their base revision on the same runner and reject regressions over 10%.

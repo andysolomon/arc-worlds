@@ -35,3 +35,9 @@ export function cleanName(v: unknown): string {
 export function cacheFor(res: VercelResponse, seconds: number) {
   res.setHeader('cache-control', `public, s-maxage=${seconds}, stale-while-revalidate=60`)
 }
+
+/** Saved share slugs are immutable, so browsers and the CDN may retain them. */
+export function cacheImmutable(res: VercelResponse) {
+  const year = 31_536_000
+  res.setHeader('cache-control', `public, max-age=${year}, s-maxage=${year}, immutable`)
+}

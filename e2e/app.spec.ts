@@ -36,6 +36,24 @@ test('renders a planet on first load', async ({ page }) => {
   expect(await hasDrawnGeometry(page)).toBe(true)
 })
 
+test('pause lets the renderer go idle', async ({ page }) => {
+  await page.goto('/')
+  await expect.poll(() =>
+    page.evaluate(() => Number(document.querySelector('canvas')?.dataset.frames ?? 0)),
+  ).toBeGreaterThan(10)
+
+  await page.getByRole('button', { name: 'Pause' }).click()
+  await page.waitForTimeout(500)
+  const settled = await page.evaluate(() =>
+    Number(document.querySelector('canvas')?.dataset.frames ?? 0),
+  )
+  await page.waitForTimeout(700)
+  const after = await page.evaluate(() =>
+    Number(document.querySelector('canvas')?.dataset.frames ?? 0),
+  )
+  expect(after).toBe(settled)
+})
+
 test('sculpting a world updates its identity', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Ember' }).click()
@@ -109,6 +127,8 @@ test('every planet texture loads', async ({ page }) => {
 })
 
 test('a system built from your own worlds renders in orbit', async ({ page }) => {
+  const workerUrls: string[] = []
+  page.on('worker', (worker) => workerUrls.push(worker.url()))
   await page.goto('/')
   await page.getByRole('tab', { name: 'Systems' }).click()
   await page.getByRole('button', { name: 'New, empty' }).click()
@@ -128,6 +148,7 @@ test('a system built from your own worlds renders in orbit', async ({ page }) =>
   await page.getByRole('button', { name: 'Orbit view' }).click()
   await page.waitForTimeout(3000)
   expect(await hasDrawnGeometry(page)).toBe(true)
+  expect(workerUrls.some((url) => /bake\.worker-.*\.js$/.test(url))).toBe(true)
 
   // Each world orbits further out than the last, so a year gets longer too.
   await page.getByRole('button', { name: 'Body list' }).click()

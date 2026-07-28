@@ -1,0 +1,67 @@
+{
+  "bundle": {
+    "entryGzipBytes": 256000,
+    "workerRawBytes": 102400
+  },
+  "browser": {
+    "firstSystemFrameMs": {
+      "max": 1000,
+      "unit": "ms"
+    },
+    "interactionDurationMs": {
+      "max": 200,
+      "unit": "ms"
+    },
+    "longTaskMaxMs": {
+      "max": 500,
+      "unit": "ms"
+    },
+    "longTaskTotalMs": {
+      "max": 750,
+      "unit": "ms"
+    },
+    "taskDurationMs": {
+      "max": 2500,
+      "unit": "ms"
+    },
+    "activeRendererFps": {
+      "min": 20,
+      "max": 32,
+      "unit": "fps"
+    },
+    "pausedFramesIn3s": {
+      "equals": 0,
+      "unit": "frames"
+    },
+    "pausedTaskDurationMs": {
+      "max": 25,
+      "unit": "ms"
+    },
+    "workerLoaded": {
+      "equals": true
+    },
+    "eventTimingSupported": {
+      "equals": true
+    },
+    "errorCount": {
+      "equals": 0,
+      "unit": "errors"
+    }
+  },
+  "regression": {
+    "maxPercent": 10,
+    "lowerIsBetter": [
+      "firstSystemFrameMs",
+      "interactionDurationMs",
+      "longTaskMaxMs",
+      "longTaskTotalMs",
+      "taskDurationMs",
+      "pausedFramesIn3s",
+      "pausedTaskDurationMs",
+      "errorCount"
+    ],
+    "higherIsBetter": [
+      "activeRendererFps"
+    ]
+  }
+}

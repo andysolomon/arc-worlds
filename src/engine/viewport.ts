@@ -1,8 +1,8 @@
 import * as THREE from 'three'
-import { bakeWorld } from './bake'
+import type { BakeWorkerRequest, BakeWorkerResponse } from './bake.worker'
 import { customRing, moonGeo, ringGeo, ringMaterial, toneTex } from './materials'
 import { mulberry32, type Noise3 } from './noise'
-import { cloudAt, makeSurface, noiseFor } from './surface'
+import { makeSurface, noiseFor } from './surface'
 import { REAL } from './planets'
 import { isGas, PALETTES } from './palettes'
 import {
@@ -31,6 +31,8 @@ interface SysNode {
   ringMesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial> | null
   /** Baked map, owned by this node so it can be freed on rebuild. */
   baked: THREE.Texture | null
+  /** True for the temporary procedural placeholder; false for shared photo maps. */
+  ownsMap: boolean
   a: number
   e: number
   period: number
@@ -47,20 +49,56 @@ interface SysNode {
 }
 
 /**
- * Identity of a body's *appearance*. Changing any of it means the meshes have
- * to be rebuilt; changing only its orbit does not, which is what keeps
- * dragging a distance slider from re-baking every planet in the system.
+ * Identity of the expensive, baked part of a body's appearance. Lighting,
+ * animation and labels deliberately do not belong here: changing one of those
+ * must not recreate materials or re-bake every procedural planet.
  */
 function bodyKey(b: SystemBody): string {
   const p = b.params
-  const params = (Object.keys(p) as Array<keyof PlanetParams>)
-    .sort()
-    .map((k) => `${k}=${String(p[k])}`)
-    .join(',')
+  const baked = [
+    p.seed, p.preset, p.mountains, p.water, p.roughness, p.ice, p.clouds,
+  ].join(':')
+  const ring = b.ring ?? (p.rings
+    ? [p.ringN, p.ringInner, p.ringTilt, p.ringWidth, p.ringGap, p.ringOpacity, p.ringColor]
+    : null)
   return [
-    b.name, b.radius, b.tilt, b.flattening, b.day,
-    b.texture ?? '', JSON.stringify(b.ring ?? null), params,
+    b.texture ?? '', baked, p.rings ? 1 : 0, JSON.stringify(ring),
   ].join('|')
+}
+
+/** Params that require the high-detail single-world sphere to be resampled. */
+function surfaceKey(p: PlanetParams, detail: string): string {
+  return [
+    detail, p.seed, p.preset, p.mountains, p.water, p.roughness, p.ice,
+  ].join(':')
+}
+
+function dataTexture(
+  pixels: Uint8Array,
+  width: number,
+  height: number,
+  colorSpace: THREE.ColorSpace = THREE.SRGBColorSpace,
+): THREE.DataTexture {
+  const texture = new THREE.DataTexture(pixels, width, height, THREE.RGBAFormat)
+  texture.colorSpace = colorSpace
+  texture.flipY = true
+  texture.magFilter = THREE.LinearFilter
+  texture.minFilter = width > 1 ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter
+  texture.generateMipmaps = width > 1
+  texture.needsUpdate = true
+  return texture
+}
+
+/** A mapped placeholder keeps the material's shader variant stable on swaps. */
+function solidTexture(color: THREE.ColorRepresentation, alpha = 255): THREE.DataTexture {
+  const c = new THREE.Color(color)
+  return dataTexture(
+    new Uint8Array([
+      Math.round(c.r * 255), Math.round(c.g * 255), Math.round(c.b * 255), alpha,
+    ]),
+    1,
+    1,
+  )
 }
 
 /**
@@ -109,13 +147,18 @@ export class PlanetViewport {
   private sysId = ''
   private sysShape = ''
   private sysOrbitKey = ''
+  private sysPropertyKey = ''
   private sysCount = -1
   /** The star's drawn radius before its own mass is taken into account. */
   private sunBase = 1.15
   /** Set when the view has changed enough that the camera should refit. */
   private needFrame = false
-  /** Pending texture bakes, drained one per frame so a rebuild never stutters. */
-  private sysBakes: Array<() => void> = []
+  /** CPU-heavy procedural maps are produced away from the rendering thread. */
+  private worldWorker: Worker | null = null
+  private cloudWorker: Worker | null = null
+  private bakeId = 0
+  private bakeGeneration = 0
+  private bakeTargets = new Map<number, { generation: number; node: SysNode }>()
   private fitSame = 11
   private fitScale = 86
 
@@ -124,9 +167,19 @@ export class PlanetViewport {
   private stopped = false
   private raf = 0
   private frames = 0
+  private forceRender = true
+  private lastRender = 0
+  private compileNeeded = true
+  private compiling: Promise<void> | null = null
+  private inView = true
+  private pixelRatio: number
+  private slowFrames = 0
+  private lastPublishedTriangles = -1
+  private lastPublishedSunScale = Number.NaN
 
   private seed: number | null = null
   private detail = ''
+  private surfaceKey = ''
   private cloudKey = ''
   private cloudsPending = false
   private cloudLast = 0
@@ -147,7 +200,6 @@ export class PlanetViewport {
 
   private n1: Noise3 | null = null
   private n2: Noise3 | null = null
-  private nc: Noise3 | null = null
 
   private rotY = 0
   private rotX = 0.16
@@ -165,8 +217,12 @@ export class PlanetViewport {
   private texCache: Record<string, THREE.Texture> = {}
   private texUrl: string | null = null
   private cloudTexUrl: string | null = null
+  private moonGeoCache = new Map<string, THREE.BufferGeometry>()
+  private moonMatCache = new Map<string, THREE.MeshStandardMaterial>()
 
   private ro: ResizeObserver
+  private io: IntersectionObserver
+  private visibilityHandler: () => void
   private ringM3 = new THREE.Matrix3()
   private ringN = new THREE.Vector3()
   private tmpV = new THREE.Vector3()
@@ -181,8 +237,13 @@ export class PlanetViewport {
     this.container = container
     if (!container.style.position) container.style.position = 'relative'
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
+    const nativeDpr = window.devicePixelRatio || 1
+    // High-density screens already smooth edges through their physical pixels.
+    // Combining DPR 2 with MSAA made Safari composite far more samples than the
+    // viewport visibly benefits from.
+    const renderer = new THREE.WebGLRenderer({ antialias: nativeDpr <= 1.5, alpha: true })
+    this.pixelRatio = Math.min(nativeDpr, 1.5)
+    renderer.setPixelRatio(this.pixelRatio)
     const cv = renderer.domElement
     cv.style.cssText =
       'position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab'
@@ -223,7 +284,12 @@ export class PlanetViewport {
 
     this.clouds = new THREE.Mesh(
       new THREE.SphereGeometry(1.16, 80, 56),
-      new THREE.MeshLambertMaterial({ transparent: true, opacity: 0.95, depthWrite: false }),
+      new THREE.MeshLambertMaterial({
+        map: solidTexture(0xffffff, 0),
+        transparent: true,
+        opacity: 0.95,
+        depthWrite: false,
+      }),
     )
     this.spinG.add(this.clouds)
 
@@ -289,7 +355,11 @@ export class PlanetViewport {
 
     this.texMesh = new THREE.Mesh(
       new THREE.SphereGeometry(1, 96, 64),
-      new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0 }),
+      new THREE.MeshStandardMaterial({
+        map: solidTexture(0xffffff),
+        roughness: 1,
+        metalness: 0,
+      }),
     )
     this.texMesh.visible = false
     this.spinG.add(this.texMesh)
@@ -315,13 +385,32 @@ export class PlanetViewport {
     this.moonRoot = new THREE.Group()
     this.tiltG.add(this.moonRoot)
 
+    this.loop = this.loop.bind(this)
     this.bindPointer(cv)
     this.ro = new ResizeObserver(() => this.resize())
     this.ro.observe(container)
+    this.io = new IntersectionObserver(([entry]) => {
+      this.inView = entry?.isIntersecting ?? true
+      if (this.inView) this.invalidate()
+      else if (this.raf) {
+        cancelAnimationFrame(this.raf)
+        this.raf = 0
+      }
+    })
+    this.io.observe(container)
+    this.visibilityHandler = () => {
+      if (document.hidden && this.raf) {
+        cancelAnimationFrame(this.raf)
+        this.raf = 0
+      } else if (!document.hidden) {
+        this.lastT = 0
+        this.invalidate()
+      }
+    }
+    document.addEventListener('visibilitychange', this.visibilityHandler)
     this.resize()
 
-    this.loop = this.loop.bind(this)
-    this.raf = requestAnimationFrame(this.loop)
+    this.scheduleFrame()
   }
 
   /* --- public API ------------------------------------------------------- */
@@ -329,6 +418,7 @@ export class PlanetViewport {
   setParams(p: PlanetParams) {
     this.p = { ...p }
     this.dirty = true
+    this.invalidate()
   }
 
   /**
@@ -338,6 +428,7 @@ export class PlanetViewport {
   setSystem(def: SystemDef) {
     this.sysDef = def
     this.dirty = true
+    this.invalidate()
   }
 
   /** Run the spectrometer sweep animation. */
@@ -345,19 +436,27 @@ export class PlanetViewport {
     this.scanT0 = performance.now()
     this.scanDur = dur
     this.scanRing.visible = true
+    this.invalidate()
   }
 
   resetView() {
     const z = this.fitZ || (this.mode === 'system' ? (this.sizeMode === 'scale' ? 86 : 11) : 3.15)
     this.tgt = { y: 0, x: 0.16, z }
+    this.invalidate()
   }
 
   dispose() {
     this.stopped = true
     cancelAnimationFrame(this.raf)
     this.ro.disconnect()
+    this.io.disconnect()
+    document.removeEventListener('visibilitychange', this.visibilityHandler)
+    this.worldWorker?.terminate()
+    this.cloudWorker?.terminate()
     this.clearBodies()
     for (const t of Object.values(this.texCache)) t.dispose()
+    for (const g of this.moonGeoCache.values()) g.dispose()
+    for (const m of this.moonMatCache.values()) m.dispose()
     this.scene.traverse((o) => {
       const m = o as THREE.Mesh
       if (m.geometry) m.geometry.dispose()
@@ -387,6 +486,7 @@ export class PlanetViewport {
         const a = [...this.ptrs.values()]
         this.pinchD = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y)
       }
+      this.invalidate()
     })
 
     cv.addEventListener('pointermove', (e) => {
@@ -408,6 +508,7 @@ export class PlanetViewport {
         this.camZ = Math.max(1.9, Math.min(this.zMax(), this.camZ * (this.pinchD / Math.max(1, d))))
         this.pinchD = d
       }
+      this.invalidate()
     })
 
     const up = (e: PointerEvent) => {
@@ -417,6 +518,7 @@ export class PlanetViewport {
         cv.style.cursor = 'grab'
         if (this.sys?.visible && this.moved < 6) this.pick(e)
       }
+      this.invalidate()
     }
     cv.addEventListener('pointerup', up)
     cv.addEventListener('pointercancel', up)
@@ -427,6 +529,7 @@ export class PlanetViewport {
         e.preventDefault()
         this.tgt = null
         this.camZ = Math.max(1.9, Math.min(this.zMax(), this.camZ * (1 + e.deltaY * 0.001)))
+        this.invalidate()
       },
       { passive: false },
     )
@@ -454,6 +557,7 @@ export class PlanetViewport {
     this.renderer.setSize(w, h, false)
     this.camera.aspect = w / h
     this.camera.updateProjectionMatrix()
+    this.invalidate()
   }
 
   /* --- resource building ------------------------------------------------ */
@@ -468,11 +572,13 @@ export class PlanetViewport {
     g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3), 3))
     this.geo = g
     this.planet.geometry = g
+    this.surfaceKey = ''
+    this.compileNeeded = true
   }
 
   private loadTex(url: string, repeat?: boolean): THREE.Texture {
     if (!this.texCache[url]) {
-      const t = this.texLoader.load(url)
+      const t = this.texLoader.load(url, () => this.invalidate())
       t.colorSpace = THREE.SRGBColorSpace
       t.anisotropy = 8
       this.texCache[url] = t
@@ -485,7 +591,9 @@ export class PlanetViewport {
     const key = cfg
       ? `${cfg.inner}:${cfg.outer}:${cfg.map || ''}:${cfg.profile || 0}:${cfg.color}:${cfg.opacity}:${JSON.stringify(cfg.bands || 0)}`
       : ''
+    const wasVisible = this.ring.visible
     this.ring.visible = !!cfg
+    if (!wasVisible && this.ring.visible) this.compileNeeded = true
     if (!cfg || key === this.ringKey) return
     this.ringKey = key
 
@@ -504,7 +612,6 @@ export class PlanetViewport {
         u.uBands.value[i].set(b[0], b[1], b[2], b[3])
       }
     }
-    this.ring.material.needsUpdate = true
   }
 
   /** Returns the outermost moon distance, used to frame the camera. */
@@ -515,8 +622,6 @@ export class PlanetViewport {
 
     for (const old of this.moons) {
       this.moonRoot.remove(old.orbit)
-      old.mesh.geometry.dispose()
-      ;(old.mesh.material as THREE.Material).dispose()
     }
     this.moons = []
 
@@ -531,12 +636,24 @@ export class PlanetViewport {
       orbit.rotation.y = i * 2.399 + 0.7 // spread ascending nodes
       orbit.rotation.x = (d.inc || 0) * D2R
 
-      const mmat = new THREE.MeshStandardMaterial({ color: d.c, roughness: 0.98, metalness: 0 })
-      if (d.tone) {
-        mmat.map = toneTex(d.tone[0], d.tone[1])
-        mmat.color.set(0xffffff)
+      const geoKey = `${rd}:${d.irr?.join(':') ?? ''}`
+      let geo = this.moonGeoCache.get(geoKey)
+      if (!geo) {
+        geo = moonGeo(rd, d.irr)
+        this.moonGeoCache.set(geoKey, geo)
       }
-      const mesh = new THREE.Mesh(moonGeo(rd, d.irr), mmat)
+      const matKey = d.tone ? `tone:${d.tone.join(':')}` : `color:${d.c}`
+      let mmat = this.moonMatCache.get(matKey)
+      if (!mmat) {
+        mmat = new THREE.MeshStandardMaterial({ color: d.c, roughness: 0.98, metalness: 0 })
+        if (d.tone) {
+          mmat.map = toneTex(d.tone[0], d.tone[1])
+          mmat.color.set(0xffffff)
+        }
+        this.moonMatCache.set(matKey, mmat)
+        this.compileNeeded = true
+      }
+      const mesh = new THREE.Mesh(geo, mmat)
       orbit.add(mesh)
       this.moonRoot.add(orbit)
       this.moons.push({ orbit, mesh, d: dist, e: d.e || 0, P: d.P, phase: (i * 2.1) % 6.283 })
@@ -569,13 +686,19 @@ export class PlanetViewport {
     this.sysGeo = new THREE.SphereGeometry(1, 48, 32)
     this.sysRoot = new THREE.Group()
     this.sys.add(this.sysRoot)
+    this.compileNeeded = true
   }
 
   /** Tear down the current bodies. Called before rebuilding, and on dispose. */
   private clearBodies() {
+    this.bakeGeneration++
+    this.bakeTargets.clear()
+    this.worldWorker?.terminate()
+    this.worldWorker = null
     for (const u of this.sysNodes) {
       u.mesh.material.dispose()
       u.baked?.dispose()
+      if (!u.baked && u.ownsMap && u.mesh.material.map) u.mesh.material.map.dispose()
       if (u.ringMesh) {
         u.ringMesh.geometry.dispose()
         u.ringMesh.material.dispose()
@@ -588,7 +711,49 @@ export class PlanetViewport {
     }
     this.sysNodes = []
     this.sysPlanets = []
-    this.sysBakes = []
+  }
+
+  private ensureWorldWorker(): Worker {
+    if (this.worldWorker) return this.worldWorker
+    const worker = new Worker(new URL('./bake.worker.ts', import.meta.url), { type: 'module' })
+    worker.onmessage = (event: MessageEvent<BakeWorkerResponse>) => {
+      const response = event.data
+      const target = this.bakeTargets.get(response.id)
+      this.bakeTargets.delete(response.id)
+      if (
+        !target ||
+        target.generation !== this.bakeGeneration ||
+        !this.sysNodes.includes(target.node)
+      ) return
+
+      const texture = dataTexture(
+        new Uint8Array(response.pixels),
+        response.width,
+        response.height,
+      )
+      texture.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy())
+      const mat = target.node.mesh.material
+      if (mat.map && mat.map !== target.node.baked) mat.map.dispose()
+      target.node.baked?.dispose()
+      target.node.baked = texture
+      mat.map = texture
+      mat.color.set(0xffffff)
+      this.invalidate()
+    }
+    worker.onerror = () => {
+      // The palette-coloured mapped placeholder remains a valid fallback.
+      worker.terminate()
+      if (this.worldWorker === worker) this.worldWorker = null
+    }
+    this.worldWorker = worker
+    return worker
+  }
+
+  private queueWorldBake(node: SysNode, params: PlanetParams) {
+    const id = ++this.bakeId
+    this.bakeTargets.set(id, { generation: this.bakeGeneration, node })
+    const request: BakeWorkerRequest = { id, kind: 'world', params }
+    this.ensureWorldWorker().postMessage(request)
   }
 
   /**
@@ -612,9 +777,14 @@ export class PlanetViewport {
       tilt.add(spin)
 
       const pal = PALETTES[b.params.preset] ?? PALETTES.temperate
-      const mat = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0 })
+      const fallback = isGas(pal) ? pal.bands[(pal.bands.length / 2) | 0][1] : pal.mid
+      const mat = new THREE.MeshStandardMaterial({
+        map: b.texture ? this.loadTex(b.texture) : solidTexture(fallback),
+        roughness: 1,
+        metalness: 0,
+      })
       if (b.texture) {
-        mat.map = this.loadTex(b.texture)
+        mat.color.set(0xffffff)
       } else {
         // Until the bake lands, show the world's own mid-tone rather than a
         // placeholder grey, so the system reads correctly on the first frame.
@@ -663,6 +833,7 @@ export class PlanetViewport {
 
       const ud: SysNode = {
         index: i, plane, node, tilt, spin, mesh: m, ringMesh, baked: null,
+        ownsMap: !b.texture,
         a: 0, e: b.e, period: b.period, aSame: 0, aScale: 0,
         rSame: 0.24, rScale: sizeMap(b.radius * 6371) * 0.85,
         peri: 0, angle: (i * 2.3994) % 6.2832, day: b.day, f: b.flattening,
@@ -670,19 +841,12 @@ export class PlanetViewport {
       }
       m.userData = ud
 
-      if (!b.texture) {
-        const P = b.params
-        this.sysBakes.push(() => {
-          ud.baked = bakeWorld(P)
-          mat.map = ud.baked
-          mat.color.set(0xffffff)
-          mat.needsUpdate = true
-        })
-      }
+      if (!b.texture) this.queueWorldBake(ud, b.params)
 
       this.sysPlanets.push(m)
       this.sysNodes.push(ud)
     })
+    this.compileNeeded = true
   }
 
   /** Apply the orbital elements, which can change without a rebuild. */
@@ -721,6 +885,20 @@ export class PlanetViewport {
       }
       shape(u.lineSame, u.aSame)
       shape(u.lineScale, u.aScale)
+    })
+  }
+
+  /** Apply cheap body properties without rebuilding materials or baked maps. */
+  private applyBodyProperties(def: SystemDef) {
+    def.bodies.forEach((body, i) => {
+      const node = this.sysNodes[i]
+      if (!node) return
+      node.tilt.rotation.z = body.tilt * D2R
+      node.mesh.scale.set(1, 1 - body.flattening, 1)
+      node.day = body.day
+      node.f = body.flattening
+      node.rScale = sizeMap(body.radius * 6371) * 0.85
+      node.tilt.scale.setScalar(this.sizeMode === 'scale' ? node.rScale : node.rSame)
     })
   }
 
@@ -808,7 +986,6 @@ export class PlanetViewport {
       const n = noiseFor(P.seed)
       this.n1 = n.n1
       this.n2 = n.n2
-      this.nc = n.nc
       this.seed = P.seed
       this.cloudKey = ''
     }
@@ -855,10 +1032,13 @@ export class PlanetViewport {
     const gas = isGas(pal)
 
     if (this.texUrl !== P.texture) {
+      if (!this.texUrl && this.texMesh.material.map) this.texMesh.material.map.dispose()
       this.texUrl = P.texture!
       this.texMesh.material.map = this.loadTex(P.texture!)
-      this.texMesh.material.needsUpdate = true
       this.gasMesh.material.uniforms.uMap.value = this.loadTex(P.texture!, true)
+    }
+    if ((!gas && !this.texMesh.visible) || (gas && !this.gasMesh.visible)) {
+      this.compileNeeded = true
     }
     this.texMesh.visible = !gas
     this.gasMesh.visible = gas
@@ -870,13 +1050,14 @@ export class PlanetViewport {
       const mat = this.clouds.material as THREE.MeshLambertMaterial
       if (!this.cloudTexUrl && mat.map) mat.map.dispose()
       this.cloudTexUrl = ct
-      mat.map = ct ? this.loadTex(ct) : null
+      mat.map = ct ? this.loadTex(ct) : solidTexture(0xffffff, 0)
       mat.alphaMap = null
-      mat.needsUpdate = true
       this.cloudKey = ''
     }
     const cmat = this.clouds.material as THREE.MeshLambertMaterial
-    this.clouds.visible = !!ct && (P.clouds || 0) > 0.04
+    const showClouds = !!ct && (P.clouds || 0) > 0.04
+    if (showClouds && !this.clouds.visible) this.compileNeeded = true
+    this.clouds.visible = showClouds
     this.clouds.scale.setScalar(0.888) // cloud deck just above the surface
     cmat.color.set(0xffffff)
     cmat.opacity = Math.min(1, (P.clouds || 0) * 1.8)
@@ -892,7 +1073,9 @@ export class PlanetViewport {
     const amat = this.atmo.material as THREE.ShaderMaterial
     amat.uniforms.uC.value.set(P.atmoColor ?? pal.atmo)
     amat.uniforms.uI.value = 0.25 + (P.glow ?? 0.5) * 1.1
-    this.atmo.visible = (P.glow ?? 0.5) > 0.02
+    const showAtmo = (P.glow ?? 0.5) > 0.02
+    if (showAtmo && !this.atmo.visible) this.compileNeeded = true
+    this.atmo.visible = showAtmo
     this.stars.visible = P.stars !== false
   }
 
@@ -901,37 +1084,41 @@ export class PlanetViewport {
     const pal = PALETTES[P.preset] ?? PALETTES.temperate
     this.texMesh.visible = false
     this.gasMesh.visible = false
+    if (!this.planet.visible) this.compileNeeded = true
     this.planet.visible = true
     this.clouds.scale.setScalar(1)
 
     const cmat = this.clouds.material as THREE.MeshLambertMaterial
     if (this.cloudTexUrl) {
       this.cloudTexUrl = null
-      cmat.map = null
-      cmat.needsUpdate = true
+      cmat.map = solidTexture(0xffffff, 0)
       this.cloudKey = ''
     }
 
-    const pa = this.geo!.attributes.position.array as Float32Array
-    const ca = this.geo!.attributes.color.array as Float32Array
-    const dirs = this.dirs!
     const surface = makeSurface(P, this.n1!, this.n2!)
-    const tmp = new THREE.Color()
+    const nextSurfaceKey = surfaceKey(P, this.detail)
+    if (nextSurfaceKey !== this.surfaceKey) {
+      this.surfaceKey = nextSurfaceKey
+      const pa = this.geo!.attributes.position.array as Float32Array
+      const ca = this.geo!.attributes.color.array as Float32Array
+      const dirs = this.dirs!
+      const tmp = new THREE.Color()
 
-    for (let i = 0; i < dirs.length; i += 3) {
-      const x = dirs[i], y = dirs[i + 1], z = dirs[i + 2]
-      const r = surface.sample(x, y, z, tmp)
-      pa[i] = x * r
-      pa[i + 1] = y * r
-      pa[i + 2] = z * r
-      ca[i] = tmp.r
-      ca[i + 1] = tmp.g
-      ca[i + 2] = tmp.b
+      for (let i = 0; i < dirs.length; i += 3) {
+        const x = dirs[i], y = dirs[i + 1], z = dirs[i + 2]
+        const r = surface.sample(x, y, z, tmp)
+        pa[i] = x * r
+        pa[i + 1] = y * r
+        pa[i + 2] = z * r
+        ca[i] = tmp.r
+        ca[i + 1] = tmp.g
+        ca[i + 2] = tmp.b
+      }
+
+      this.geo!.attributes.position.needsUpdate = true
+      this.geo!.attributes.color.needsUpdate = true
+      this.geo!.computeVertexNormals()
     }
-
-    this.geo!.attributes.position.needsUpdate = true
-    this.geo!.attributes.color.needsUpdate = true
-    this.geo!.computeVertexNormals()
 
     const wmat = this.water.material as THREE.MeshPhongMaterial
     this.water.visible = !isGas(pal) && (P.water || 0) > 0.03
@@ -949,17 +1136,21 @@ export class PlanetViewport {
     const amat = this.atmo.material as THREE.ShaderMaterial
     amat.uniforms.uC.value.set(P.atmoColor ?? pal.atmo)
     amat.uniforms.uI.value = 0.3 + (P.glow ?? 0.5) * 1.6
-    this.atmo.visible = (P.glow ?? 0.5) > 0.02
+    const showAtmo = (P.glow ?? 0.5) > 0.02
+    if (showAtmo && !this.atmo.visible) this.compileNeeded = true
+    this.atmo.visible = showAtmo
     this.stars.visible = P.stars !== false
 
-    this.clouds.visible = (P.clouds || 0) > 0.04
+    const showClouds = (P.clouds || 0) > 0.04
+    if (showClouds && !this.clouds.visible) this.compileNeeded = true
+    this.clouds.visible = showClouds
     cmat.opacity = pal.cloudO ?? 0.9
     cmat.color.set(('cloudTint' in pal && pal.cloudTint) || 0xffffff)
 
     const ck = `${P.seed}:${Math.round((P.clouds || 0) * 20)}`
     if (ck !== this.cloudKey) {
       this.cloudKey = ck
-      this.cloudsPending = true
+      this.cloudsPending = this.clouds.visible
     }
   }
 
@@ -1000,6 +1191,14 @@ export class PlanetViewport {
       this.sysShape = shape
       this.buildBodies(def)
       this.sysOrbitKey = ''
+      this.sysPropertyKey = ''
+    }
+    const properties = def.bodies
+      .map((b) => `${b.radius}:${b.tilt}:${b.flattening}:${b.day}`)
+      .join('~')
+    if (properties !== this.sysPropertyKey) {
+      this.sysPropertyKey = properties
+      this.applyBodyProperties(def)
     }
     const orbits = def.bodies
       .map((b) => `${b.a}:${b.e}:${b.inc}:${b.node}:${b.peri}:${b.period}`)
@@ -1034,37 +1233,41 @@ export class PlanetViewport {
   }
 
   private makeClouds() {
-    const P = this.p!
-    const n = this.nc!
-    const w = 384
-    const h = 192
-    const cv = document.createElement('canvas')
-    cv.width = w
-    cv.height = h
-    const ctx = cv.getContext('2d')!
-    const img = ctx.createImageData(w, h)
-    const cov = P.clouds || 0
+    const P = this.p
+    if (!P || P.texture) return
+    const requestKey = this.cloudKey
+    const id = ++this.bakeId
+    this.cloudWorker?.terminate()
+    const worker = new Worker(new URL('./bake.worker.ts', import.meta.url), { type: 'module' })
+    this.cloudWorker = worker
+    worker.onmessage = (event: MessageEvent<BakeWorkerResponse>) => {
+      const response = event.data
+      worker.terminate()
+      if (this.cloudWorker === worker) this.cloudWorker = null
+      if (
+        this.stopped ||
+        response.id !== id ||
+        requestKey !== this.cloudKey ||
+        this.p?.texture
+      ) return
 
-    for (let y = 0; y < h; y++) {
-      const phi = ((y + 0.5) / h) * Math.PI
-      const sp = Math.sin(phi)
-      const cp = Math.cos(phi)
-      for (let x = 0; x < w; x++) {
-        const t2 = ((x + 0.5) / w) * 2 * Math.PI
-        const a = cloudAt(n, cov, sp * Math.cos(t2), cp, sp * Math.sin(t2))
-        const o = (y * w + x) * 4
-        img.data[o] = 255
-        img.data[o + 1] = 255
-        img.data[o + 2] = 255
-        img.data[o + 3] = a * 235
-      }
+      const mat = this.clouds.material as THREE.MeshLambertMaterial
+      mat.map?.dispose()
+      mat.map = dataTexture(new Uint8Array(response.pixels), response.width, response.height)
+      mat.map.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy())
+      this.invalidate()
     }
-    ctx.putImageData(img, 0, 0)
-
-    const mat = this.clouds.material as THREE.MeshLambertMaterial
-    mat.map?.dispose()
-    mat.map = new THREE.CanvasTexture(cv)
-    mat.needsUpdate = true
+    worker.onerror = () => {
+      worker.terminate()
+      if (this.cloudWorker === worker) this.cloudWorker = null
+    }
+    const request: BakeWorkerRequest = {
+      id,
+      kind: 'clouds',
+      seed: P.seed,
+      cover: P.clouds || 0,
+    }
+    worker.postMessage(request)
   }
 
   /** Planet-shadow direction in the ring's own frame, plus lit/unlit face. */
@@ -1087,20 +1290,90 @@ export class PlanetViewport {
 
   /* --- frame ------------------------------------------------------------ */
 
-  private loop() {
-    if (this.stopped) return
+  private scheduleFrame() {
+    if (this.stopped || this.raf || document.hidden || !this.inView) return
     this.raf = requestAnimationFrame(this.loop)
+  }
+
+  private invalidate() {
+    this.forceRender = true
+    this.scheduleFrame()
+  }
+
+  private shouldContinue() {
+    const running = !this.p || this.p.autoRotate !== false
+    return (
+      running ||
+      this.dirty ||
+      this.dragging ||
+      !!this.tgt ||
+      Math.abs(this.velX) > 0.0001 ||
+      Math.abs(this.velY) > 0.0001 ||
+      !!this.scanT0 ||
+      this.cloudsPending ||
+      this.compileNeeded
+    )
+  }
+
+  /** Start parallel shader compilation and render only after it has settled. */
+  private warmShaders(): boolean {
+    if (!this.compileNeeded || this.compiling) return !!this.compiling
+    this.compileNeeded = false
+    const job: Promise<void> = this.renderer
+      .compileAsync(this.scene, this.camera)
+      .then(() => undefined, () => undefined)
+    this.compiling = job
+    job.finally(() => {
+      if (this.compiling === job) this.compiling = null
+      this.invalidate()
+    })
+    return true
+  }
+
+  private adaptQuality(frameGap: number) {
+    if (frameGap > 50 && frameGap < 250) this.slowFrames++
+    else this.slowFrames = Math.max(0, this.slowFrames - 1)
+    if (this.slowFrames < 8 || this.pixelRatio <= 1) return
+
+    this.slowFrames = 0
+    this.pixelRatio = Math.max(1, this.pixelRatio - 0.25)
+    this.renderer.setPixelRatio(this.pixelRatio)
+    this.invalidate()
+  }
+
+  private loop(now: number) {
+    this.raf = 0
+    if (this.stopped || document.hidden || !this.inView) return
+
+    const running = !this.p || this.p.autoRotate !== false
+    const urgent =
+      this.forceRender ||
+      this.dirty ||
+      this.dragging ||
+      !!this.tgt ||
+      Math.abs(this.velX) > 0.0001 ||
+      Math.abs(this.velY) > 0.0001 ||
+      !!this.scanT0
+    // Passive rotation is intentionally 30fps; direct manipulation and
+    // regeneration remain full-rate and responsive.
+    // A slightly sub-33ms threshold avoids slipping to 20fps on 60Hz panels
+    // when the second RAF lands a fraction before the exact 30fps boundary.
+    if (!urgent && running && this.lastRender && now - this.lastRender < 1000 / 32) {
+      this.scheduleFrame()
+      return
+    }
+    this.forceRender = false
 
     if (this.dirty && this.p) {
       this.dirty = false
       this.regen()
     }
 
-    const now = performance.now()
+    if (this.warmShaders()) return
+
     const dt = this.lastT ? Math.min(0.1, (now - this.lastT) / 1000) : 0.016
     this.lastT = now
 
-    const running = !this.p || this.p.autoRotate !== false
     const tScale = this.p?.timeScale ?? 1
     const sdt = dt * tScale
     if (running) this.t += sdt
@@ -1110,10 +1383,6 @@ export class PlanetViewport {
       this.cloudLast = now
       this.makeClouds()
     }
-
-    // One baked world per frame. A system of eight would otherwise cost a
-    // visible hitch the moment you opened it.
-    this.sysBakes.shift()?.()
 
     if (!this.dragging) {
       if (this.tgt) {
@@ -1136,6 +1405,8 @@ export class PlanetViewport {
       } else {
         this.velY *= 0.94
         this.velX *= 0.94
+        if (Math.abs(this.velY) < 0.0001) this.velY = 0
+        if (Math.abs(this.velX) < 0.0001) this.velX = 0
         this.rotY += this.velY
         this.rotX = Math.max(-1.32, Math.min(1.32, this.rotX + this.velX))
       }
@@ -1231,8 +1502,23 @@ export class PlanetViewport {
     // for the same reason — it is otherwise only visible as coloured pixels.
     this.frames++
     const cv = this.renderer.domElement
-    cv.dataset.frames = String(this.frames)
-    cv.dataset.triangles = String(this.renderer.info.render.triangles)
-    cv.dataset.sunScale = String(this.sunMesh?.scale.x ?? 0)
+    // Publish every warm-up frame so readiness checks do not wait for a batch,
+    // then drop to three inexpensive writes per second during passive motion.
+    if (this.frames <= 20 || this.frames % 10 === 0) cv.dataset.frames = String(this.frames)
+    const triangles = this.renderer.info.render.triangles
+    if (triangles !== this.lastPublishedTriangles) {
+      this.lastPublishedTriangles = triangles
+      cv.dataset.triangles = String(triangles)
+    }
+    const sunScale = this.sunMesh?.scale.x ?? 0
+    if (sunScale !== this.lastPublishedSunScale) {
+      this.lastPublishedSunScale = sunScale
+      cv.dataset.sunScale = String(sunScale)
+    }
+
+    const frameGap = this.lastRender ? now - this.lastRender : 0
+    this.lastRender = now
+    if (running) this.adaptQuality(frameGap)
+    if (this.shouldContinue()) this.scheduleFrame()
   }
 }
