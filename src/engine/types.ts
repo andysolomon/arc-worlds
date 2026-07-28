@@ -34,6 +34,12 @@ export interface PlanetParams {
   stars?: boolean
   autoRotate?: boolean
   timeScale?: number
+  /** Orbit paths for planets and moons. Hidden paths still show on hover. */
+  showPaths?: boolean
+  /** Planet names in the orbit view. */
+  showLabels?: boolean
+  /** Off skips building moons entirely, which is a performance lever. */
+  showMoons?: boolean
 }
 
 export type PresetKey =
@@ -52,6 +58,7 @@ export type PresetKey =
   | 'saturn'
   | 'uranus'
   | 'neptune'
+  | 'pluto'
 
 export interface RockyPalette {
   gas?: false
@@ -122,6 +129,13 @@ export interface RealBody {
   day: number
   ring?: RingConfig
   moons: Moon[]
+  /**
+   * Canonical seed, for measured bodies that have no photographic map. A
+   * textured body claims its measured identity through the texture; a
+   * texture-less one (Pluto) claims it by carrying this exact seed, and
+   * changing the seed detaches it — the same rule the sculptor applies.
+   */
+  seed?: number
 }
 
 /** name, a (AU), period (yr), eccentricity, inclination, node, perihelion, radius (Earth radii). */

@@ -3,7 +3,7 @@ import type { BakeWorkerRequest, BakeWorkerResponse } from './bake.worker'
 import { customRing, moonGeo, ringGeo, ringMaterial, toneTex } from './materials'
 import { mulberry32, type Noise3 } from './noise'
 import { makeSurface, noiseFor } from './surface'
-import { REAL } from './planets'
+import { REAL, realFor } from './planets'
 import { isGas, PALETTES } from './palettes'
 import {
   D2R, DAY_SEC, kepler, moonDist, moonPeriodSec, moonRad,
@@ -15,11 +15,15 @@ import type { Moon, PlanetParams, RingConfig, SystemBody, SystemDef } from './ty
 interface MoonInstance {
   orbit: THREE.Group
   mesh: THREE.Mesh
+  line: THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>
   d: number
   e: number
   P: number
   phase: number
 }
+
+/** Orbit-path opacity when shown. Hidden paths fade to 0 and back on hover. */
+const PATH_OPACITY = 0.55
 
 interface SysNode {
   index: number
@@ -46,6 +50,10 @@ interface SysNode {
   f: number
   lineSame: THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>
   lineScale: THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>
+  /** Where this body's orbit-line opacity is headed; the loop eases toward it. */
+  lineTarget: number
+  label: THREE.Sprite
+  labelName: string
 }
 
 /**
@@ -176,6 +184,15 @@ export class PlanetViewport {
   private slowFrames = 0
   private lastPublishedTriangles = -1
   private lastPublishedSunScale = Number.NaN
+  private lastPublishedLines = -1
+
+  /** Display toggles: cheap render state, never part of any bake key. */
+  private showPaths = true
+  private showLabels = false
+  private showMoons = true
+  private hoverIndex = -1
+  private pathAnim = false
+  private sysLabelKey = ''
 
   private seed: number | null = null
   private detail = ''
@@ -491,7 +508,14 @@ export class PlanetViewport {
 
     cv.addEventListener('pointermove', (e) => {
       const p = this.ptrs.get(e.pointerId)
-      if (!p) return
+      if (!p) {
+        // No button down: this is a hover, which only means something when the
+        // orbit view is hiding its paths and one can be glimpsed.
+        if (this.sys?.visible && !this.showPaths && !this.dragging) {
+          this.setHover(this.planetAt(e))
+        }
+        return
+      }
       const dx = e.clientX - p.x
       const dy = e.clientY - p.y
       p.x = e.clientX
@@ -522,6 +546,7 @@ export class PlanetViewport {
     }
     cv.addEventListener('pointerup', up)
     cv.addEventListener('pointercancel', up)
+    cv.addEventListener('pointerleave', () => this.setHover(-1))
 
     cv.addEventListener(
       'wheel',
@@ -540,7 +565,8 @@ export class PlanetViewport {
     return this.p?.mode === 'system' ? Math.max(260, this.fitScale * 3) : 9
   }
 
-  private pick(e: PointerEvent) {
+  /** Which planet is under this pointer event, or -1. */
+  private planetAt(e: PointerEvent): number {
     const r = this.renderer.domElement.getBoundingClientRect()
     this.v2.set(
       ((e.clientX - r.left) / Math.max(1, r.width)) * 2 - 1,
@@ -548,7 +574,19 @@ export class PlanetViewport {
     )
     this.ray.setFromCamera(this.v2, this.camera)
     const hits = this.ray.intersectObjects(this.sysPlanets, false)
-    if (hits.length) this.onPick?.((hits[0].object.userData as SysNode).index)
+    return hits.length ? (hits[0].object.userData as SysNode).index : -1
+  }
+
+  private pick(e: PointerEvent) {
+    const i = this.planetAt(e)
+    if (i >= 0) this.onPick?.(i)
+  }
+
+  private setHover(index: number) {
+    if (index === this.hoverIndex) return
+    this.hoverIndex = index
+    this.syncPathTargets()
+    this.invalidate()
   }
 
   private resize() {
@@ -621,6 +659,9 @@ export class PlanetViewport {
     this.moonKey = key
 
     for (const old of this.moons) {
+      // Meshes reuse cached geometry/materials; the path line is per-instance.
+      old.line.geometry.dispose()
+      old.line.material.dispose()
       this.moonRoot.remove(old.orbit)
     }
     this.moons = []
@@ -655,9 +696,30 @@ export class PlanetViewport {
       }
       const mesh = new THREE.Mesh(geo, mmat)
       orbit.add(mesh)
+
+      // The moon's path, in its own orbital plane and its own colour, traced
+      // with the same eccentric-anomaly stepping the loop moves the moon by.
+      const ecc = d.e || 0
+      const pts: THREE.Vector3[] = []
+      for (let k = 0; k <= 128; k++) {
+        const E = (k / 128) * 6.2832
+        pts.push(new THREE.Vector3(
+          dist * (Math.cos(E) - ecc), 0, dist * Math.sqrt(1 - ecc * ecc) * Math.sin(E),
+        ))
+      }
+      const line = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(pts),
+        new THREE.LineBasicMaterial({
+          color: d.tone ? d.tone[0] : d.c, transparent: true, opacity: 0.38,
+        }),
+      )
+      line.visible = this.showPaths
+      orbit.add(line)
+
       this.moonRoot.add(orbit)
-      this.moons.push({ orbit, mesh, d: dist, e: d.e || 0, P: d.P, phase: (i * 2.1) % 6.283 })
+      this.moons.push({ orbit, mesh, line, d: dist, e: ecc, P: d.P, phase: (i * 2.1) % 6.283 })
     }
+    if (list.length) this.compileNeeded = true
     return maxD
   }
 
@@ -707,10 +769,14 @@ export class PlanetViewport {
         l.geometry.dispose()
         l.material.dispose()
       }
+      u.label.material.map?.dispose()
+      u.label.material.dispose()
       u.plane.removeFromParent()
     }
     this.sysNodes = []
     this.sysPlanets = []
+    // Whatever was hovered no longer exists at that index.
+    this.hoverIndex = -1
   }
 
   private ensureWorldWorker(): Worker {
@@ -794,15 +860,22 @@ export class PlanetViewport {
       m.scale.set(1, 1 - b.flattening, 1)
       spin.add(m)
 
+      // The orbit path wears the same colour the planet itself falls back to,
+      // so line and body read as one thing. Textured bodies have palettes too.
+      const lineOpacity = this.showPaths ? PATH_OPACITY : 0
       const mkLine = () =>
         new THREE.Line(
           new THREE.BufferGeometry(),
-          new THREE.LineBasicMaterial({ color: 0x6a5a80, transparent: true, opacity: 0.4 }),
+          new THREE.LineBasicMaterial({ color: fallback, transparent: true, opacity: lineOpacity }),
         )
       const lineSame = mkLine()
       const lineScale = mkLine()
       plane.add(lineSame)
       plane.add(lineScale)
+
+      const label = this.makeLabel(b.name)
+      label.visible = this.showLabels
+      node.add(label)
 
       const ring = b.ring ?? (b.params.rings ? customRing(b.params, pal) : null)
       let ringMesh: SysNode['ringMesh'] = null
@@ -837,7 +910,7 @@ export class PlanetViewport {
         a: 0, e: b.e, period: b.period, aSame: 0, aScale: 0,
         rSame: 0.24, rScale: sizeMap(b.radius * 6371) * 0.85,
         peri: 0, angle: (i * 2.3994) % 6.2832, day: b.day, f: b.flattening,
-        lineSame, lineScale,
+        lineSame, lineScale, lineTarget: lineOpacity, label, labelName: b.name,
       }
       m.userData = ud
 
@@ -930,6 +1003,65 @@ export class PlanetViewport {
   }
 
   /**
+   * A planet's name, drawn once to a small canvas and shown as a sprite with
+   * `sizeAttenuation` off, so it reads the same at any zoom. Deliberately not
+   * DOM: overlay elements would mean per-frame style writes, which the
+   * performance work went to some lengths to remove.
+   */
+  private labelTexture(name: string): THREE.CanvasTexture {
+    const text = name.trim() || 'Unnamed'
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')!
+    const font = '600 26px system-ui, -apple-system, sans-serif'
+    ctx.font = font
+    canvas.width = Math.ceil(ctx.measureText(text).width) + 18
+    canvas.height = 38
+    ctx.font = font // canvas resize resets context state
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.shadowColor = 'rgba(8, 6, 18, 0.9)'
+    ctx.shadowBlur = 6
+    ctx.fillStyle = '#efeafd'
+    ctx.fillText(text, canvas.width / 2, canvas.height / 2 + 1)
+    const texture = new THREE.CanvasTexture(canvas)
+    texture.colorSpace = THREE.SRGBColorSpace
+    texture.generateMipmaps = false
+    texture.minFilter = THREE.LinearFilter
+    return texture
+  }
+
+  /** Constant screen height; the width follows the drawn text's shape. */
+  private scaleLabel(sprite: THREE.Sprite) {
+    const img = sprite.material.map!.image as HTMLCanvasElement
+    const h = 0.032
+    sprite.scale.set(h * (img.width / img.height), h, 1)
+  }
+
+  private makeLabel(name: string): THREE.Sprite {
+    const sprite = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: this.labelTexture(name),
+        transparent: true,
+        depthTest: false,
+        sizeAttenuation: false,
+      }),
+    )
+    // Anchor below centre, so the text hangs above the body in screen space.
+    sprite.center.set(0.5, -0.9)
+    sprite.renderOrder = 10
+    this.scaleLabel(sprite)
+    return sprite
+  }
+
+  /** Where each orbit line is headed: shown, hidden, or revealed by hover. */
+  private syncPathTargets() {
+    for (const u of this.sysNodes) {
+      u.lineTarget = this.showPaths || u.index === this.hoverIndex ? PATH_OPACITY : 0
+    }
+    this.pathAnim = true
+  }
+
+  /**
    * Frame the system. "Same size" fits the whole thing; "to scale" deliberately
    * starts inside the outermost orbit, because at true relative spacing a view
    * wide enough to contain Neptune leaves the inner planets subpixel.
@@ -940,8 +1072,12 @@ export class PlanetViewport {
     for (const u of this.sysNodes) {
       u.a = scaled ? u.aScale : u.aSame
       u.tilt.scale.setScalar(scaled ? u.rScale : u.rSame) // scales rings too
-      u.lineSame.visible = !scaled
-      u.lineScale.visible = scaled
+      const o = u.lineSame.material.opacity
+      u.lineSame.visible = !scaled && o > 0.01
+      u.lineScale.visible = scaled && o > 0.01
+      // The label floats off the pole; its screen offset comes from the sprite's
+      // own anchor, so this world-space lift only needs to clear the body.
+      u.label.position.y = scaled ? u.rScale : u.rSame
     }
     this.sunBase = scaled ? SIZE_MAX : 1.15
     this.sizeSun()
@@ -956,6 +1092,12 @@ export class PlanetViewport {
   private regen() {
     const P = this.p
     if (!P) return
+
+    // Display toggles are read before either branch: paths and moons matter in
+    // both views, and none of them participates in any bake or surface key.
+    this.showPaths = P.showPaths !== false
+    this.showLabels = P.showLabels === true
+    this.showMoons = P.showMoons !== false
 
     if (P.mode === 'system') return this.regenSystem(P)
 
@@ -990,9 +1132,10 @@ export class PlanetViewport {
       this.cloudKey = ''
     }
 
-    // Real bodies only apply when we're showing their real photographic map.
-    const R = P.texture ? REAL[P.preset] : null
-    this.real = R ?? null
+    // Real bodies apply when the params still carry their measured identity —
+    // a photographic map, or the canonical seed for texture-less Pluto.
+    const R = realFor(P)
+    this.real = R
     this.amb.intensity = R ? 0.17 : 0.34
 
     const flat = R ? 1 - R.f : 1
@@ -1002,14 +1145,16 @@ export class PlanetViewport {
     this.atmo.scale.set(1, flat, 1)
 
     if (R) {
-      const md = this.setMoons(R.moons)
+      // Moons off skips building them at all — Saturn carries six and Jupiter
+      // four, and their meshes and per-frame Kepler work are the cost.
+      const md = this.setMoons(this.showMoons ? R.moons : [])
       if (md) {
         const want = Math.min(8.4, Math.max(3.15, md * 1.32))
         this.fitZ = want
         if (Math.abs(want - this.camZ) > 0.05 && !this.dragging) this.camZ = want
       } else if (this.camZ > 4) this.camZ = 3.15
     } else {
-      const mc = Math.min(3, P.moons | 0)
+      const mc = this.showMoons ? Math.min(3, P.moons | 0) : 0
       const gm: Moon[] = []
       for (let gi = 0; gi < mc; gi++) {
         gm.push({
@@ -1020,6 +1165,9 @@ export class PlanetViewport {
       if (this.setMoons(gm) && this.camZ > 4) this.camZ = 3.15
       this.fitZ = 3.15
     }
+
+    // Toggling paths must not rebuild moons, so visibility is applied here too.
+    for (const mo of this.moons) mo.line.visible = this.showPaths
 
     if (P.texture) return this.regenTextured(P, R)
 
@@ -1229,6 +1377,27 @@ export class PlanetViewport {
       this.applySizeMode(sm, this.needFrame)
       this.needFrame = false
     }
+
+    // Names are deliberately not in the bake key, so a rename reaches its
+    // label here: a small canvas redraw, never a material or texture rebuild.
+    const names = def.bodies.map((b) => b.name).join('~')
+    if (names !== this.sysLabelKey) {
+      this.sysLabelKey = names
+      def.bodies.forEach((b, i) => {
+        const u = this.sysNodes[i]
+        if (!u || u.labelName === b.name) return
+        u.labelName = b.name
+        u.label.material.map?.dispose()
+        u.label.material.map = this.labelTexture(b.name)
+        this.scaleLabel(u.label)
+      })
+    }
+    for (const u of this.sysNodes) u.label.visible = this.showLabels
+
+    // With paths shown there is nothing for hover to reveal.
+    if (this.showPaths) this.hoverIndex = -1
+    this.syncPathTargets()
+
     this.stars.visible = P.stars !== false
   }
 
@@ -1311,7 +1480,8 @@ export class PlanetViewport {
       Math.abs(this.velY) > 0.0001 ||
       !!this.scanT0 ||
       this.cloudsPending ||
-      this.compileNeeded
+      this.compileNeeded ||
+      this.pathAnim
     )
   }
 
@@ -1462,6 +1632,26 @@ export class PlanetViewport {
       }
     }
 
+    // Orbit paths ease toward their targets — hidden, shown, or hover-revealed.
+    // Both size-mode lines share one opacity; visibility keeps them per-mode.
+    if (this.pathAnim && this.sysNodes.length) {
+      const scaled = this.sizeMode === 'scale'
+      let moving = false
+      for (const u of this.sysNodes) {
+        let o = u.lineSame.material.opacity
+        const d = u.lineTarget - o
+        if (Math.abs(d) > 0.02) {
+          o += d * 0.25
+          moving = true
+        } else o = u.lineTarget
+        u.lineSame.material.opacity = o
+        u.lineScale.material.opacity = o
+        u.lineSame.visible = !scaled && o > 0.01
+        u.lineScale.visible = scaled && o > 0.01
+      }
+      this.pathAnim = moving
+    }
+
     if (this.scanT0) {
       const t = (now - this.scanT0) / this.scanDur
       if (t >= 1) {
@@ -1509,6 +1699,12 @@ export class PlanetViewport {
     if (triangles !== this.lastPublishedTriangles) {
       this.lastPublishedTriangles = triangles
       cv.dataset.triangles = String(triangles)
+    }
+    // Orbit paths draw as lines, not triangles, so they get their own signal.
+    const lines = this.renderer.info.render.lines
+    if (lines !== this.lastPublishedLines) {
+      this.lastPublishedLines = lines
+      cv.dataset.lines = String(lines)
     }
     const sunScale = this.sunMesh?.scale.x ?? 0
     if (sunScale !== this.lastPublishedSunScale) {

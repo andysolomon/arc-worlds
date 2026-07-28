@@ -6,13 +6,16 @@ import {
   duplicateSystem, emptySystem, retime, rollSystem,
 } from '../lib/systems'
 import type { SavedSystem, SavedWorld } from '../lib/api'
+import type { DisplayOptions } from '../lib/display'
 import type { PresetKey, SystemBody, SystemDef } from '../engine/types'
-import { Field, Segmented, Slider } from './ui'
+import { Chip, Field, Segmented, Slider } from './ui'
 
 interface Props {
   system: SystemDef
   view: 'single' | 'system'
   sizeMode: 'same' | 'scale'
+  display: DisplayOptions
+  onDisplay: (k: keyof DisplayOptions) => void
   onView: (v: 'single' | 'system') => void
   onSizeMode: (v: 'same' | 'scale') => void
   onVisit: (index: number) => void
@@ -87,9 +90,10 @@ function bodyDot(b: SystemBody): string {
 
 export function SystemsPanel(props: Props) {
   const {
-    system, view, sizeMode, onView, onSizeMode, onVisit, onSystem, onAddCurrent,
-    onAddRolled, onAddSaved, onDuplicate, currentWorld, worlds, worldsError,
-    onSave, saving, savedSlug, systems, systemsLoading, systemsError, onOpenSaved,
+    system, view, sizeMode, display, onDisplay, onView, onSizeMode, onVisit,
+    onSystem, onAddCurrent, onAddRolled, onAddSaved, onDuplicate, currentWorld,
+    worlds, worldsError, onSave, saving, savedSlug, systems, systemsLoading,
+    systemsError, onOpenSaved,
   } = props
 
   const editable = system.origin === 'custom'
@@ -165,6 +169,30 @@ export function SystemsPanel(props: Props) {
         value={view}
         onChange={onView}
       />
+
+      {/* --- display -------------------------------------------------------- */}
+      <div>
+        <div className="field-label">Display</div>
+        <div className="chips">
+          <Chip on={display.paths} onClick={() => onDisplay('paths')}>
+            Orbit paths
+          </Chip>
+          <Chip on={display.labels} onClick={() => onDisplay('labels')}>
+            Labels
+          </Chip>
+          <Chip on={display.moons} onClick={() => onDisplay('moons')}>
+            Moons
+          </Chip>
+        </div>
+        {(!display.paths || !display.moons) && (
+          <div className="note" style={{ marginTop: 10 }}>
+            {!display.paths &&
+              'Paths are hidden — hover a planet in the orbit view to glimpse its own. '}
+            {!display.moons &&
+              'Moons are off, so visiting a planet skips building them — the quickest performance win.'}
+          </div>
+        )}
+      </div>
 
       {/* --- the view ------------------------------------------------------- */}
       {view === 'system' ? (
@@ -437,9 +465,9 @@ export function SystemsPanel(props: Props) {
         </>
       )}
 
-      {/* --- other people's systems ----------------------------------------- */}
+      {/* --- systems saved from this browser -------------------------------- */}
       <div className="field-label" style={{ marginTop: 4 }}>
-        Recently saved systems
+        Your saved systems
       </div>
       {systemsError ? (
         <p className="empty">{systemsError}</p>
