@@ -6,6 +6,7 @@ import {
   A_MAX, MASS_MAX, MASS_MIN, MAX_BODIES, STAR_KINDS,
   addRolledWorld, addWorld, bodyFromWorld, dayFor, duplicateBody, duplicateSystem,
   emptySystem, hasRoom, nextDistance, retime, rollSystem, sanitizeSystem, sortByDistance,
+  worldInSystem,
 } from './systems'
 import { DEFAULT_PARAMS } from './params'
 
@@ -75,13 +76,27 @@ describe('starSize', () => {
 describe('the built-in systems', () => {
   it('carries the measured orbits straight through to the Solar System', () => {
     expect(MILKY_WAY.origin).toBe('measured')
-    expect(MILKY_WAY.bodies).toHaveLength(8)
+    expect(MILKY_WAY.bodies).toHaveLength(9)
     MILKY_WAY.bodies.forEach((b, i) => {
       expect(b.a).toBe(ORBITS[i][1])
       expect(b.period).toBe(ORBITS[i][2])
-      expect(b.texture).toMatch(/^images2k\//)
+      // Pluto has no CC BY photographic map, so it renders procedurally and
+      // claims its measured identity through the canonical seed instead.
+      if (b.name === 'Pluto') expect(b.texture).toBeNull()
+      else expect(b.texture).toMatch(/^images2k\//)
     })
     expect(MILKY_WAY.bodies.find((b) => b.name === 'Saturn')?.ring).toBeTruthy()
+  })
+
+  it("gives Pluto its odd orbit: crossing Neptune's, well out of the plane", () => {
+    const pluto = MILKY_WAY.bodies.find((b) => b.name === 'Pluto')!
+    const neptune = MILKY_WAY.bodies.find((b) => b.name === 'Neptune')!
+    // Perihelion inside Neptune's orbit — the 1979–1999 arrangement, forever.
+    expect(pluto.a * (1 - pluto.e)).toBeLessThan(neptune.a)
+    expect(pluto.inc).toBeGreaterThan(15)
+    // Mutually locked with Charon, spinning backwards, on its side and then some.
+    expect(pluto.day).toBeLessThan(0)
+    expect(pluto.tilt).toBeGreaterThan(90)
   })
 
   it('keeps the Sun exactly white, which is what leaves it rendered untouched', () => {
@@ -270,7 +285,7 @@ describe('adding a world', () => {
     expect(out.bodies.at(-1)!.a).toBeGreaterThan(MILKY_WAY.bodies.at(-1)!.a)
 
     expect(MILKY_WAY.origin).toBe('measured')
-    expect(MILKY_WAY.bodies).toHaveLength(8)
+    expect(MILKY_WAY.bodies).toHaveLength(9)
   })
 
   it('never leaves a world nameless', () => {
@@ -336,5 +351,37 @@ describe('rollSystem', () => {
         expect(b.period).toBeCloseTo(periodFor(b.a, clean.star.mass), 6)
       }
     }
+  })
+})
+
+describe('worldInSystem', () => {
+  const params = { ...DEFAULT_PARAMS, seed: 777 }
+
+  it('finds a world that was added, whatever it was renamed to', () => {
+    const sys = addWorld(emptySystem(1), 'Original', params)
+    expect(worldInSystem(sys, params)).toBe(true)
+    // Identity is the params, not the name on the card.
+    const renamed = {
+      ...sys,
+      bodies: sys.bodies.map((b) => ({ ...b, name: 'Something else' })),
+    }
+    expect(worldInSystem(renamed, params)).toBe(true)
+  })
+
+  it('does not match a different world of the same type', () => {
+    const sys = addWorld(emptySystem(1), 'Original', params)
+    expect(worldInSystem(sys, { ...params, seed: 778 })).toBe(false)
+    expect(worldInSystem(sys, { ...params, water: params.water + 0.2 })).toBe(false)
+  })
+
+  it('ignores render controls, which are not part of a world', () => {
+    const sys = addWorld(emptySystem(1), 'Original', params)
+    expect(
+      worldInSystem(sys, { ...params, mode: 'system', sizeMode: 'scale', showPaths: false }),
+    ).toBe(true)
+  })
+
+  it('is empty-system safe', () => {
+    expect(worldInSystem(emptySystem(1), params)).toBe(false)
   })
 })

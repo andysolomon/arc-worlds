@@ -11,7 +11,7 @@ import type {
   PlanetParams, PresetKey, RingConfig, Star, SystemBody, SystemDef,
 } from '../engine/types.js'
 import { PRESETS } from '../data/presets.js'
-import { genName, safeTexture, sanitize, surprise } from './params.js'
+import { genName, safeTexture, sanitize, serialize, surprise } from './params.js'
 
 /** Enough for a generous system without letting one payload get silly. */
 export const MAX_BODIES = 12
@@ -233,6 +233,19 @@ export function editableCopy(def: SystemDef): SystemDef {
  * you asked for it. A full system is returned untouched rather than quietly
  * dropping the world or, worse, copying a read-only system to no purpose.
  */
+/**
+ * Whether this exact world is already orbiting in the system.
+ *
+ * Identity is the sanitized, serialized params — the same under-1KB object
+ * that gets saved and shared — so a renamed copy still counts as the same
+ * world and a reshaped one does not. Used to warn before a silent duplicate,
+ * never to refuse one: duplicates are allowed, just always deliberate.
+ */
+export function worldInSystem(def: SystemDef, params: PlanetParams): boolean {
+  const id = serialize(sanitize(params))
+  return def.bodies.some((b) => serialize(sanitize(b.params)) === id)
+}
+
 export function addWorld(def: SystemDef, name: string, params: PlanetParams): SystemDef {
   const s = editableCopy(def)
   if (!hasRoom(s)) return def

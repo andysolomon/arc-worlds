@@ -2,7 +2,7 @@
 
 Sculpt a planet, then see who lives there.
 
-A browser-based 3D planet sculptor and star-system builder on Three.js. Generate procedural worlds from a seed and shape them with a handful of sliders, run a spectrometer over them to find out what the atmosphere is made of, visit the eight real planets rendered from measured data, then arrange worlds of your own into a system and set them orbiting.
+A browser-based 3D planet sculptor and star-system builder on Three.js. Generate procedural worlds from a seed and shape them with a handful of sliders, run a spectrometer over them to find out what the atmosphere is made of, visit the eight real planets — and Pluto — rendered from measured data, then arrange worlds of your own into a system and set them orbiting.
 
 The renderer runs entirely in the browser. Saving a world or a system stores its parameters in
 Postgres and gives you a permanent link, so both can be shared and browsed.
@@ -63,7 +63,10 @@ Worlds gallery; or duplicate something already orbiting, which carries the name 
 Mirabelle, Mirabelle II, Mirabelle III. Every new world lands on its own orbit outside everything
 already there, and every one of them stays fully sculptable afterwards. Adding from the gallery to
 a read-only system gives you an editable copy of it rather than refusing the click: the system
-being added to is on another tab, so the Worlds panel names it before you touch anything.
+being added to is on another tab, so the Worlds panel names it before you touch anything — and a
+picker there aims Add at any of your saved systems instead of the one currently on screen. If the
+chosen system already holds that exact world, the panel says so and asks before adding it again;
+duplicates are allowed, just never silent.
 
 A world knows nothing about where it is: `PlanetParams` describes a planet, and everything that
 only means something relative to a star — distance, eccentricity, inclination, axial tilt — lives on
@@ -79,14 +82,14 @@ The real planets are driven by measured values in `src/engine/planets.ts` rather
 
 - **Bodies** — axial tilt, oblateness (Saturn is visibly squashed), and sidereal rotation period, with retrograde spin for Venus and Uranus.
 - **Orbits** — semi-major axis, period, eccentricity, inclination to the ecliptic, longitude of ascending node, and longitude of perihelion. Positions are Kepler-solved, so the elliptical speed-up near perihelion is real.
-- **Moons** — 21 moons across six planets at their real relative radii, semi-major axes, orbital periods and inclinations. Tidally locked moons keep one face inward. Triton orbits retrograde and steeply inclined; Nereid runs its genuinely eccentric path; Iapetus carries its two-tone Cassini Regio colouring. Phobos, Deimos, Proteus and Nereid are modelled as irregular bodies rather than spheres.
+- **Moons** — 22 moons across seven bodies at their real relative radii, semi-major axes, orbital periods and inclinations. Tidally locked moons keep one face inward. Triton orbits retrograde and steeply inclined; Nereid runs its genuinely eccentric path; Iapetus carries its two-tone Cassini Regio colouring. Phobos, Deimos, Proteus and Nereid are modelled as irregular bodies rather than spheres. Charon, over half Pluto's own radius, rides the mutually locked pair's 6.4-day orbit.
 - **Rings** — generated in GLSL, not textured, each with its own radial profile: Saturn's C/B/A structure with the Cassini division and the Encke gap; Uranus's ten narrow dark ringlets; Neptune's clumpy Adams arcs. Rings cast a shadow onto the planet, and the unlit face renders dimmer than the lit one.
 
 Long-period moons are eased in wall-clock time so Iapetus and Nereid still visibly move without rushing the inner moons, and orbital distances are compressed — order-preserving, but not to scale, so that everything stays in frame.
 
 Invented systems get the same treatment. You give a world a distance and its year follows from
 Kepler's third law, `P² = a³ / M★` — so moving a planet outward slows it down, and making the star
-heavier speeds everything up. The same law reproduces all eight measured periods to the nearest
+heavier speeds everything up. The same law reproduces all nine measured periods to the nearest
 year, which is what makes it fair to use for the imagined ones.
 
 The star's mass also sets its size, by the main-sequence mass–radius relation: radius tracks mass

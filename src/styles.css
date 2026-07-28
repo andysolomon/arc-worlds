@@ -129,12 +129,12 @@ a:hover { color: #d95f3f; }
 
 .row { display: flex; gap: 10px; }
 
-input[type='text'], input[type='number'] {
+input[type='text'], input[type='number'], select {
   width: 100%; font-family: 'Quicksand', sans-serif; font-weight: 600; font-size: 14.5px;
   color: var(--ink); background: #fff; border: 1.5px solid var(--line);
   border-radius: var(--radius); padding: 11px 13px;
 }
-input[type='text']:focus, input[type='number']:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+input[type='text']:focus, input[type='number']:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 
 .icon-btn {
   font-size: 15px; color: var(--ink-2); background: #fff; border: 1.5px solid var(--line);
