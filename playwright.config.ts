@@ -8,7 +8,12 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
-  reporter: process.env.CI ? 'github' : 'list',
+  // The github reporter only writes annotations, so on its own a failed run
+  // left nothing to download and the upload step had no playwright-report/ to
+  // find. Pairing it with the html reporter keeps the inline annotations and
+  // also writes the report — which is where the trace from the retry lives,
+  // and the only way to see what a headless failure actually looked like.
+  reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: `http://localhost:${PORT}`,
     trace: 'on-first-retry',

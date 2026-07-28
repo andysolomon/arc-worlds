@@ -56,3 +56,9 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+          # Playwright writes the report whether the run passed, failed, or
+          # never got as far as starting the server, so an empty upload means
+          # the reporter has been misconfigured rather than that there was
+          # nothing to say. Failing here is how that stays noticed: it went
+          # unnoticed once already, as a warning nobody reads on a green run.
+          if-no-files-found: error
