@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import type { VercelResponse } from '@vercel/node'
+import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 /** URL-safe slug alphabet: no vowels, so no accidental words. */
 const ALPHABET = '23456789bcdfghjkmnpqrstvwxyz'
@@ -31,9 +31,33 @@ export function cleanName(v: unknown): string {
   return (stripped || 'Untitled world').slice(0, 60)
 }
 
-/** Gallery responses are public and immutable per slug, so allow a short cache. */
-export function cacheFor(res: VercelResponse, seconds: number) {
-  res.setHeader('cache-control', `public, s-maxage=${seconds}, stale-while-revalidate=60`)
+/** The header carrying a browser's self-issued identity; see src/lib/owner.ts. */
+export const OWNER_HEADER = 'x-owner-key'
+
+const OWNER_KEY_RE = /^[A-Za-z0-9_-]{16,64}$/
+
+/**
+ * Never store this response anywhere shared.
+ *
+ * List responses are scoped to one browser's owner key, so a CDN or proxy that
+ * cached one would hand a visitor someone else's gallery. The lists deliberately
+ * forgo the shared caching that per-slug reads still use, and must keep doing so.
+ */
+export function cachePrivate(res: VercelResponse) {
+  res.setHeader('cache-control', 'private, no-store')
+  res.setHeader('vary', OWNER_HEADER)
+}
+
+/**
+ * The owner key on a request, or null when absent or malformed.
+ *
+ * Purely an opaque scoping key, not proof of anything: it says which gallery to
+ * read from or write to, and is never echoed back in a response.
+ */
+export function readOwnerKey(req: Pick<VercelRequest, 'headers'>): string | null {
+  const raw = req.headers[OWNER_HEADER]
+  const value = Array.isArray(raw) ? raw[0] : raw
+  return typeof value === 'string' && OWNER_KEY_RE.test(value) ? value : null
 }
 
 /** Saved share slugs are immutable, so browsers and the CDN may retain them. */

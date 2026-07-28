@@ -1,8 +1,8 @@
-import { desc } from 'drizzle-orm'
+import { desc, eq } from 'drizzle-orm'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { getDb } from '../../db/index.js'
 import { systems } from '../../db/schema.js'
-import { cacheFor, cleanName, fail, makeSlug, makeToken } from '../_lib.js'
+import { cachePrivate, cleanName, fail, makeSlug, makeToken, readOwnerKey } from '../_lib.js'
 import { sanitizeSystem, starDot } from '../../src/lib/systems.js'
 
 const MAX_LIMIT = 48
@@ -12,6 +12,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === 'GET') {
       const raw = Number(req.query.limit)
       const limit = Number.isFinite(raw) ? Math.min(MAX_LIMIT, Math.max(1, Math.floor(raw))) : 24
+
+      // Scoped to the browser that saved them — see api/worlds/index.ts.
+      const ownerKey = readOwnerKey(req)
+      cachePrivate(res)
+      if (!ownerKey) return res.status(200).json({ systems: [] })
 
       const rows = await getDb()
         .select({
@@ -23,15 +28,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           createdAt: systems.createdAt,
         })
         .from(systems)
+        .where(eq(systems.ownerKey, ownerKey))
         .orderBy(desc(systems.createdAt))
         .limit(limit)
 
-      cacheFor(res, 10)
       return res.status(200).json({ systems: rows })
     }
 
     if (req.method === 'POST') {
       const body = (req.body ?? {}) as { def?: unknown }
+
+      const ownerKey = readOwnerKey(req)
+      if (!ownerKey) return fail(res, 400, 'Missing or malformed owner key.')
 
       // Re-sanitized with the same function the UI uses. Beyond the usual
       // clamping this forces `origin` back to `custom`, so no payload can
@@ -47,7 +55,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const [row] = await getDb()
         .insert(systems)
-        .values({ slug, name: def.name, def, dot: starDot(def), sub, editToken })
+        .values({ slug, name: def.name, def, dot: starDot(def), sub, editToken, ownerKey })
         .returning({
           slug: systems.slug,
           name: systems.name,
