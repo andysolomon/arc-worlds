@@ -104,7 +104,80 @@ function body(
   }
 }
 
-export const BUILT_IN_SYSTEMS: SystemDef[] = [MILKY_WAY, ANDROMEDA]
+/**
+ * A body with measured orbital elements and an imagined world wearing them.
+ * `observed` systems keep their honesty in the split: distance, period,
+ * eccentricity and radius are real; the params are pure invention, exactly
+ * like a sculpted world, and derive their scans rather than claiming any.
+ * Tidally locked worlds carry their orbital period as their day.
+ */
+function observed(
+  name: string, a: number, period: number, e: number, radius: number,
+  day: number, params: PlanetParams,
+): SystemBody {
+  return {
+    name, a, period, e, inc: 0, node: 0, peri: 0, radius,
+    tilt: 0, flattening: 0.003, day, params, texture: null, ring: null,
+  }
+}
+
+/** Seven measured orbits around an ultracool dwarf, 40 light years out. */
+export const TRAPPIST: SystemDef = {
+  id: 'trappist-1',
+  name: 'TRAPPIST-1',
+  sub: 'observed · seven measured orbits, every surface imagined',
+  origin: 'observed',
+  star: { name: 'TRAPPIST-1', color: 0xff8659, mass: 0.0898 },
+  bodies: [
+    observed('TRAPPIST-1 b', 0.01154, 0.004136, 0.00622, 1.116, 36.26, world('lava', 701, { glow: 0.4, clouds: 0.05, ice: 0 })),
+    observed('TRAPPIST-1 c', 0.0158, 0.00663, 0.00654, 1.097, 58.12, world('desert', 702, { water: 0.02, clouds: 0.1 })),
+    observed('TRAPPIST-1 d', 0.02227, 0.011087, 0.00837, 0.788, 97.19, world('desert', 703, { water: 0.2, ice: 0.08, clouds: 0.25 })),
+    observed('TRAPPIST-1 e', 0.02925, 0.0167, 0.0051, 0.92, 146.39, world('temperate', 704, { water: 0.6, ice: 0.3, clouds: 0.45 })),
+    observed('TRAPPIST-1 f', 0.03849, 0.025207, 0.01007, 1.045, 220.96, world('ice', 705, { water: 0.55, ice: 0.75 })),
+    observed('TRAPPIST-1 g', 0.04683, 0.033822, 0.00208, 1.129, 296.49, world('ice', 706, { ice: 0.85 })),
+    observed('TRAPPIST-1 h', 0.06189, 0.051382, 0.00567, 0.755, 450.41, world('ice', 707, { ice: 0.95, clouds: 0.1 })),
+  ],
+}
+
+/** The nearest exoplanet there is. */
+export const PROXIMA: SystemDef = {
+  id: 'proxima-centauri',
+  name: 'Proxima Centauri',
+  sub: 'observed · the nearest exoplanet, surface imagined',
+  origin: 'observed',
+  star: { name: 'Proxima Centauri', color: 0xff9d6f, mass: 0.1221 },
+  bodies: [
+    observed('Proxima Centauri b', 0.04857, 0.030628, 0.02, 1.1, 268.5, world('ice', 711, { water: 0.5, ice: 0.6, clouds: 0.3 })),
+  ],
+}
+
+/** The first planet found around another Sun-like star, in 1995. */
+export const PEGASI_51: SystemDef = {
+  id: '51-pegasi',
+  name: '51 Pegasi',
+  sub: 'observed · the first exoplanet around a Sun-like star',
+  origin: 'observed',
+  star: { name: '51 Pegasi', color: 0xfff4e4, mass: 1.06 },
+  bodies: [
+    observed('51 Pegasi b', 0.0527, 0.011583, 0.008, 13.4, 101.5, world('gasAmber', 712, { rings: false, glow: 0.55 })),
+  ],
+}
+
+/** An Earth-sized year around a Sun-like star. */
+export const KEPLER_452: SystemDef = {
+  id: 'kepler-452',
+  name: 'Kepler-452',
+  sub: 'observed · an Earth-length year around a Sun-like star',
+  origin: 'observed',
+  star: { name: 'Kepler-452', color: 0xfff8ec, mass: 1.037 },
+  bodies: [
+    observed('Kepler-452 b', 1.046, 1.0537, 0.01, 1.63, 24, world('temperate', 713, { water: 0.6, clouds: 0.5, ice: 0.2 })),
+  ],
+}
+
+export const BUILT_IN_SYSTEMS: SystemDef[] = [
+  MILKY_WAY, TRAPPIST, PROXIMA, PEGASI_51, KEPLER_452, ANDROMEDA,
+]
 
 export function builtInSystem(id: string): SystemDef | null {
   return BUILT_IN_SYSTEMS.find((s) => s.id === id) ?? null

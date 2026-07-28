@@ -78,7 +78,11 @@ function dotStyle(color: number, mass: number) {
 
 /** A year here, in Earth years or days — whichever reads better. */
 function fmtPeriod(years: number): string {
-  if (years < 1) return `${(years * 365.25).toFixed(0)} day year`
+  if (years < 1) {
+    const days = years * 365.25
+    // TRAPPIST-1 b's year is 1.5 days; rounding it to "2" would misquote it.
+    return `${days < 10 ? days.toFixed(1) : days.toFixed(0)} day year`
+  }
   return `${years < 10 ? years.toFixed(1) : years.toFixed(0)} year orbit`
 }
 
@@ -160,6 +164,8 @@ export function SystemsPanel(props: Props) {
         <strong>{system.name}</strong> — {system.sub}.{' '}
         {system.origin === 'measured' &&
           'Duplicate it to move the planets around; the original stays as it is.'}
+        {system.origin === 'observed' &&
+          'The orbits and years are measured; the worlds wearing them are imagined — nobody has seen these surfaces.'}
         {system.origin === 'imagined' && 'Every number in it was invented, including the star.'}
         {system.origin === 'custom' &&
           'Yours to change — add worlds, move them about, then save it for a link.'}
@@ -211,8 +217,10 @@ export function SystemsPanel(props: Props) {
             real elliptical, tilted path. <strong>Same size</strong> draws every planet alike for easy
             spotting; <strong>To scale</strong> ranks them by true size. Distances are eased inward and
             the star is far smaller than life, though stars are sized against one another — a
-            blue-white star really is about seven times the width of a red dwarf. Drag to tilt,
-            scroll to zoom, click a planet to visit it.
+            blue-white star really is about seven times the width of a red dwarf. A compact system
+            like TRAPPIST-1 is stretched to fill the frame and slowed just enough to watch, with
+            every internal ratio kept exact. Drag to tilt, scroll to zoom, click a planet to visit
+            it.
           </div>
         </>
       ) : system.bodies.length === 0 ? (

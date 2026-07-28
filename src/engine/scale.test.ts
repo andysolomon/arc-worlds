@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { ORBITS } from './planets'
-import { kepler, moonDist, moonPeriodSec, moonRad, sameDist, sizeMap, visDist } from './scale'
+import { TRAPPIST } from '../data/systems'
+import {
+  kepler, moonDist, moonPeriodSec, moonRad, sameDist, sizeMap,
+  systemStretch, tempoFor, visDist,
+} from './scale'
 
 describe('visDist', () => {
   it('preserves ordering across the whole solar system', () => {
@@ -24,6 +28,33 @@ describe('sameDist', () => {
     const d = au.map(sameDist)
     for (let i = 1; i < d.length; i++) expect(d[i]).toBeGreaterThan(d[i - 1])
     expect(sameDist(30.07) / sameDist(0.3871)).toBeLessThan(visDist(30.07) / visDist(0.3871))
+  })
+})
+
+describe('compact systems', () => {
+  it('leaves the Solar System exactly alone', () => {
+    expect(systemStretch(39.482)).toBe(1)
+    expect(tempoFor(0.2408)).toBe(1) // Mercury already clears the floor
+  })
+
+  it('stretches TRAPPIST-1 out of the sliver the log maps would leave it in', () => {
+    const a = TRAPPIST.bodies.map((b) => b.a)
+    const K = systemStretch(Math.max(...a))
+    expect(K).toBeGreaterThan(1)
+    // Unstretched, all seven orbits fit inside a quarter of one drawn radius…
+    expect(sameDist(a[6]) - sameDist(a[0])).toBeLessThan(0.25)
+    // …stretched, the system spans real screen distance, in the same order.
+    const drawn = a.map((x) => sameDist(x * K))
+    for (let i = 1; i < drawn.length; i++) expect(drawn[i]).toBeGreaterThan(drawn[i - 1])
+    expect(drawn[6] - drawn[0]).toBeGreaterThan(1.5)
+  })
+
+  it('slows the fastest orbit to something an eye can follow, ratios intact', () => {
+    const periods = TRAPPIST.bodies.map((b) => b.period)
+    const K = tempoFor(Math.min(...periods))
+    expect(Math.min(...periods) * K).toBeCloseTo(0.2, 6)
+    // h still orbits exactly as many times slower than b as it really does.
+    expect((periods[6] * K) / (periods[0] * K)).toBeCloseTo(periods[6] / periods[0], 9)
   })
 })
 

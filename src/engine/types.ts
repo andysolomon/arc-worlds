@@ -192,9 +192,11 @@ export interface Star {
 /**
  * Where a system's numbers come from. The Solar System is measured and this
  * project is careful about saying so, which means anything invented has to be
- * marked as invented rather than sitting alongside it unlabelled.
+ * marked as invented rather than sitting alongside it unlabelled. `observed`
+ * is the honest middle: real exoplanet systems whose orbits and years are
+ * measured while every surface wearing them is imagined — nobody has seen one.
  */
-export type SystemOrigin = 'measured' | 'imagined' | 'custom'
+export type SystemOrigin = 'measured' | 'observed' | 'imagined' | 'custom'
 
 export interface SystemDef {
   id: string

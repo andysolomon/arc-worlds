@@ -6,8 +6,8 @@ import { makeSurface, noiseFor } from './surface'
 import { REAL, realFor } from './planets'
 import { isGas, PALETTES } from './palettes'
 import {
-  D2R, DAY_SEC, kepler, moonDist, moonPeriodSec, moonRad,
-  sameDist, SIZE_MAX, sizeMap, starSize, visDist, YEAR_SEC,
+  D2R, DAY_SEC, kepler, moonDist, moonPeriodSec, moonRad, sameDist,
+  SIZE_MAX, sizeMap, starSize, systemStretch, tempoFor, visDist, YEAR_SEC,
 } from './scale'
 import { ATMO_FRAG, ATMO_VERT, GAS_FRAG, GAS_VERT, SUN_FRAG, SUN_VERT } from './shaders'
 import type { Moon, PlanetParams, RingConfig, SystemBody, SystemDef } from './types'
@@ -927,6 +927,13 @@ export class PlanetViewport {
     this.fitSame = 0
     this.fitScale = 0
 
+    // Compact systems are stretched and slowed as a whole — one factor each,
+    // so internal geometry and relative pacing survive exactly.
+    const aMax = def.bodies.reduce((m, b) => Math.max(m, b.a), 0)
+    const pMin = def.bodies.reduce((m, b) => Math.min(m, b.period), Infinity)
+    const stretch = systemStretch(aMax)
+    const tempo = tempoFor(pMin)
+
     def.bodies.forEach((b, i) => {
       const u = this.sysNodes[i]
       if (!u) return
@@ -934,10 +941,11 @@ export class PlanetViewport {
       u.plane.rotation.y = b.node * D2R // longitude of ascending node
       u.plane.rotation.x = b.inc * D2R // inclination to the reference plane
       u.e = b.e
-      u.period = b.period
+      // The drawn period; the body list keeps quoting the measured one.
+      u.period = b.period * tempo
       u.peri = (b.peri - b.node) * D2R
-      u.aSame = sameDist(b.a)
-      u.aScale = visDist(b.a)
+      u.aSame = sameDist(b.a * stretch)
+      u.aScale = visDist(b.a * stretch)
 
       const cp = Math.cos(u.peri)
       const sp = Math.sin(u.peri)

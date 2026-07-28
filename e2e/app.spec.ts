@@ -127,6 +127,9 @@ test('every planet texture loads', async ({ page }) => {
 })
 
 test('a system built from your own worlds renders in orbit', async ({ page }) => {
+  // Three sculpt round trips make this the longest test in the suite; under
+  // 6-worker contention it finishes within a second of the default cap.
+  test.slow()
   const workerUrls: string[] = []
   page.on('worker', (worker) => workerUrls.push(worker.url()))
   await page.goto('/')
@@ -161,6 +164,7 @@ test('a system built from your own worlds renders in orbit', async ({ page }) =>
 })
 
 test('a system can be filled without ever leaving the Systems tab', async ({ page }) => {
+  test.slow() // same pressure as its neighbour: ~27 s under 6-worker contention
   await page.goto('/')
   await page.getByRole('tab', { name: 'Systems' }).click()
   await page.getByRole('button', { name: 'New, empty' }).click()
@@ -232,7 +236,7 @@ test('a heavier star is drawn as a bigger one', async ({ page }) => {
   const widths = await page.locator('.chip', { hasText: /dwarf|star/ }).evaluateAll((els) =>
     els.map((e) => e.querySelector('.dot')!.getBoundingClientRect().width),
   )
-  expect(widths.length).toBe(5)
+  expect(widths.length).toBe(6)
   for (let i = 1; i < widths.length; i++) expect(widths[i]).toBeGreaterThan(widths[i - 1])
 
   // And the renderer agrees with the swatch rather than drawing one fixed sun.
@@ -462,6 +466,26 @@ test('the Worlds tab aims Add at any saved system, and warns before a duplicate'
   await page.getByRole('tab', { name: 'Systems' }).click()
   await expect(page.getByRole('button', { name: /Fixture System/, pressed: true })).toBeVisible()
   await expect(page.getByRole('button', { name: /Visit/ })).toHaveCount(2)
+})
+
+test('TRAPPIST-1 wears measured orbits on imagined worlds', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Systems' }).click()
+  await page.getByRole('button', { name: 'TRAPPIST-1' }).click()
+
+  // The honest split is stated up front, and all seven planets are here.
+  await expect(page.getByText(/nobody has seen these surfaces/)).toBeVisible()
+  await expect(page.getByRole('button', { name: /Visit/ })).toHaveCount(7)
+  // TRAPPIST-1 b's 1.5-day year is quoted, not rounded into fiction.
+  await expect(page.getByText('1.5 day year', { exact: false })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Orbit view' }).click()
+  await page.waitForTimeout(2500)
+  expect(await hasDrawnGeometry(page)).toBe(true)
+
+  await page.getByRole('button', { name: 'Body list' }).click()
+  await page.getByRole('button', { name: /TRAPPIST-1 e/ }).click()
+  await expect(page.getByRole('heading', { name: 'TRAPPIST-1 e' })).toBeVisible()
 })
 
 test('an ancient world loads whole and scans as a reconstruction', async ({ page }) => {

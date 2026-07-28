@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ANDROMEDA, MILKY_WAY } from '../data/systems'
+import { ANDROMEDA, KEPLER_452, MILKY_WAY, PEGASI_51, PROXIMA, TRAPPIST } from '../data/systems'
 import { ORBITS } from '../engine/planets'
 import { periodFor, starRadius, starSize } from '../engine/scale'
 import {
@@ -104,6 +104,35 @@ describe('the built-in systems', () => {
     // other star from its own colour, crossfading on distance from white. Give
     // the Sun a tint and it quietly stops being the painted one.
     expect(MILKY_WAY.star.color).toBe(0xffffff)
+  })
+
+  it('labels the observed systems and gives their imagined surfaces no maps', () => {
+    for (const s of [TRAPPIST, PROXIMA, PEGASI_51, KEPLER_452]) {
+      expect(s.origin).toBe('observed')
+      expect(s.sub).toMatch(/observed/)
+      for (const b of s.bodies) expect(b.texture).toBeNull()
+    }
+  })
+
+  it('carries measured periods that Kepler reproduces from the distances', () => {
+    // The observed orbits must be self-consistent under the same law the app
+    // uses everywhere, or duplicating one would visibly re-time it on save.
+    for (const s of [TRAPPIST, PROXIMA, PEGASI_51, KEPLER_452]) {
+      for (const b of s.bodies) {
+        const derived = periodFor(b.a, s.star.mass)
+        expect(Math.abs(derived - b.period) / b.period, b.name).toBeLessThan(0.02)
+      }
+    }
+  })
+
+  it('lets a duplicated TRAPPIST-1 survive sanitisation intact', () => {
+    const out = sanitizeSystem(duplicateSystem(TRAPPIST))
+    expect(out.origin).toBe('custom')
+    expect(out.bodies).toHaveLength(7)
+    // The tightest orbit sits inside the old 0.04 AU floor; the new floor
+    // keeps its measured distance rather than shoving it outward.
+    expect(out.bodies[0].a).toBeCloseTo(0.01154, 5)
+    expect(out.star.mass).toBeCloseTo(0.0898, 4)
   })
 
   it('marks Andromeda as imagined and gives it no photographic maps', () => {

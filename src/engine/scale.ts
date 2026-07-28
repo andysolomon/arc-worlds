@@ -111,4 +111,37 @@ export function sameDist(au: number): number {
   return 1.9 + (2.9 * Math.log(1 + au * 3)) / Math.LN10
 }
 
+/* --- Compact systems ----------------------------------------------------- */
+
+/** Where a compact system's outermost orbit is stretched out to, in AU. */
+const COMPACT_TARGET_A = 5.2
+/** The fastest a drawn orbit is allowed to be, in drawn years. */
+const P_DRAW_MIN = 0.2
+
+/**
+ * Distance multiplier for a whole system. The drawn-distance maps were tuned
+ * for Mercury-to-Neptune; a system that fits inside 1 AU — TRAPPIST-1 spans
+ * 0.011 to 0.062 — lands in a sliver where seven orbits sit closer together
+ * than one planet's drawn radius. One shared multiplier stretches the whole
+ * system out to Jupiter's distance, which preserves ordering and relative
+ * character through the log maps while letting it fill the frame the way the
+ * Solar System does. Anything reaching past 1 AU is left exactly alone.
+ */
+export function systemStretch(aMax: number): number {
+  return aMax > 0 && aMax < 1 ? COMPACT_TARGET_A / aMax : 1
+}
+
+/**
+ * Clock multiplier for a whole system. A drawn year is 14 s, which reads well
+ * from Mercury outward — but TRAPPIST-1 b's measured year is 1.5 days, an
+ * invisible 60 ms blur per orbit. One shared multiplier slows the whole
+ * system until its fastest orbit takes at least P_DRAW_MIN drawn years, so
+ * every relative pace stays exact: h still orbits 12.4× slower than b.
+ * Mercury's 0.24-year orbit already clears the floor, so the Solar System
+ * keeps its exact historical pacing.
+ */
+export function tempoFor(pMin: number): number {
+  return pMin > 0 && pMin < P_DRAW_MIN ? P_DRAW_MIN / pMin : 1
+}
+
 export { SIZE_MAX, SIZE_MIN }

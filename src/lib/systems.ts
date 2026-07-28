@@ -16,7 +16,9 @@ import { genName, safeTexture, sanitize, serialize, surprise } from './params.js
 /** Enough for a generous system without letting one payload get silly. */
 export const MAX_BODIES = 12
 
-export const A_MIN = 0.04
+// Low enough for real compact systems: TRAPPIST-1 b orbits at 0.0115 AU, and
+// a duplicated copy of it must survive sanitisation with its orbits intact.
+export const A_MIN = 0.01
 export const A_MAX = 90
 export const MASS_MIN = 0.08
 export const MASS_MAX = 3
@@ -152,7 +154,12 @@ export function duplicateSystem(def: SystemDef, name?: string): SystemDef {
     ...def,
     id: 'custom',
     name: name ?? `${def.name} (copy)`,
-    sub: def.origin === 'measured' ? 'built from the Solar System' : 'a system of your own',
+    sub:
+      def.origin === 'measured'
+        ? 'built from the Solar System'
+        : def.origin === 'observed'
+          ? `built from ${def.name}`
+          : 'a system of your own',
     origin: 'custom',
     star: { ...def.star },
     bodies: def.bodies.map((b) => ({ ...b, params: { ...b.params }, ring: b.ring ? { ...b.ring } : null })),
@@ -315,6 +322,8 @@ export interface StarKind {
 
 /** Roughly the main sequence, warm to hot, with plausible masses. */
 export const STAR_KINDS: StarKind[] = [
+  // Cool enough for the TRAPPIST-1 class; the drawn-size floor keeps it visible.
+  { label: 'ember dwarf', color: 0xff7a4a, mass: 0.1 },
   { label: 'red dwarf', color: 0xff8a5c, mass: 0.28 },
   { label: 'orange dwarf', color: 0xffb478, mass: 0.78 },
   { label: 'yellow dwarf', color: 0xffffff, mass: 1 },
