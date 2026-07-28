@@ -1,9 +1,9 @@
 import { BUILT_IN_SYSTEMS } from '../data/systems'
 import { PRESETS, SOLAR } from '../data/presets'
-import { periodFor } from '../engine/scale'
+import { periodFor, starRadius, starSize } from '../engine/scale'
 import {
   A_MAX, A_MIN, MASS_MAX, MASS_MIN, MAX_BODIES, STAR_KINDS,
-  duplicateSystem, emptySystem, retime, rollSystem, starDot,
+  duplicateSystem, emptySystem, retime, rollSystem,
 } from '../lib/systems'
 import type { SavedSystem } from '../lib/api'
 import type { SystemBody, SystemDef } from '../engine/types'
@@ -49,6 +49,21 @@ const R_MAX = 16
 const SIZE = logScale(R_MIN, R_MAX)
 
 const fmtAU = (a: number) => (a < 10 ? `${a.toFixed(2)} AU` : `${a.toFixed(1)} AU`)
+
+/**
+ * A star chip's dot is drawn at the size the renderer will draw that star, so
+ * the swatch previews what you are picking rather than only its colour. The
+ * choice is really a choice of mass — it re-times every orbit in the system —
+ * and identical dots were the one thing in that row saying otherwise.
+ */
+function dotStyle(color: number, mass: number) {
+  const d = Math.round(10 * starSize(mass))
+  return {
+    background: `#${color.toString(16).padStart(6, '0')}`,
+    width: d,
+    height: d,
+  }
+}
 
 /** A year here, in Earth years or days — whichever reads better. */
 function fmtPeriod(years: number): string {
@@ -102,13 +117,13 @@ export function SystemsPanel(props: Props) {
               aria-pressed={system.id === s.id}
               onClick={() => onSystem(s)}
             >
-              <span className="dot" style={{ background: starDot(s) }} />
+              <span className="dot" style={dotStyle(s.star.color, s.star.mass)} />
               {s.name}
             </button>
           ))}
           {editable && (
             <button className="chip" type="button" aria-pressed>
-              <span className="dot" style={{ background: starDot(system) }} />
+              <span className="dot" style={dotStyle(system.star.color, system.star.mass)} />
               {system.name}
             </button>
           )}
@@ -157,7 +172,9 @@ export function SystemsPanel(props: Props) {
             Every body moves at the pace its own orbit implies — one Earth year ≈ 14 seconds — on a
             real elliptical, tilted path. <strong>Same size</strong> draws every planet alike for easy
             spotting; <strong>To scale</strong> ranks them by true size. Distances are eased inward and
-            the star is far smaller than life. Drag to tilt, scroll to zoom, click a planet to visit it.
+            the star is far smaller than life, though stars are sized against one another — a
+            blue-white star really is about seven times the width of a red dwarf. Drag to tilt,
+            scroll to zoom, click a planet to visit it.
           </div>
         </>
       ) : system.bodies.length === 0 ? (
@@ -220,12 +237,13 @@ export function SystemsPanel(props: Props) {
                   key={k.label}
                   className="chip"
                   type="button"
+                  title={`${k.label} — ${k.mass.toFixed(2)} solar masses, ${starRadius(k.mass).toFixed(2)} solar radii`}
                   aria-pressed={system.star.color === k.color}
                   onClick={() =>
                     onSystem(retime({ ...system, star: { ...system.star, color: k.color, mass: k.mass } }))
                   }
                 >
-                  <span className="dot" style={{ background: `#${k.color.toString(16).padStart(6, '0')}` }} />
+                  <span className="dot" style={dotStyle(k.color, k.mass)} />
                   {k.label}
                 </button>
               ))}
@@ -247,7 +265,8 @@ export function SystemsPanel(props: Props) {
           />
           <div className="note">
             Mass sets how fast everything orbits — a year is a consequence of where a planet is, not
-            a number you pick. Move the star's mass and every orbit re-times itself.
+            a number you pick. Move the star's mass and every orbit re-times itself, and the star
+            grows or shrinks with it: a heavier star is a bigger one.
           </div>
 
           {system.bodies.map((b, i) => (

@@ -7,7 +7,7 @@ import { REAL } from './planets'
 import { isGas, PALETTES } from './palettes'
 import {
   D2R, DAY_SEC, kepler, moonDist, moonPeriodSec, moonRad,
-  sameDist, SIZE_MAX, sizeMap, visDist, YEAR_SEC,
+  sameDist, SIZE_MAX, sizeMap, starSize, visDist, YEAR_SEC,
 } from './scale'
 import { ATMO_FRAG, ATMO_VERT, GAS_FRAG, GAS_VERT, SUN_FRAG, SUN_VERT } from './shaders'
 import type { Moon, PlanetParams, RingConfig, SystemBody, SystemDef } from './types'
@@ -110,6 +110,8 @@ export class PlanetViewport {
   private sysShape = ''
   private sysOrbitKey = ''
   private sysCount = -1
+  /** The star's drawn radius before its own mass is taken into account. */
+  private sunBase = 1.15
   /** Set when the view has changed enough that the camera should refit. */
   private needFrame = false
   /** Pending texture bakes, drained one per frame so a rebuild never stutters. */
@@ -738,6 +740,18 @@ export class PlanetViewport {
   }
 
   /**
+   * Draw the star at its own size.
+   *
+   * Both inputs move independently — the size mode changes the base, editing
+   * the system changes the mass — so this is the one place that combines them.
+   * Stars are sized against each other, not against their planets: at true
+   * scale even a red dwarf would swallow every orbit in the view.
+   */
+  private sizeSun() {
+    this.sunMesh!.scale.setScalar(this.sunBase * starSize(this.sysDef?.star.mass ?? 1))
+  }
+
+  /**
    * Frame the system. "Same size" fits the whole thing; "to scale" deliberately
    * starts inside the outermost orbit, because at true relative spacing a view
    * wide enough to contain Neptune leaves the inner planets subpixel.
@@ -751,7 +765,8 @@ export class PlanetViewport {
       u.lineSame.visible = !scaled
       u.lineScale.visible = scaled
     }
-    this.sunMesh!.scale.setScalar(scaled ? SIZE_MAX : 1.15)
+    this.sunBase = scaled ? SIZE_MAX : 1.15
+    this.sizeSun()
 
     const fit = scaled ? this.fitScale * 0.97 : this.frameFor(this.fitSame)
     this.fitZ = Math.max(4, fit)
@@ -967,7 +982,10 @@ export class PlanetViewport {
     }
     this.sys!.visible = true
 
+    // Colour and size are both properties of the star, so they move together —
+    // and an empty system has no orbits to diff, so this cannot wait for those.
     this.sunMat!.uniforms.uTint.value.set(def.star.color)
+    this.sizeSun()
     if (def.id !== this.sysId) {
       this.sysId = def.id
       this.needFrame = true
@@ -1209,10 +1227,12 @@ export class PlanetViewport {
     // Observability hook: WebGL does not preserve its drawing buffer, so the
     // canvas cannot be read back after the frame. Publishing the frame count
     // and triangles drawn gives tests (and debugging) a truthful signal that
-    // geometry is actually reaching the GPU.
+    // geometry is actually reaching the GPU. The star's drawn radius is here
+    // for the same reason — it is otherwise only visible as coloured pixels.
     this.frames++
     const cv = this.renderer.domElement
     cv.dataset.frames = String(this.frames)
     cv.dataset.triangles = String(this.renderer.info.render.triangles)
+    cv.dataset.sunScale = String(this.sunMesh?.scale.x ?? 0)
   }
 }

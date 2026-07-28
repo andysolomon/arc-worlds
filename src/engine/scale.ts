@@ -46,6 +46,19 @@ export function periodFor(a: number, starMass = 1): number {
 }
 
 /**
+ * Main-sequence mass–radius relation, in solar units.
+ *
+ * Below the Sun radius tracks mass almost exactly; above it the star swells
+ * more slowly, roughly M^0.8. Across the star kinds on offer — 0.28 to 2.4
+ * solar masses — that is a spread of about seven, which is why picking a star
+ * cannot leave every star drawn the same size.
+ */
+export function starRadius(mass: number): number {
+  const m = Math.max(0.02, mass)
+  return m < 1 ? m : Math.pow(m, 0.8)
+}
+
+/**
  * Solve Kepler's equation M = E - e·sin(E) for eccentric anomaly E.
  * Newton-Raphson; five iterations is ample for e < 0.8.
  */
@@ -76,6 +89,21 @@ export function visDist(au: number): number {
 export function sizeMap(km: number): number {
   const t = (Math.log(km) - Math.log(MIN_KM)) / (Math.log(SUN_KM) - Math.log(MIN_KM))
   return SIZE_MIN + Math.min(1, Math.max(0, t)) * (SIZE_MAX - SIZE_MIN)
+}
+
+/**
+ * How much bigger or smaller to draw a star than the Sun.
+ *
+ * Stars are sized against each other, never against their orbits: relative to
+ * the distances here a star is already drawn enormously larger than life, so a
+ * true sevenfold spread would leave a blue-white star sitting on top of its own
+ * inner planets. A cube root keeps the ordering plain — roughly two to one end
+ * to end — while leaving the innermost orbit clear. The clamps only bite past
+ * the star kinds on offer, at the extremes of the mass slider. One solar mass
+ * returns exactly 1, so the Solar System is left exactly as it was.
+ */
+export function starSize(mass: number): number {
+  return Math.min(1.3, Math.max(0.62, Math.cbrt(starRadius(mass))))
 }
 
 /** "Same size" spacing — the cosier compressed model, every planet drawn alike. */

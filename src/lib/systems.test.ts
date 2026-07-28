@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { ANDROMEDA, MILKY_WAY } from '../data/systems'
 import { ORBITS } from '../engine/planets'
-import { periodFor } from '../engine/scale'
+import { periodFor, starRadius, starSize } from '../engine/scale'
 import {
-  A_MAX, MASS_MAX, MAX_BODIES,
+  A_MAX, MASS_MAX, MASS_MIN, MAX_BODIES, STAR_KINDS,
   bodyFromWorld, dayFor, duplicateSystem, nextDistance, retime, rollSystem,
   sanitizeSystem, sortByDistance,
 } from './systems'
@@ -24,6 +24,54 @@ describe('periodFor', () => {
   })
 })
 
+describe('starRadius', () => {
+  it('matches the real stars each kind stands in for', () => {
+    // Rough measured radii: Proxima-like M dwarfs track mass almost exactly,
+    // while Sirius A (2.06 M☉) is only 1.71 R☉ — the swelling slows above the Sun.
+    const measured: Array<[number, number]> = [
+      [0.28, 0.29], [0.78, 0.79], [1, 1], [1.6, 1.5], [2.4, 2.05],
+    ]
+    for (const [mass, radius] of measured) {
+      expect(starRadius(mass), `${mass} M☉`).toBeCloseTo(radius, 1)
+    }
+  })
+
+  it('tracks mass below the Sun and lags behind it above', () => {
+    for (const m of [0.1, 0.3, 0.5]) expect(starRadius(m)).toBeCloseTo(m, 6)
+    for (const m of [1.2, 2, 3]) {
+      expect(starRadius(m * 1.5)).toBeGreaterThan(starRadius(m))
+      expect(starRadius(m * 1.5)).toBeLessThan(starRadius(m) * 1.5)
+    }
+  })
+})
+
+describe('starSize', () => {
+  it('leaves the Sun exactly where it was, so the Solar System is untouched', () => {
+    expect(starSize(1)).toBe(1)
+  })
+
+  it('draws every star kind at a distinguishable size', () => {
+    const drawn = STAR_KINDS.map((k) => Math.round(10 * starSize(k.mass)))
+    expect(drawn).toEqual([...drawn].sort((a, b) => a - b))
+    expect(new Set(drawn).size).toBe(STAR_KINDS.length)
+  })
+
+  it('compresses the range, so no star swallows the innermost orbit', () => {
+    // True radii span about 7×; drawn, that is pulled in to roughly 2×, which
+    // is the whole reason a blue-white star still leaves its inner planets room.
+    const spread = starSize(2.4) / starSize(0.28)
+    expect(spread).toBeGreaterThan(1.7)
+    expect(spread).toBeLessThan(2.2)
+  })
+
+  it('stays sane at both ends of the mass slider', () => {
+    for (const m of [MASS_MIN, MASS_MAX, 0, -5, 1e9]) {
+      expect(starSize(m)).toBeGreaterThanOrEqual(0.62)
+      expect(starSize(m)).toBeLessThanOrEqual(1.3)
+    }
+  })
+})
+
 describe('the built-in systems', () => {
   it('carries the measured orbits straight through to the Solar System', () => {
     expect(MILKY_WAY.origin).toBe('measured')
@@ -34,6 +82,13 @@ describe('the built-in systems', () => {
       expect(b.texture).toMatch(/^images2k\//)
     })
     expect(MILKY_WAY.bodies.find((b) => b.name === 'Saturn')?.ring).toBeTruthy()
+  })
+
+  it('keeps the Sun exactly white, which is what leaves it rendered untouched', () => {
+    // The star shader paints the Sun from a hand-tuned ramp and generates every
+    // other star from its own colour, crossfading on distance from white. Give
+    // the Sun a tint and it quietly stops being the painted one.
+    expect(MILKY_WAY.star.color).toBe(0xffffff)
   })
 
   it('marks Andromeda as imagined and gives it no photographic maps', () => {

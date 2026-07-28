@@ -10,3 +10,6 @@ test-results/
 playwright-report/
 .vercel
 .env*.local
+
+# agent-browser scratch output
+.playwright-cli/

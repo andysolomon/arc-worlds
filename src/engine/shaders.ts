@@ -133,16 +133,42 @@ void main(){
  float g=fbm3(n*8.0+vec3(0.0,t,0.0));
  float g2=fbm3(n*26.0-vec3(t*1.7,0.0,t*0.9));
  float v=g*0.62+g2*0.38;
- vec3 c=mix(vec3(0.70,0.14,0.02),vec3(1.0,0.52,0.07),smoothstep(0.30,0.66,v));
- c=mix(c,vec3(1.0,0.88,0.58),smoothstep(0.60,0.86,v));
- c=mix(c,vec3(1.0,0.99,0.92),smoothstep(0.80,0.95,v));
- c=mix(c,vec3(0.24,0.06,0.02),smoothstep(0.34,0.24,fbm3(n*3.2+vec3(0.0,t*0.35,5.0)))*0.9);
+ float spot=smoothstep(0.34,0.24,fbm3(n*3.2+vec3(0.0,t*0.35,5.0)))*0.9;
+
+ // The Sun, hand-painted: dark red lanes, orange granulation, pale hot
+ // granules, cooler spots over the top.
+ vec3 s=mix(vec3(0.70,0.14,0.02),vec3(1.0,0.52,0.07),smoothstep(0.30,0.66,v));
+ s=mix(s,vec3(1.0,0.88,0.58),smoothstep(0.60,0.86,v));
+ s=mix(s,vec3(1.0,0.99,0.92),smoothstep(0.80,0.95,v));
+ s=mix(s,vec3(0.24,0.06,0.02),spot);
+
+ // Any other star, built from its own colour rather than filtered through the
+ // Sun's. Tinting cannot work here: that ramp holds almost no blue, and a
+ // multiply only ever removes light, so a blue-white star came out orange. So
+ // the brightness structure is kept and the colour rebuilt around uTint — the
+ // hottest granules sit at the star's own colour and everything cooler is both
+ // darker and redder. How much redder depends on the star: a cool star spans a
+ // steep part of the spectrum and its lanes redden hard, while a hot one spans
+ // a far flatter part and stays its own colour nearly throughout.
+ float warmth=clamp((uTint.r-uTint.b)*1.6+0.35,0.0,1.0);
+ vec3 red=mix(vec3(1.0),vec3(1.0,0.40,0.10),warmth);
+ vec3 o=mix(uTint*red*0.62,uTint*mix(vec3(1.0),red,0.62)*0.92,smoothstep(0.30,0.66,v));
+ o=mix(o,uTint*mix(vec3(1.0),red,0.24),smoothstep(0.60,0.86,v));
+ // The hottest granules run toward white on any star, exactly as the Sun's own
+ // brightest stop does — without this a hot star is one flat shade of itself.
+ o=mix(o,mix(uTint,vec3(1.0),0.55),smoothstep(0.80,0.95,v));
+ o=mix(o,uTint*red*0.24,spot);
+
+ // The painted Sun is kept for the Sun itself, whose tint is exactly white;
+ // any star with a colour of its own crosses to the generated ramp almost at
+ // once. This crossfade is not a physical quantity — it exists so that the two
+ // ramps agree at white, and so this change cannot touch the Solar System.
+ vec3 c=mix(s,o,clamp(length(uTint-vec3(1.0))*6.0,0.0,1.0));
+
  vec3 vd=normalize(cameraPosition-vW);
  float mu=max(dot(normalize(vW-vC),vd),0.0);
  c*=0.52+0.48*pow(mu,0.42);
- // Star colour. White leaves the Sun exactly as it was; cooler and hotter
- // stars pull the whole granulation ramp with them rather than washing over it.
- gl_FragColor=vec4(c*uTint,1.0);}
+ gl_FragColor=vec4(c,1.0);}
 `
 
 /** Rim-lit atmospheric shell, brighter on the sunward limb. */

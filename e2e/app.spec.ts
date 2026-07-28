@@ -152,6 +152,36 @@ test('an imagined system is never presented as a measured one', async ({ page })
   expect(await hasDrawnGeometry(page)).toBe(true)
 })
 
+test('a heavier star is drawn as a bigger one', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Systems' }).click()
+  await page.getByRole('button', { name: 'New, empty' }).click()
+
+  // Picking a star is really picking a mass, so the swatches cannot all match.
+  const widths = await page.locator('.chip', { hasText: /dwarf|star/ }).evaluateAll((els) =>
+    els.map((e) => e.querySelector('.dot')!.getBoundingClientRect().width),
+  )
+  expect(widths.length).toBe(5)
+  for (let i = 1; i < widths.length; i++) expect(widths[i]).toBeGreaterThan(widths[i - 1])
+
+  // And the renderer agrees with the swatch rather than drawing one fixed sun.
+  await page.getByRole('button', { name: 'Orbit view' }).click()
+  const sunFor = async (kind: string) => {
+    await page.getByRole('button', { name: kind, exact: true }).click()
+    await page.waitForTimeout(1200)
+    return page.evaluate(() => Number(document.querySelector('canvas')!.dataset.sunScale ?? 0))
+  }
+  const dwarf = await sunFor('red dwarf')
+  const blue = await sunFor('blue-white star')
+  expect(dwarf).toBeGreaterThan(0)
+  expect(blue).toBeGreaterThan(dwarf * 1.5)
+
+  // Each star kind recompiles nothing, but it does drive fresh values through
+  // the star shader; a broken one shows up here rather than as a black sun.
+  const errors = (page as unknown as { __errors: string[] }).__errors
+  expect(errors.filter((e) => /shader|glsl|webgl|program/i.test(e))).toEqual([])
+})
+
 test('the gallery degrades gracefully when the API is unavailable', async ({ page }) => {
   await page.route('**/api/worlds*', (r) => r.abort())
   await page.goto('/')

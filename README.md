@@ -80,6 +80,24 @@ Kepler's third law, `P² = a³ / M★` — so moving a planet outward slows it d
 heavier speeds everything up. The same law reproduces all eight measured periods to the nearest
 year, which is what makes it fair to use for the imagined ones.
 
+The star's mass also sets its size, by the main-sequence mass–radius relation: radius tracks mass
+below the Sun and lags to about `M^0.8` above it, so the five star kinds on offer span roughly 0.3
+to 2.0 solar radii. Stars are drawn to that ordering but not to that ratio — relative to orbital
+distances a star is already vastly larger than life, so a true sevenfold spread would leave a
+blue-white star sitting on top of its own inner planets. The spread is compressed to about two to
+one, and a one-solar-mass star comes out at exactly its old size, which leaves the Solar System
+untouched. The star chips in the panel are drawn at the same sizes, so the swatch previews the
+star rather than only its colour — which matters, because picking one is really picking a mass.
+
+Star colour is generated, not filtered. The Sun's surface is a hand-tuned ramp — dark red lanes,
+orange granulation, pale hot granules, cooler spots — and tinting it cannot produce a hot star,
+because that ramp holds almost no blue and a multiply only ever removes light. So every star other
+than the Sun has the same brightness structure rebuilt around its own colour: the hottest granules
+run toward white, and everything cooler is both darker and redder by an amount that falls away for
+hot stars, whose granulation spans a much flatter part of the spectrum. The Sun's tint is exactly
+white, and the two ramps are crossfaded on distance from white, so the Solar System renders
+identically to before.
+
 ## Layout
 
 ```
