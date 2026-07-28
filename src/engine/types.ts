@@ -59,6 +59,9 @@ export type PresetKey =
   | 'uranus'
   | 'neptune'
   | 'pluto'
+  | 'archean'
+  | 'proterozoic'
+  | 'noachian'
 
 export interface RockyPalette {
   gas?: false

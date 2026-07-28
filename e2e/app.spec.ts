@@ -464,6 +464,22 @@ test('the Worlds tab aims Add at any saved system, and warns before a duplicate'
   await expect(page.getByRole('button', { name: /Visit/ })).toHaveCount(2)
 })
 
+test('an ancient world loads whole and scans as a reconstruction', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Archean Earth' }).click()
+  await expect(page.getByRole('heading', { name: 'Archean Earth' })).toBeVisible()
+  await expect(page.getByText(/archean world/)).toBeVisible()
+
+  // The reconstruction says it is one, in its first breath.
+  await page.getByRole('tab', { name: 'Scan' }).click()
+  await page.getByRole('button', { name: /Run spectrometer on Archean Earth/ }).click()
+  await expect(page.getByText('Reconstructed: anoxic, and orange')).toBeVisible({ timeout: 15_000 })
+
+  // The biosignature verdict renders in the surface section, not the default.
+  await page.getByRole('button', { name: 'Surface & water' }).click()
+  await expect(page.getByText('Alive, but not advertising')).toBeVisible()
+})
+
 test('display choices survive a reload', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('tab', { name: 'Systems' }).click()

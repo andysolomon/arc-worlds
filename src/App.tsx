@@ -4,7 +4,7 @@ import { SculptPanel } from './components/SculptPanel'
 import { SystemsPanel } from './components/SystemsPanel'
 import { Viewport } from './components/Viewport'
 import { WorldsPanel } from './components/WorldsPanel'
-import { PRESETS, typeOf } from './data/presets'
+import { PRESETS, typeOf, type AncientWorld } from './data/presets'
 import { MILKY_WAY } from './data/systems'
 import { loadDisplay, saveDisplay, type DisplayOptions } from './lib/display'
 import { DEFAULT_PARAMS, sanitize, surprise } from './lib/params'
@@ -168,6 +168,14 @@ export default function App() {
   const applyPreset = useCallback((key: PresetKey) => {
     const p = PRESETS.find((x) => x.key === key)
     setParams((s) => ({ ...s, ...(p?.def ?? {}), preset: key, texture: null, cloudTexture: null }))
+    setScan(null)
+    setSavedSlug(null)
+  }, [])
+
+  /** Load an ancient world whole — canonical seed, sliders, name and all. */
+  const applyAncient = useCallback((a: AncientWorld) => {
+    setParams({ ...DEFAULT_PARAMS, ...a.params, preset: a.key, texture: null, cloudTexture: null })
+    setName(a.name)
     setScan(null)
     setSavedSlug(null)
   }, [])
@@ -435,6 +443,7 @@ export default function App() {
                 onName={setName}
                 onParam={setParam}
                 onPreset={applyPreset}
+                onAncient={applyAncient}
                 onReshape={reshape}
                 onSave={onSave}
                 saving={saving}

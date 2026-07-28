@@ -1,5 +1,5 @@
 import { BUILT_IN_SYSTEMS } from '../data/systems'
-import { PRESETS, SOLAR } from '../data/presets'
+import { ANCIENT, PRESETS, SOLAR } from '../data/presets'
 import { periodFor, starRadius, starSize } from '../engine/scale'
 import {
   A_MAX, A_MIN, MASS_MAX, MASS_MIN, MAX_BODIES, STAR_KINDS,
@@ -85,7 +85,8 @@ function fmtPeriod(years: number): string {
 function bodyDot(b: SystemBody): string {
   const p = PRESETS.find((x) => x.key === b.params.preset)
   const s = SOLAR.find((x) => x.key === b.params.preset)
-  return (b.texture ? s?.dot : p?.dot) ?? p?.dot ?? s?.dot ?? '#7fae62'
+  const a = ANCIENT.find((x) => x.key === b.params.preset)
+  return (b.texture ? s?.dot : p?.dot ?? a?.dot) ?? p?.dot ?? s?.dot ?? a?.dot ?? '#7fae62'
 }
 
 export function SystemsPanel(props: Props) {

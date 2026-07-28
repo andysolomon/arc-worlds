@@ -31,6 +31,16 @@ export const PALETTES: Record<PresetKey, Palette> = {
   // really is blue — the ramp runs Cthulhu Macula to Sputnik Planitia.
   pluto: { water: 0x8a6f5a, deep: 0x5f4a3c, sand: 0xcfa87f, low: 0xb5895f, mid: 0x9a7350, high: 0xe0d5c4, snow: 0xf7f4ee, atmo: 0x9fc9ec, waterOpacity: 0.8, cloudO: 0.2 },
 
+  // Reconstructions, not measurements: an iron-tinted anoxic ocean lapping
+  // bare basalt islands under a methane-haze sky that really was orange.
+  archean: { water: 0x3a7a8f, deep: 0x1d4452, sand: 0x6a5f52, low: 0x4a4640, mid: 0x3a3733, high: 0x55504a, snow: 0x8a8580, atmo: 0xe8935a, waterOpacity: 0.78, cloudO: 0.85 },
+  // Continents up, oxygen faint, nothing yet living on land: bare rust and
+  // sand from shore to summit, under a sky finally turned blue.
+  proterozoic: { water: 0x3f7fb5, deep: 0x1d3a5f, sand: 0xc9a077, low: 0xb0805a, mid: 0x8f6548, high: 0x6f5540, snow: 0xf0ece4, atmo: 0xa8c9e8, waterOpacity: 0.74, cloudO: 0.9 },
+  // Mars while it still had a northern sea, rain clouds and rivers cutting
+  // the valley networks — the same rusts as today, wet.
+  noachian: { water: 0x4a7a9f, deep: 0x27455f, sand: 0xc98858, low: 0xb06a40, mid: 0x8f5030, high: 0x6f4028, snow: 0xe8d8c8, atmo: 0xc9d8e8, waterOpacity: 0.76, cloudO: 0.7 },
+
   mercury: { water: 0x555055, deep: 0x3a3538, sand: 0x8f8788, low: 0x7a7274, mid: 0x655d60, high: 0x9a9294, snow: 0xb8b0b2, atmo: 0x8a8090, waterOpacity: 0.7, cloudO: 0.2 },
   venus: { water: 0xc98f4f, deep: 0x8a5f2f, sand: 0xe8c088, low: 0xd0a060, mid: 0xb08048, high: 0x8f6538, snow: 0xf0d8a8, atmo: 0xffd98f, waterOpacity: 0.8, cloudO: 1, cloudTint: 0xf0dca8 },
   mars: { water: 0x7a5f50, deep: 0x5f4438, sand: 0xd08858, low: 0xc07040, mid: 0x9a5530, high: 0x784028, snow: 0xe8d8c8, atmo: 0xe8a878, waterOpacity: 0.75, cloudO: 0.25 },

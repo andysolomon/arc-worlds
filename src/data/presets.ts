@@ -45,6 +45,33 @@ export const SOLAR: SolarBody[] = [
     {key:'pluto',name:'Pluto',label:'Dwarf',dot:'#cfa87f',sub:'a dwarf planet with a heart of ice',params:{seed:99,mountains:.45,water:0,roughness:.5,clouds:0,glow:.1,ice:.6,rings:false,moons:1,atmoColor:0x9fc9ec,texture:null,cloudTexture:null}}
   ]
 
-export function typeOf(key: string): Preset | SolarBody {
-  return PRESETS.find((x) => x.key === key) ?? SOLAR.find((x) => x.key === key) ?? PRESETS[0]
+export interface AncientWorld {
+  key: PresetKey
+  name: string
+  label: string
+  dot: string
+  sub: string
+  params: Partial<PlanetParams>
+}
+
+/**
+ * Deep-time reconstructions — worlds we know existed, drawn from evidence
+ * rather than measurement, and labelled that way wherever they scan. Each
+ * carries a canonical seed: keep it and the spectrometer reads the
+ * reconstruction; reseed it and the world detaches into an ordinary
+ * sculptable one, the same identity rule as the measured bodies.
+ */
+export const ANCIENT: AncientWorld[] = [
+    {key:'archean',name:'Archean Earth',label:'Archean',dot:'#e8935a',sub:'Earth, 3 billion years ago · an ocean world under orange haze',params:{seed:3042,mountains:.3,water:.8,roughness:.45,clouds:.5,glow:.65,ice:0,rings:false,moons:1,atmoColor:null,texture:null,cloudTexture:null}},
+    {key:'proterozoic',name:'Proterozoic Earth',label:'Proterozoic',dot:'#b0805a',sub:'Earth, 1 billion years ago · continents with nothing living on them',params:{seed:1042,mountains:.5,water:.62,roughness:.5,clouds:.45,glow:.5,ice:.18,rings:false,moons:1,atmoColor:null,texture:null,cloudTexture:null}},
+    {key:'noachian',name:'Noachian Mars',label:'Noachian',dot:'#b06a40',sub:'Mars, 4 billion years ago · when it still had a sea',params:{seed:4042,mountains:.6,water:.42,roughness:.55,clouds:.35,glow:.4,ice:.12,rings:false,moons:2,atmoColor:null,texture:null,cloudTexture:null}},
+  ]
+
+export function typeOf(key: string): Preset | SolarBody | AncientWorld {
+  return (
+    PRESETS.find((x) => x.key === key) ??
+    SOLAR.find((x) => x.key === key) ??
+    ANCIENT.find((x) => x.key === key) ??
+    PRESETS[0]
+  )
 }

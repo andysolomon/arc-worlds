@@ -8,11 +8,23 @@
 import { mulberry32 } from '../engine/noise'
 import { realFor } from '../engine/planets'
 import {
-  MINERAL_SETS, ODDITIES, PIG, REAL_PROFILES, SPECIES,
+  ANCIENT_PROFILES, MINERAL_SETS, ODDITIES, PIG, REAL_PROFILES, SPECIES,
   type BioReading, type Profile, type SpectralLine, type WaterReading,
 } from '../data/spectrometer'
-import { PRESETS, typeOf } from '../data/presets'
-import type { PlanetParams } from '../engine/types'
+import { ANCIENT, PRESETS, typeOf } from '../data/presets'
+import type { PlanetParams, PresetKey } from '../engine/types'
+
+/**
+ * Presets whose derived readings borrow another family's chemistry. Only
+ * reachable once a special world has been reseeded away from its canonical
+ * identity — at which point it really is just an icy or dusty world.
+ */
+const FAMILY: Partial<Record<PresetKey, PresetKey>> = {
+  pluto: 'ice',
+  archean: 'temperate',
+  proterozoic: 'temperate',
+  noachian: 'desert',
+}
 
 export interface GasReading {
   f: string
@@ -134,9 +146,7 @@ function gasProfile(P: PlanetParams, key: string, note: string): Profile {
 }
 
 function buildProfile(P: PlanetParams, r: () => number): Profile {
-  // A pluto-preset world that lost its measured identity (reseeded) derives
-  // its reading as the icy world it now is.
-  const key = P.preset === 'pluto' ? 'ice' : P.preset
+  const key = FAMILY[P.preset] ?? P.preset
   const t = typeOf(key)
   const note = ODDITIES[(r() * ODDITIES.length) | 0]
   if ('gas' in t && t.gas) return gasProfile(P, key, note)
@@ -256,11 +266,15 @@ export function computeScan(P: PlanetParams): ScanResult {
       pi * 911) | 0,
   )
 
-  // A real planet scans as itself, using its measured profile. Only a sculpted
-  // world gets one derived from the sliders. Identity follows realFor: the
-  // photographic map, or the canonical seed for texture-less Pluto.
+  // A real planet scans as itself, using its measured profile; an ancient
+  // world at its canonical seed scans as its reconstruction, which says so.
+  // Only a sculpted world gets a reading derived from the sliders — and
+  // changing the seed is what turns either of the others into one.
   const real = realFor(P) ? REAL_PROFILES[P.preset] ?? null : null
-  const prof = real ?? buildProfile(P, r)
+  const ancient = ANCIENT.some((a) => a.key === P.preset && a.params.seed === P.seed)
+    ? ANCIENT_PROFILES[P.preset] ?? null
+    : null
+  const prof = real ?? ancient ?? buildProfile(P, r)
 
   const gases: GasReading[] = prof.gases
     .filter((g) => g[1] > 0)

@@ -54,6 +54,7 @@ const UNIT_KEYS = [
 const PRESET_KEYS = new Set<string>([
   ...PRESETS.map((p) => p.key),
   'mercury', 'venus', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune', 'pluto',
+  'archean', 'proterozoic', 'noachian',
 ])
 
 /**
