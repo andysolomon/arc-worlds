@@ -108,3 +108,152 @@ NEXT
   every insert, so the column must exist first.
 - Decide whether the anonymous key should later be claimable by a real account,
   which is the only way a gallery survives a new device or cleared site data.
+
+2026-07-28 feature roadmap captured
+
+CONTEXT
+- New scope arrived as a wishlist across six themes: Solar Systems, Pop Culture,
+  Exo Planets, Sculpting, Worlds, Universe. Organized into IMPLEMENTATION_PLAN.md
+  as eight sequenced phases; the delivered performance plan moved below it.
+
+PLANNED
+1. Orbit-view display options: per-planet-coloured paths, moon paths, hide-paths
+   toggle with hover reveal, labels toggle, moons on/off (performance lever).
+2. Pluto from measured elements; Charon as a stretch goal.
+3. Worlds pane: pick the target system when adding, warn before adding a
+   duplicate world to a system.
+4. Ancient worlds presets: Archean Earth, Proterozoic Earth, Noachian Mars,
+   with Scan-tab chemistry to match.
+5. Exoplanets: TRAPPIST-1 system plus famous singles; needs a new provenance
+   label ("measured orbit, imagined surface") and possibly a cooler red dwarf.
+6. Pop-culture homages (Star Wars, Project Hail Mary); original procedural
+   interpretations only. Open question: binary-star support for Tatooine.
+7. Animated fluids (water shimmer, band drift, lava) inside the existing
+   passive-fps and pause budgets; flat vs detailed as an explicit quality
+   choice for all planets.
+8. Universe appearance attributes; start as a viewer preference, not saved
+   system state.
+
+NEXT
+- Start phase 1 (display options) — smallest surface, and the moons toggle
+  feeds the performance budgets directly.
+- Every phase runs the local benchmark and Performance workflow against
+  performance-budget.json before merge.
+
+2026-07-28 phase 1: orbit-view display options
+
+DONE
+- Orbit paths now wear their planet's palette colour (the same tone the body
+  falls back to before its bake lands), so line and planet read as one thing.
+- Moons gained orbit paths in their own colours, in the single-world view —
+  the only place moons render; the orbit view never built them.
+- Display toggles: Orbit paths, Labels, Moons — chips on the Systems tab,
+  persisted per browser in localStorage (little-worlds.display) with the same
+  private-browsing fallback shape as the owner key.
+- With paths hidden, hovering an orbit-view planet fades in that planet's
+  path alone; it fades out on leave. Fade runs through the existing
+  render-on-demand loop and respects pause/hidden/offscreen suspension.
+- Labels are canvas-texture sprites with sizeAttenuation off (constant screen
+  size), anchored above the body; renames redraw the small canvas only —
+  names stay excluded from bake keys, and no toggle re-bakes anything.
+- Moons off skips building them entirely — no meshes, no per-frame Kepler.
+- The engine now publishes renderer line counts (canvas dataset.lines)
+  alongside triangles, so tests assert path visibility truthfully.
+
+VERIFIED (runs delegated to an Opus 5 agent)
+- bun run typecheck; bun run lint.
+- vitest: 80 passed, including 6 new display-preference tests.
+- Build + size:check: entry 236,918 B gzip <= 256,000 (92.5%); worker
+  90,901 B unchanged.
+- Playwright: four new specs — hover reveal, labels add/remove geometry,
+  moons toggle drops triangles and paths, display survives reload — pass
+  repeatedly at 6 workers. One early failure was the labels spec trusting a
+  fixed 2.5 s warm-up sleep; it now polls for a settled triangle count.
+- perf:smoke: all 11 budget rows green (first system frame 360 ms,
+  interaction 32 ms, long-task total 445 ms, main-thread 1,501 ms, paused
+  work zero).
+
+NEXT
+- Add a benchmark scenario that exercises the moons toggle so its effect is
+  recorded by the local benchmark, not only by e2e triangle counts.
+- Two pre-existing sculpt-round-trip e2e tests sit within 0.4 s of the 30 s
+  per-test cap under 6-worker contention and flip on loaded machines
+  ("a system built from your own worlds renders in orbit" and its
+  neighbour). The lever is the per-test timeout or worker count, not app code.
+- perf smoke's activeRendererFps landed exactly on its 20 fps floor — zero
+  headroom on a busier runner; worth a look before requiring the workflow as
+  a branch-protection check.
+
+2026-07-28 phase 2: Pluto
+
+DONE
+- Pluto is the Solar System's ninth body, measured everywhere it can be:
+  a 39.482 AU, e 0.2488, i 17.16°, 247.94 y, 122.5° tilt, retrograde 6.39-day
+  spin, and Charon at half its radius on the mutually locked 6.39-day orbit.
+- No CC BY photographic map exists, so Pluto renders procedurally: new
+  'pluto' palette running Cthulhu Macula tans up to Sputnik Planitia ice,
+  under a genuinely blue haze.
+- New identity rule realFor() in engine/planets.ts: a measured body is
+  claimed by its photographic map, or — for texture-less Pluto — by a
+  canonical seed recorded in REAL. Reseeding detaches it, exactly as the
+  sculptor's existing texture rule. viewport.ts and scan.ts both use it.
+- Scan tab: hand-written New Horizons profile (13 µbar N2 atmosphere,
+  surface ices, tholins, water-ice bedrock, subsurface-ocean caveat).
+  A reseeded pluto-preset world derives its scan as the ice family.
+- README counts updated; systems/scale tests assert the odd orbit and the
+  drawn Neptune-crossing in both scale models.
+
+VERIFIED (full suite delegated to an Opus 5 agent)
+- typecheck, lint, 82 unit tests, build.
+- Bundle: entry 237,993 B gzip (93.0% of budget) — Pluto cost ~1.1 kB;
+  worker 91,044 B (88.9%).
+- perf:smoke all green across four runs; activeRendererFps rose from the
+  20 fps floor to a steady 23.3 — the phase-1 zero-headroom flag is resolved.
+  The ninth body's bake moved no metric measurably.
+- Playwright: new Pluto spec passes (after fixing its own navigation bug —
+  it asserted surface text without leaving the Atmosphere section). Also
+  fixed a pre-existing ~15% flake: the duplicate-naming spec hardcoded
+  "<name> II" while the app documents continuing a regnal line (Wimpond III
+  -> Wimpond IV); the spec now follows the family. Both re-ran 6/6 green.
+- The four display-options specs passed again; settledTriangles holds.
+
+NEXT
+- Phase 3: Worlds pane target-system picker and duplicate warning.
+- The sculpt-round-trip e2e still runs within ~1.3 s of its 30 s cap under
+  6-worker load; raise the per-test timeout when it next flips.
+
+2026-07-28 phase 3: Worlds tab aims Add anywhere, duplicates warn
+
+DONE
+- WorldsPanel gained a destination picker: the system on the Systems tab
+  (default, old behaviour) plus every system saved from this browser.
+  Aiming at a saved system loads it, adds the world on an orbit outside
+  everything there, and makes it the active system.
+- worldInSystem() in lib/systems.ts: identity is serialize(sanitize(params))
+  — the same object that gets saved and shared — so a renamed copy still
+  counts, a reshaped one does not, and render-only fields are ignored.
+- Duplicate adds warn inline (Add anyway / Cancel); allowed, never silent.
+- Read-only destinations still become an editable copy, named up front.
+- App loads both galleries on both tabs; select styled like text inputs.
+
+VERIFIED (full suite delegated to an Opus 5 agent)
+- typecheck, lint, 86 unit tests (4 new), build.
+- Bundle: entry 238,434 B gzip (93.1%), +441 B for the phase; worker
+  byte-identical to phase 2, as a UI-only phase should be.
+- perf:smoke 3/3 all green; fps 23.3-26.7, no regression.
+- e2e: a clean 20/20 full run. New picker spec and both phase-2 spec
+  repairs passed both full runs. Run 1's two failures were fixed-sleep
+  timing flakes under 6-worker contention; the agent instrumented first
+  load directly and confirmed the galleries-on-both-tabs change adds zero
+  requests to the first-load path (default tab is sculpt).
+
+NEXT
+- Three specs still rely on fixed waitForTimeout sleeps and fray under
+  contention ("renders a planet on first load", the sculpt-round-trip
+  orbit test, and the orbit-view render test); port them to the
+  settledTriangles pattern when they next flip.
+- First load fetches two Google Fonts from the network on the critical
+  path; self-hosting the woff2 files would cut e2e variance and the
+  suite's outbound-internet dependency.
+- Phase 4 next: ancient worlds presets (Archean/Proterozoic Earth,
+  Noachian Mars) with Scan-tab chemistry to match.
