@@ -40,6 +40,13 @@ export interface PlanetParams {
   showLabels?: boolean
   /** Off skips building moons entirely, which is a performance lever. */
   showMoons?: boolean
+  /**
+   * Rendering tier for the single-world view. `flat` is the baked map on a
+   * smooth sphere; `detailed` is displaced geometry with fluid shells.
+   * Unset lets the world pick: photographs and gas giants render flat,
+   * sculpted rock renders detailed. A quality choice, never identity.
+   */
+  tier?: 'flat' | 'detailed'
 }
 
 export type PresetKey =

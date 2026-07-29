@@ -15,7 +15,7 @@ interface Props {
   view: 'single' | 'system'
   sizeMode: 'same' | 'scale'
   display: DisplayOptions
-  onDisplay: (k: keyof DisplayOptions) => void
+  onDisplay: (k: 'paths' | 'labels' | 'moons') => void
   onView: (v: 'single' | 'system') => void
   onSizeMode: (v: 'same' | 'scale') => void
   onVisit: (index: number) => void

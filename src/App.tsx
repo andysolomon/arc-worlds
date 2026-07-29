@@ -6,7 +6,7 @@ import { Viewport } from './components/Viewport'
 import { WorldsPanel } from './components/WorldsPanel'
 import { PRESETS, typeOf, type AncientWorld } from './data/presets'
 import { MILKY_WAY } from './data/systems'
-import { loadDisplay, saveDisplay, type DisplayOptions } from './lib/display'
+import { loadDisplay, saveDisplay, type DisplayOptions, type TierChoice } from './lib/display'
 import { DEFAULT_PARAMS, sanitize, surprise } from './lib/params'
 import {
   addRolledWorld, addWorld, duplicateBody, sanitizeSystem,
@@ -86,12 +86,17 @@ export default function App() {
       showPaths: display.paths,
       showLabels: display.labels,
       showMoons: display.moons,
+      tier: display.tier === 'auto' ? undefined : display.tier,
     }),
     [params, view, sizeMode, timeScale, display],
   )
 
-  const toggleDisplay = useCallback((k: keyof DisplayOptions) => {
+  const toggleDisplay = useCallback((k: 'paths' | 'labels' | 'moons') => {
     setDisplay((d) => ({ ...d, [k]: !d[k] }))
+  }, [])
+
+  const setTier = useCallback((tier: TierChoice) => {
+    setDisplay((d) => ({ ...d, tier }))
   }, [])
 
   // Persisted outside the updater, which must stay pure under StrictMode.
@@ -444,6 +449,8 @@ export default function App() {
               <SculptPanel
                 params={params}
                 name={name}
+                tier={display.tier}
+                onTier={setTier}
                 onName={setName}
                 onParam={setParam}
                 onPreset={applyPreset}

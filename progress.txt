@@ -386,3 +386,49 @@ NEXT
   frozen planets; 8/8 in isolation). Aim-based fragility, fifth member
   of the fragile-test family — worth a deterministic aiming helper.
 - Google Fonts on the first-load critical path remains open.
+
+2026-07-28 phase 7: fluids that move, and a flat/detailed rendering choice
+
+DONE
+- Fluid motion, all on rotation's clock (this.t): water shimmer via a
+  time-driven normal perturbation injected into the shell material
+  (onBeforeCompile, customProgramCacheKey — exactly one program
+  variant, startup-warmed); lava (emissive palettes) ripples slow and
+  heavy and pulses emissiveIntensity; sculpted gas giants reach the
+  GAS_FRAG animation (differential band drift + storm vortex, swirl by
+  roughness) through the flat tier. Paused/hidden/offscreen freeze all
+  of it because t freezes — no new machinery.
+- Rendering tiers as a persisted display choice (Auto/Flat/Detailed
+  chips on Sculpt; DisplayOptions.tier, migration-safe): flat = the
+  bake worker's orbit-view map on a smooth sphere (palette mid-tone
+  placeholder, last-bake-over-grey-flash, flatBakeId latest-wins);
+  detailed = displaced terrain + shells. Auto: photos and gas flat,
+  sculpted rock detailed. A photo planet forced detailed renders the
+  procedural interpretation of its own params; tier never enters
+  identity (sanitize drops it — pinned by unit test).
+- The twice-flagged hover-spec aim flake fixed: staggered finer second
+  sweep pass. The pause spec's setup poll widened to 20 s after Opus
+  caught it at 9/10 frames under contention.
+
+VERIFIED (full suite delegated to the same Opus 5 agent)
+- typecheck, lint, 113 unit (4 new), build (45 modules), size:check
+  (entry 237,150 gzip 92.6%, worker/lazy chunks byte-identical), e2e
+  26/26 on the confirming run, perf 5/5 green with paused rows 0
+  everywhere, db:push "No changes detected".
+- The two silent-failure risks probed directly: the shader anchor
+  really matched (compiled GLSL contains the perturb block exactly
+  once across 18 startup shaders), and paused really is frozen
+  (canvas pixels byte-identical 1.6 s apart; pixels differ while
+  running). Texture ownership across photo->flat->photo restores
+  Jupiter's exact 19,156 triangles with zero console errors; slider-
+  hammered in-flight bakes settle clean; Saturn/Jupiter unaffected
+  after sculpted-gas visits (uFlow reset unconditional).
+
+NEXT
+- e2e suite wall time grew 49 s -> ~1.1 m (2 new specs + finer sweep,
+  but per-test times rose broadly); the fixed-sleep specs have less
+  slack. Worth a pass converting remaining fixed sleeps to polls.
+- activeRendererFps touched its 20 floor once in five runs (first time
+  since phase 1); longTaskMax hot ceiling 470/500. Both rows to watch
+  before phase 8 adds starfield/nebula work.
+- Google Fonts on the first-load critical path remains open.

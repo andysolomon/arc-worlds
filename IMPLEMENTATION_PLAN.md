@@ -132,19 +132,21 @@ Project Hail Mary (Erid at 40 Eridani, Adrian at Tau Ceti) and Avatar
 
 ### 7. Sculpting — animated fluids and two rendering tiers
 
-- [ ] Visible motion for liquids and gas: time-based water surface shimmer,
-      drifting gas-giant bands (the GLSL shaders in `src/engine/shaders.ts`
-      already own these surfaces), slow lava flow for Ember-type worlds.
-      Animation must respect the 30 fps passive budget and stop when paused,
-      hidden or offscreen, exactly like rotation does today.
-- [ ] Two deliberate rendering tiers, offered as a quality choice rather than an
-      accident of which collection a planet came from: **flat** (baked/image
-      maps — what real planets and orbit view already use; cheap) and
-      **detailed** (displaced geometry with water/cloud/atmosphere shells — what
-      the sculptor uses). Real planets gain an optional detailed mode; sculpted
-      worlds gain an explicit flat mode. `engine/surface.ts` stays the single
-      source of what a world looks like, so the two tiers may differ in richness
-      but never in identity.
+- [x] Visible motion for liquids and gas: the water shell's normal is
+      perturbed over time (one injected program variant, warmed at startup),
+      so light shimmers across water; lava ripples slower and heavier and
+      pulses its glow; sculpted gas giants reach the animated gas shader —
+      band drift and storm vortex — through the flat tier. Everything rides
+      the same clock as rotation, so paused, hidden and offscreen freeze it:
+      verified by pixel-identical paused frames and paused budgets at 0.
+- [x] Two deliberate rendering tiers as a persisted display choice
+      (Auto/Flat/Detailed on the Sculpt tab): **flat** is the baked
+      orbit-view map on a smooth sphere via the bake worker; **detailed** is
+      displaced geometry with the shells. Auto sends photos and gas giants
+      flat and sculpted rock detailed. A photographed planet forced detailed
+      renders the procedural interpretation its own params encode.
+      `engine/surface.ts` stays the single source of what a world looks
+      like, and the tier never enters params identity (pinned by test).
 
 ### 8. Universe — appearance attributes
 

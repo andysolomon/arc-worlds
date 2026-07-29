@@ -10,6 +10,7 @@ import {
   SIZE_MAX, sizeMap, starSize, systemStretch, tempoFor, visDist, YEAR_SEC,
 } from './scale'
 import { ATMO_FRAG, ATMO_VERT, GAS_FRAG, GAS_VERT, SUN_FRAG, SUN_VERT } from './shaders'
+import { effectiveTier } from './tiers'
 import type { Moon, PlanetParams, RingConfig, SystemBody, SystemDef } from './types'
 
 interface MoonInstance {
@@ -186,6 +187,20 @@ export class PlanetViewport {
   private lastPublishedSunScale = Number.NaN
   private lastPublishedLines = -1
 
+  /**
+   * Fluid motion: one clock for every moving surface, driven from `this.t` so
+   * pause, hidden and offscreen stop it exactly the way they stop rotation.
+   * Style is 0 for water and 1 for lava, which ripples slower and heavier.
+   */
+  private fluidTime = { value: 0 }
+  private fluidStyle = { value: 0 }
+  /** The flat tier's baked map for the current single world. */
+  private flatKey = ''
+  private flatBakeId = 0
+  private flatMap: THREE.DataTexture | null = null
+  private flatSolid: THREE.DataTexture | null = null
+  private flatSolidColor = -1
+
   /** Display toggles: cheap render state, never part of any bake key. */
   private showPaths = true
   private showLabels = false
@@ -291,12 +306,37 @@ export class PlanetViewport {
     )
     this.spinG.add(this.planet)
 
-    this.water = new THREE.Mesh(
-      new THREE.SphereGeometry(1, 96, 64),
-      new THREE.MeshPhongMaterial({
-        color: 0x3f86c9, transparent: true, opacity: 0.72, shininess: 90, specular: 0x555555,
-      }),
-    )
+    const wmat = new THREE.MeshPhongMaterial({
+      color: 0x3f86c9, transparent: true, opacity: 0.72, shininess: 90, specular: 0x555555,
+    })
+    // Visible fluid motion: perturb the shell's normal over time, the way a
+    // normal map would, so specular light moves across water and lava. The
+    // injection is part of the material from construction, so there is exactly
+    // one program variant and the startup warm covers it.
+    wmat.onBeforeCompile = (sh) => {
+      sh.uniforms.uFluidT = this.fluidTime
+      sh.uniforms.uFluidS = this.fluidStyle
+      sh.vertexShader = `varying vec3 vFluidP;\n${sh.vertexShader.replace(
+        '#include <begin_vertex>',
+        '#include <begin_vertex>\n\tvFluidP = position;',
+      )}`
+      sh.fragmentShader = `uniform float uFluidT;uniform float uFluidS;varying vec3 vFluidP;\n${sh.fragmentShader.replace(
+        '#include <normal_fragment_maps>',
+        `#include <normal_fragment_maps>
+	{
+		vec3 fp = normalize(vFluidP);
+		float ft = uFluidT * mix(0.9, 0.16, uFluidS);
+		float fa = mix(0.05, 0.11, uFluidS);
+		float w1 = sin(fp.x*46.0 + ft*2.1) + sin(fp.y*39.0 - ft*1.6) + sin(fp.z*44.0 + ft*1.3);
+		float w2 = sin((fp.x+fp.y)*61.0 - ft*2.6) + sin((fp.y+fp.z)*53.0 + ft*2.2);
+		vec3 fT = normalize(cross(fp, vec3(0.0, 1.0, 0.0)) + vec3(1.0e-4));
+		vec3 fB = cross(fp, fT);
+		normal = normalize(normal + (fT*w1 + fB*w2) * fa);
+	}`,
+      )}`
+    }
+    wmat.customProgramCacheKey = () => 'fluid-shell'
+    this.water = new THREE.Mesh(new THREE.SphereGeometry(1, 96, 64), wmat)
     this.spinG.add(this.water)
 
     this.clouds = new THREE.Mesh(
@@ -471,6 +511,8 @@ export class PlanetViewport {
     this.worldWorker?.terminate()
     this.cloudWorker?.terminate()
     this.clearBodies()
+    this.flatMap?.dispose()
+    this.flatSolid?.dispose()
     for (const t of Object.values(this.texCache)) t.dispose()
     for (const g of this.moonGeoCache.values()) g.dispose()
     for (const m of this.moonMatCache.values()) m.dispose()
@@ -784,6 +826,29 @@ export class PlanetViewport {
     const worker = new Worker(new URL('./bake.worker.ts', import.meta.url), { type: 'module' })
     worker.onmessage = (event: MessageEvent<BakeWorkerResponse>) => {
       const response = event.data
+
+      // The single view's flat tier shares the worker; latest request wins,
+      // and a bake landing after the view moved on is kept for the next visit.
+      if (response.id === this.flatBakeId && this.flatKey) {
+        const texture = dataTexture(
+          new Uint8Array(response.pixels), response.width, response.height,
+        )
+        texture.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy())
+        this.flatMap?.dispose()
+        this.flatMap = texture
+        const P = this.p
+        if (P && this.mode === 'single' && !P.texture && effectiveTier(P) === 'flat') {
+          const pal = PALETTES[P.preset] ?? PALETTES.temperate
+          if (isGas(pal)) this.gasMesh.material.uniforms.uMap.value = texture
+          else {
+            this.texMesh.material.map = texture
+            this.texMesh.material.color.set(0xffffff)
+          }
+          this.invalidate()
+        }
+        return
+      }
+
       const target = this.bakeTargets.get(response.id)
       this.bakeTargets.delete(response.id)
       if (
@@ -1177,8 +1242,13 @@ export class PlanetViewport {
     // Toggling paths must not rebuild moons, so visibility is applied here too.
     for (const mo of this.moons) mo.line.visible = this.showPaths
 
-    if (P.texture) return this.regenTextured(P, R)
-
+    // The tier decides the pipeline, never the world: a photograph on the
+    // flat tier renders as itself; a photographed planet forced detailed
+    // renders the procedural interpretation its own params already encode;
+    // a procedural world on the flat tier renders its baked orbit-view map.
+    const tier = effectiveTier(P)
+    if (P.texture && tier === 'flat') return this.regenTextured(P, R)
+    if (tier === 'flat') return this.regenFlat(P)
     this.regenProcedural(P)
   }
 
@@ -1188,11 +1258,27 @@ export class PlanetViewport {
     const gas = isGas(pal)
 
     if (this.texUrl !== P.texture) {
-      if (!this.texUrl && this.texMesh.material.map) this.texMesh.material.map.dispose()
+      const prev = this.texMesh.material.map
+      if (!this.texUrl && prev) {
+        // The un-owned map is a placeholder or the flat tier's baked map;
+        // either way it is ours to release, and the flat state must forget
+        // it so a return to the flat tier starts clean.
+        if (prev === this.flatMap) {
+          this.flatMap = null
+          this.flatKey = ''
+        }
+        if (prev === this.flatSolid) {
+          this.flatSolid = null
+          this.flatSolidColor = -1
+        }
+        prev.dispose()
+      }
       this.texUrl = P.texture!
       this.texMesh.material.map = this.loadTex(P.texture!)
+      this.texMesh.material.color.set(0xffffff)
       this.gasMesh.material.uniforms.uMap.value = this.loadTex(P.texture!, true)
     }
+    this.gasMesh.material.uniforms.uFlow.value = 1
     if ((!gas && !this.texMesh.visible) || (gas && !this.gasMesh.visible)) {
       this.compileNeeded = true
     }
@@ -1229,6 +1315,75 @@ export class PlanetViewport {
     const amat = this.atmo.material as THREE.ShaderMaterial
     amat.uniforms.uC.value.set(P.atmoColor ?? pal.atmo)
     amat.uniforms.uI.value = 0.25 + (P.glow ?? 0.5) * 1.1
+    const showAtmo = (P.glow ?? 0.5) > 0.02
+    if (showAtmo && !this.atmo.visible) this.compileNeeded = true
+    this.atmo.visible = showAtmo
+    this.stars.visible = P.stars !== false
+  }
+
+  /**
+   * The flat tier: the world's baked equirectangular map — the very map the
+   * orbit view draws — on a smooth sphere. Cheap by construction: no displaced
+   * geometry and no water or cloud shells (clouds are baked into the map).
+   * Gas worlds put the map on the gas shader instead, which is the animated
+   * one: differential band drift and the storm vortex live there.
+   */
+  private regenFlat(P: PlanetParams) {
+    const pal = PALETTES[P.preset] ?? PALETTES.temperate
+    const gas = isGas(pal)
+
+    this.planet.visible = false
+    this.water.visible = false
+    this.clouds.visible = false
+    this.cloudsPending = false
+    if ((!gas && !this.texMesh.visible) || (gas && !this.gasMesh.visible)) {
+      this.compileNeeded = true
+    }
+    this.texMesh.visible = !gas
+    this.gasMesh.visible = gas
+
+    // The photo pipeline owns texUrl; hand the mesh over to the flat bake.
+    // A photograph left on the mesh belongs to the shared cache — it is
+    // detached here, never disposed.
+    if (this.texUrl) this.texUrl = null
+
+    // Show the best thing already in hand: the last bake if there is one —
+    // better a stale sea than a grey flash — or the world's own mid-tone,
+    // the same first-frame treatment the orbit view gives a body.
+    const fallback = gas ? pal.bands[(pal.bands.length / 2) | 0][1] : pal.mid
+    if (!this.flatMap && this.flatSolidColor !== fallback) {
+      this.flatSolid?.dispose()
+      this.flatSolid = solidTexture(fallback)
+      this.flatSolidColor = fallback
+    }
+    const map: THREE.Texture = this.flatMap ?? this.flatSolid!
+    if (gas) this.gasMesh.material.uniforms.uMap.value = map
+    else {
+      this.texMesh.material.map = map
+      this.texMesh.material.color.set(this.flatMap ? 0xffffff : fallback)
+    }
+
+    const key = [
+      P.seed, P.preset, P.mountains, P.water, P.roughness, P.ice, P.clouds,
+    ].join(':')
+    if (key !== this.flatKey) {
+      this.flatKey = key
+      this.flatBakeId = ++this.bakeId
+      const request: BakeWorkerRequest = { id: this.flatBakeId, kind: 'world', params: { ...P } }
+      this.ensureWorldWorker().postMessage(request)
+    }
+
+    // Sculpted giants swirl by their own roughness; a photograph keeps 1.
+    this.gasMesh.material.uniforms.uFlow.value = 0.55 + (P.roughness ?? 0.5) * 0.9
+    this.gasMesh.material.uniforms.uRing.value.set(0, 0, 0, 0)
+
+    this.setRing(P.rings ? customRing(P, pal) : null)
+    this.ringG.rotation.z = ((P.ringTilt ?? 0.5) - 0.5) * 1.5708
+    this.spinRate = 0.1 * (P.spinSpeed != null ? P.spinSpeed * 2 : 1) * (P.spinDir === -1 ? -1 : 1)
+
+    const amat = this.atmo.material as THREE.ShaderMaterial
+    amat.uniforms.uC.value.set(P.atmoColor ?? pal.atmo)
+    amat.uniforms.uI.value = 0.3 + (P.glow ?? 0.5) * 1.6
     const showAtmo = (P.glow ?? 0.5) > 0.02
     if (showAtmo && !this.atmo.visible) this.compileNeeded = true
     this.atmo.visible = showAtmo
@@ -1283,6 +1438,10 @@ export class PlanetViewport {
       wmat.color.set(pal.water)
       wmat.emissive.set(pal.emissive ?? 0x000000)
       wmat.opacity = pal.waterOpacity ?? 0.72
+      // An emissive palette means the "sea" is molten: ripple slow and heavy,
+      // and let the loop pulse the glow. Water ripples fast and stays steady.
+      this.fluidStyle.value = pal.emissive ? 1 : 0
+      if (!pal.emissive) wmat.emissiveIntensity = 1
     }
 
     this.setRing(P.rings ? customRing(P, pal) : null)
@@ -1610,6 +1769,14 @@ export class PlanetViewport {
     this.spinG.rotation.y = this.spin
     this.clouds.rotation.y = this.real ? this.spin * 0.06 : this.spin * 0.25
     this.gasMesh.material.uniforms.uTime.value = this.t
+    // Fluid motion rides the same clock as rotation: paused, hidden and
+    // offscreen all freeze `t`, which freezes the water and the lava with it.
+    this.fluidTime.value = this.t
+    if (this.water.visible && this.fluidStyle.value > 0.5) {
+      // Lava breathes: a slow pulse of the molten glow, on top of the ripple.
+      ;(this.water.material as THREE.MeshPhongMaterial).emissiveIntensity =
+        0.86 + 0.14 * Math.sin(this.t * 0.5)
+    }
 
     for (const mo of this.moons) {
       const ang = mo.phase + this.t * (6.2832 / moonPeriodSec(mo.P)) * (mo.P < 0 ? -1 : 1)

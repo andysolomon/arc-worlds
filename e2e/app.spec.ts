@@ -38,9 +38,12 @@ test('renders a planet on first load', async ({ page }) => {
 
 test('pause lets the renderer go idle', async ({ page }) => {
   await page.goto('/')
+  // The setup wants 10 rendered frames before pausing. Under full-suite
+  // contention a cold renderer once managed only 9 inside the default 5 s,
+  // so the poll gets room to spare — the assertion under test is below.
   await expect.poll(() =>
     page.evaluate(() => Number(document.querySelector('canvas')?.dataset.frames ?? 0)),
-  ).toBeGreaterThan(10)
+  { timeout: 20_000 }).toBeGreaterThan(10)
 
   await page.getByRole('button', { name: 'Pause' }).click()
   await page.waitForTimeout(500)
@@ -307,16 +310,24 @@ function datum(page: Page, key: 'lines' | 'triangles'): Promise<number> {
 /**
  * Sweep the pointer across the canvas until it crosses a planet, or give up.
  * Planet positions depend on when the orbits were frozen, so this searches
- * rather than aiming — the ecliptic band covers the middle of the view.
+ * rather than aiming — the ecliptic band covers the middle of the view. The
+ * coarse pass misses every disc perhaps once in a dozen runs, so a staggered
+ * finer pass covers the gaps between its sample points before giving up.
  */
 async function sweepForHover(page: Page): Promise<number> {
   const box = (await page.locator('canvas').boundingBox())!
-  for (let ty = 0.3; ty <= 0.7; ty += 0.08) {
-    for (let tx = 0.08; tx <= 0.92; tx += 0.06) {
-      await page.mouse.move(box.x + box.width * tx, box.y + box.height * ty)
-      await page.waitForTimeout(25)
-      const n = await datum(page, 'lines')
-      if (n > 0) return n
+  const passes: Array<{ y0: number; dy: number; x0: number; dx: number }> = [
+    { y0: 0.3, dy: 0.08, x0: 0.08, dx: 0.06 },
+    { y0: 0.26, dy: 0.04, x0: 0.05, dx: 0.03 },
+  ]
+  for (const s of passes) {
+    for (let ty = s.y0; ty <= 0.74; ty += s.dy) {
+      for (let tx = s.x0; tx <= 0.95; tx += s.dx) {
+        await page.mouse.move(box.x + box.width * tx, box.y + box.height * ty)
+        await page.waitForTimeout(25)
+        const n = await datum(page, 'lines')
+        if (n > 0) return n
+      }
     }
   }
   return 0
@@ -544,6 +555,30 @@ test('Pandora rides beside the planet it cannot orbit', async ({ page }) => {
   // The biosignature verdict renders in the surface section, not the default.
   await page.getByRole('button', { name: 'Surface & water' }).click()
   await expect(page.getByText('Strong — and networked')).toBeVisible()
+})
+
+test('the rendering tiers trade shells for a baked map, and back', async ({ page }) => {
+  await page.goto('/')
+  // The default Meadow world is detailed: displaced rock plus water and
+  // cloud shells. Flat swaps all of that for one baked map on one sphere.
+  const detailed = await settledTriangles(page)
+
+  await page.getByRole('button', { name: 'Flat', exact: true }).click()
+  await expect.poll(() => datum(page, 'triangles')).toBeLessThan(detailed)
+
+  // The choice is a render control: coming back rebuilds the exact geometry.
+  await page.getByRole('button', { name: 'Detailed', exact: true }).click()
+  await expect.poll(() => datum(page, 'triangles')).toBe(detailed)
+})
+
+test('a gas giant takes the animated flat tier by default', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Amber giant' }).click()
+  // Auto sends gas worlds to the flat pipeline — the gas shader's smooth
+  // sphere — which draws fewer triangles than the sculptor's displaced mesh.
+  const flat = await settledTriangles(page)
+  await page.getByRole('button', { name: 'Detailed', exact: true }).click()
+  await expect.poll(() => datum(page, 'triangles')).toBeGreaterThan(flat)
 })
 
 test('display choices survive a reload', async ({ page }) => {

@@ -22,15 +22,22 @@ afterEach(() => {
 })
 
 describe('loadDisplay', () => {
-  it('starts from the defaults: paths and moons on, labels off', () => {
+  it('starts from the defaults: paths and moons on, labels off, tier auto', () => {
     vi.stubGlobal('localStorage', fakeStorage())
-    expect(loadDisplay()).toEqual({ paths: true, labels: false, moons: true })
+    expect(loadDisplay()).toEqual({ paths: true, labels: false, moons: true, tier: 'auto' })
   })
 
   it('round-trips what was saved', () => {
     vi.stubGlobal('localStorage', fakeStorage())
-    saveDisplay({ paths: false, labels: true, moons: false })
-    expect(loadDisplay()).toEqual({ paths: false, labels: true, moons: false })
+    saveDisplay({ paths: false, labels: true, moons: false, tier: 'flat' })
+    expect(loadDisplay()).toEqual({ paths: false, labels: true, moons: false, tier: 'flat' })
+  })
+
+  it('rejects a tier value it does not recognise', () => {
+    const store = fakeStorage()
+    store.map.set('little-worlds.display', JSON.stringify({ tier: 'ultra' }))
+    vi.stubGlobal('localStorage', store)
+    expect(loadDisplay().tier).toBe('auto')
   })
 
   it('falls back to defaults on a corrupt stored value', () => {
@@ -41,10 +48,11 @@ describe('loadDisplay', () => {
   })
 
   it('fills in fields missing from an older stored shape', () => {
+    // A phase-1 blob has no tier; it must load with tier defaulted, not fail.
     const store = fakeStorage()
     store.map.set('little-worlds.display', JSON.stringify({ paths: false }))
     vi.stubGlobal('localStorage', store)
-    expect(loadDisplay()).toEqual({ paths: false, labels: false, moons: true })
+    expect(loadDisplay()).toEqual({ paths: false, labels: false, moons: true, tier: 'auto' })
   })
 
   it('still answers when localStorage is unavailable', () => {

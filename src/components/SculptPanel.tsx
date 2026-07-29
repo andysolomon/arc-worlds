@@ -1,12 +1,21 @@
 import { ANCIENT, PRESETS, type AncientWorld } from '../data/presets'
 import { Chip, Field, Slider } from './ui'
 import type { PlanetParams, PresetKey } from '../engine/types'
+import type { TierChoice } from '../lib/display'
 
 const ATMOS = ['#8fc7ff', '#ffcf8f', '#9fe8c9', '#ff8fc7', '#b9a8ff']
+
+const TIERS: Array<{ key: TierChoice; label: string }> = [
+  { key: 'auto', label: 'Auto' },
+  { key: 'flat', label: 'Flat' },
+  { key: 'detailed', label: 'Detailed' },
+]
 
 interface Props {
   params: PlanetParams
   name: string
+  tier: TierChoice
+  onTier: (t: TierChoice) => void
   onName: (v: string) => void
   onParam: <K extends keyof PlanetParams>(k: K, v: PlanetParams[K]) => void
   onPreset: (key: PresetKey) => void
@@ -18,7 +27,8 @@ interface Props {
 }
 
 export function SculptPanel({
-  params: P, name, onName, onParam, onPreset, onAncient, onReshape, onSave, saving, saved,
+  params: P, name, tier, onTier, onName, onParam, onPreset, onAncient, onReshape, onSave,
+  saving, saved,
 }: Props) {
   const isReal = !!P.texture
   const preset = PRESETS.find((p) => p.key === P.preset)
@@ -126,6 +136,22 @@ export function SculptPanel({
       <Field label="Sunlight">
         <Slider name="Direction" value={P.lightAz} onChange={(v) => onParam('lightAz', v)} format={(v) => `${Math.round(v * 360)}°`} />
         <Slider name="Height" value={P.lightEl} onChange={(v) => onParam('lightEl', v)} format={(v) => `${Math.round((v - 0.5) * 180)}°`} />
+      </Field>
+
+      <Field label="Rendering">
+        <div className="chips">
+          {TIERS.map((t) => (
+            <Chip key={t.key} on={tier === t.key} onClick={() => onTier(t.key)}>
+              {t.label}
+            </Chip>
+          ))}
+        </div>
+        <div className="note" style={{ marginTop: 10 }}>
+          A quality choice, never part of the world. Flat is the baked map the orbit view uses,
+          cheap and quick; detailed is sculpted geometry with water, cloud and sky shells. Auto
+          lets each world pick — and gas giants pick flat, where their bands drift and their
+          storms turn.
+        </div>
       </Field>
 
       {!isReal && (
