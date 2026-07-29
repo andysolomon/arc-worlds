@@ -76,6 +76,13 @@ export type PresetKey =
   | 'erid'
   | 'adrian'
   | 'pandora'
+  | 'luna'
+  | 'io'
+  | 'europa'
+  | 'ganymede'
+  | 'titan'
+  | 'enceladus'
+  | 'triton'
 
 export interface RockyPalette {
   gas?: false
@@ -123,6 +130,13 @@ export interface Moon {
   /** Explicit render radius/distance, used by procedural moons. */
   rd?: number
   dd?: number
+  /**
+   * The world standing at this orbit, for moons that are worlds rather than
+   * scenery. Only the identity lives here — preset and canonical seed — so
+   * this table stays data with no dependency on params or presets. The
+   * measured elements above remain the single source of where the moon is.
+   */
+  world?: { preset: PresetKey; seed: number }
 }
 
 export interface RingConfig {

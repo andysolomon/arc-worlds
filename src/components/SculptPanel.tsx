@@ -1,4 +1,5 @@
-import { ANCIENT, PRESETS, type AncientWorld } from '../data/presets'
+import { ANCIENT, MOONS, PRESETS, type AncientWorld } from '../data/presets'
+import { realFor } from '../engine/planets'
 import { Chip, Field, Slider } from './ui'
 import type { PlanetParams, PresetKey } from '../engine/types'
 import type { TierChoice } from '../lib/display'
@@ -16,6 +17,8 @@ interface Props {
   name: string
   tier: TierChoice
   onTier: (t: TierChoice) => void
+  /** Visit one of this world's moons, for the moons that are worlds. */
+  onVisitMoon: (w: { preset: PresetKey; seed: number }) => void
   onName: (v: string) => void
   onParam: <K extends keyof PlanetParams>(k: K, v: PlanetParams[K]) => void
   onPreset: (key: PresetKey) => void
@@ -27,9 +30,16 @@ interface Props {
 }
 
 export function SculptPanel({
-  params: P, name, tier, onTier, onName, onParam, onPreset, onAncient, onReshape, onSave,
-  saving, saved,
+  params: P, name, tier, onTier, onVisitMoon, onName, onParam, onPreset, onAncient, onReshape,
+  onSave, saving, saved,
 }: Props) {
+  // Moons that are worlds in their own right, on the body being shown. They
+  // are visibly in orbit and clickable on the canvas, but a few pixels of
+  // moving sprite is no way to offer something — so they are offered here too.
+  const moonWorlds = (realFor(P)?.moons ?? []).flatMap((m) => {
+    const w = m.world && MOONS.find((x) => x.key === m.world!.preset)
+    return w ? [{ moon: m.n, world: m.world!, dot: w.dot, sub: w.sub }] : []
+  })
   const isReal = !!P.texture
   const preset = PRESETS.find((p) => p.key === P.preset)
   const isGas = !!preset?.gas
@@ -98,6 +108,22 @@ export function SculptPanel({
           ordinary world of its kind.
         </div>
       </Field>
+
+      {moonWorlds.length > 0 && (
+        <Field label="Moons you can visit">
+          <div className="chips">
+            {moonWorlds.map((m) => (
+              <Chip key={m.moon} on={false} dot={m.dot} onClick={() => onVisitMoon(m.world)}>
+                {m.moon}
+              </Chip>
+            ))}
+          </div>
+          <div className="note" style={{ marginTop: 10 }}>
+            Worlds in their own right, measured like the planets and scanning as themselves. You
+            can also click one where it orbits.
+          </div>
+        </Field>
+      )}
 
       {landLocked && (
         <div className="note" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

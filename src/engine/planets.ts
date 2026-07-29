@@ -16,7 +16,7 @@ export const REAL: Record<string, RealBody> = {
 
   temperate: {
     f: 0.00335, ob: 23.44, day: 23.934,
-    moons: [{ n: 'Moon', r: 0.2727, a: 60.34, P: 27.322, inc: 23.4, c: 0x9a9490 }],
+    moons: [{ n: 'Moon', r: 0.2727, a: 60.34, P: 27.322, inc: 23.4, c: 0x9a9490, world: { preset: 'luna', seed: 1969 } }],
   },
 
   mars: {
@@ -31,9 +31,9 @@ export const REAL: Record<string, RealBody> = {
     f: 0.06487, ob: 3.13, day: 9.925,
     ring: { inner: 1.72, outer: 1.81, color: 0xb08a70, opacity: 0.1, profile: 3 },
     moons: [
-      { n: 'Io', r: 0.02605, a: 6.03, P: 1.769, inc: 0.05, c: 0xd9c162 },
-      { n: 'Europa', r: 0.02233, a: 9.6, P: 3.551, inc: 0.47, c: 0xcdbda6 },
-      { n: 'Ganymede', r: 0.03768, a: 15.31, P: 7.155, inc: 0.2, c: 0x9a8b7c },
+      { n: 'Io', r: 0.02605, a: 6.03, P: 1.769, inc: 0.05, c: 0xd9c162, world: { preset: 'io', seed: 1610 } },
+      { n: 'Europa', r: 0.02233, a: 9.6, P: 3.551, inc: 0.47, c: 0xcdbda6, world: { preset: 'europa', seed: 1611 } },
+      { n: 'Ganymede', r: 0.03768, a: 15.31, P: 7.155, inc: 0.2, c: 0x9a8b7c, world: { preset: 'ganymede', seed: 1612 } },
       { n: 'Callisto', r: 0.03448, a: 26.93, P: 16.689, inc: 0.19, c: 0x6a5f55 },
     ],
   },
@@ -42,11 +42,11 @@ export const REAL: Record<string, RealBody> = {
     f: 0.09796, ob: 26.73, day: 10.656,
     ring: { inner: 1.11, outer: 2.32, color: 0xffffff, opacity: 1, profile: 4 },
     moons: [
-      { n: 'Enceladus', r: 0.00433, a: 4.09, P: 1.37, inc: 0.02, c: 0xf4f2ec },
+      { n: 'Enceladus', r: 0.00433, a: 4.09, P: 1.37, inc: 0.02, c: 0xf4f2ec, world: { preset: 'enceladus', seed: 1789 } },
       { n: 'Tethys', r: 0.00912, a: 5.06, P: 1.888, inc: 1.09, c: 0xd8d4cb },
       { n: 'Dione', r: 0.00964, a: 6.48, P: 2.737, inc: 0.02, c: 0xcfcabf },
       { n: 'Rhea', r: 0.01312, a: 9.05, P: 4.518, inc: 0.35, c: 0xc6c0b5 },
-      { n: 'Titan', r: 0.04422, a: 20.98, P: 15.945, inc: 0.33, c: 0xd9a054 },
+      { n: 'Titan', r: 0.04422, a: 20.98, P: 15.945, inc: 0.33, c: 0xd9a054, world: { preset: 'titan', seed: 1655 } },
       { n: 'Iapetus', r: 0.01261, a: 61.15, P: 79.32, inc: 15.47, c: 0xffffff, tone: [0xb9ae96, 0x2e2620] },
     ],
   },
@@ -68,10 +68,24 @@ export const REAL: Record<string, RealBody> = {
     ring: { inner: 1.69, outer: 2.55, color: 0x9fb0d4, opacity: 1, profile: 6 },
     moons: [
       { n: 'Proteus', r: 0.00848, a: 4.75, P: 1.122, inc: 0.52, c: 0x605c58, irr: [1, 0.92, 0.94] },
-      { n: 'Triton', r: 0.05465, a: 14.33, P: -5.877, inc: 156.9, c: 0xd8cfc4 },
+      { n: 'Triton', r: 0.05465, a: 14.33, P: -5.877, inc: 156.9, c: 0xd8cfc4, world: { preset: 'triton', seed: 1846 } },
       { n: 'Nereid', r: 0.00686, a: 222.7, P: 360.14, e: 0.751, inc: 32.6, c: 0x8d8880, irr: [1, 0.9, 0.86] },
     ],
   },
+
+  // The promoted moons. Every one is tidally locked, so its sidereal day is
+  // its orbital period — the same one-face-inward rule the moon meshes already
+  // follow — and each claims its measured identity through a canonical seed
+  // because no photographic map for it exists in the CC BY set.
+  luna: { seed: 1969, f: 0.0012, ob: 6.68, day: 655.73, moons: [] },
+  io: { seed: 1610, f: 0.0, ob: 0.0, day: 42.46, moons: [] },
+  europa: { seed: 1611, f: 0.0, ob: 0.1, day: 85.22, moons: [] },
+  ganymede: { seed: 1612, f: 0.0, ob: 0.16, day: 171.72, moons: [] },
+  titan: { seed: 1655, f: 0.0, ob: 0.3, day: 382.68, moons: [] },
+  enceladus: { seed: 1789, f: 0.0, ob: 0.0, day: 32.89, moons: [] },
+  // Triton orbits backwards, and being locked to that orbit it turns backwards
+  // with it — the only large moon in the solar system that does.
+  triton: { seed: 1846, f: 0.0, ob: 0.0, day: -141.05, moons: [] },
 
   // Pluto has no CC BY photographic map in our set, so it renders procedurally
   // and claims its measured identity through the canonical seed instead.

@@ -11,7 +11,7 @@ import {
 } from './scale'
 import { ATMO_FRAG, ATMO_VERT, GAS_FRAG, GAS_VERT, SUN_FRAG, SUN_VERT } from './shaders'
 import { effectiveTier } from './tiers'
-import type { Moon, PlanetParams, RingConfig, SystemBody, SystemDef } from './types'
+import type { Moon, PlanetParams, PresetKey, RingConfig, SystemBody, SystemDef } from './types'
 
 interface MoonInstance {
   orbit: THREE.Group
@@ -21,6 +21,8 @@ interface MoonInstance {
   e: number
   P: number
   phase: number
+  /** Set for moons that are worlds, which makes them clickable. */
+  world?: { preset: PresetKey; seed: number }
 }
 
 /** Orbit-path opacity when shown. Hidden paths fade to 0 and back on hover. */
@@ -279,6 +281,8 @@ export class PlanetViewport {
 
   /** Fired when a planet is clicked in the orbit view. */
   onPick: ((index: number) => void) | null = null
+  /** Fired when a moon that is a world is clicked in the single-world view. */
+  onPickMoon: ((world: { preset: PresetKey; seed: number }) => void) | null = null
 
   constructor(container: HTMLElement) {
     this.container = container
@@ -579,6 +583,9 @@ export class PlanetViewport {
         // orbit view is hiding its paths and one can be glimpsed.
         if (this.sys?.visible && !this.showPaths && !this.dragging) {
           this.setHover(this.planetAt(e))
+        } else if (!this.sys?.visible && !this.dragging) {
+          // A moon you can visit should say so before you click it.
+          cv.style.cursor = this.moonAt(e) ? 'pointer' : 'grab'
         }
         return
       }
@@ -606,7 +613,13 @@ export class PlanetViewport {
       if (this.ptrs.size === 0) {
         this.dragging = false
         cv.style.cursor = 'grab'
-        if (this.sys?.visible && this.moved < 6) this.pick(e)
+        if (this.moved < 6) {
+          if (this.sys?.visible) this.pick(e)
+          else {
+            const m = this.moonAt(e)
+            if (m?.world) this.onPickMoon?.(m.world)
+          }
+        }
       }
       this.invalidate()
     }
@@ -641,6 +654,20 @@ export class PlanetViewport {
     this.ray.setFromCamera(this.v2, this.camera)
     const hits = this.ray.intersectObjects(this.sysPlanets, false)
     return hits.length ? (hits[0].object.userData as SysNode).index : -1
+  }
+
+  /** The world-moon under the pointer in the single-world view, if any. */
+  private moonAt(e: PointerEvent): MoonInstance | null {
+    if (!this.moons.length || this.sys?.visible) return null
+    const r = this.renderer.domElement.getBoundingClientRect()
+    this.v2.set(
+      ((e.clientX - r.left) / Math.max(1, r.width)) * 2 - 1,
+      -((e.clientY - r.top) / Math.max(1, r.height)) * 2 + 1,
+    )
+    this.ray.setFromCamera(this.v2, this.camera)
+    const hits = this.ray.intersectObjects(this.moons.map((m) => m.mesh), false)
+    if (!hits.length) return null
+    return this.moons.find((m) => m.mesh === hits[0].object && m.world) ?? null
   }
 
   private pick(e: PointerEvent) {
@@ -783,7 +810,9 @@ export class PlanetViewport {
       orbit.add(line)
 
       this.moonRoot.add(orbit)
-      this.moons.push({ orbit, mesh, line, d: dist, e: ecc, P: d.P, phase: (i * 2.1) % 6.283 })
+      this.moons.push({
+        orbit, mesh, line, d: dist, e: ecc, P: d.P, phase: (i * 2.1) % 6.283, world: d.world,
+      })
     }
     if (list.length) this.compileNeeded = true
     return maxD

@@ -169,6 +169,47 @@ invented, like Andromeda.
       tint could not be called Ember — the Sculpt tab already answers to
       that name, and the perf benchmark clicks chips by exact name.
 
+### 9. Moons that are worlds
+
+The app already carries 22 moons across seven planets with measured radii,
+distances, periods and inclinations — but they are decorative geometry: no
+params, so they cannot be visited, scanned or sculpted. The popular ones
+deserve to be worlds, on exactly the terms Pluto already is: measured body, no
+photographic map in the CC BY set, procedural surface, canonical seed, and a
+hand-written measured profile.
+
+Promoted set — the ones with real character: **the Moon**, **Io**, **Europa**,
+**Ganymede**, **Titan**, **Enceladus**, **Triton**.
+
+- [x] A moon becomes a world by naming one: `Moon.world = { preset, seed }`.
+      The orbital elements it already carries stay the single source of where
+      it is; the new field only says which world is standing there. Keeps
+      `engine/planets.ts` data-only — no params import, no cycle.
+- [x] A `MOONS` collection beside `SOLAR`/`ANCIENT`/`FICTION`, seven new
+      palettes, seven `REAL` entries (tidally locked, so the sidereal day is
+      the orbital period), and seven measured `REAL_PROFILES`. The existing
+      planet profiles already gesture at these worlds — Jupiter's says the
+      interest is in the moons, Saturn's names the Enceladus plume — so the
+      prose has somewhere to arrive.
+- [x] Reachable two ways: click a moon where it already orbits, and a
+      "Moons you can visit" row on the Sculpt tab. The canvas click alone
+      was a few pixels of moving sprite — not discoverable, not keyboard
+      reachable, and not testable without hunting for it.
+- [x] Reseed detaches into an ordinary world of its family, same rule as
+      Pluto and the reconstructions (FAMILY: ice for the icy ones, lava for
+      Io, desert for the Moon).
+
+### 10. Satellite orbits in the orbit view
+
+- [ ] A body may orbit another body rather than the star, so Pandora truly
+      circles Polyphemus and the promoted moons circle their planets.
+- [ ] The drawn-distance problem is the whole risk, and phase 6 already
+      proved it bites: in "same size" mode every planet renders at one radius,
+      and the gap between adjacent drawn orbits is around a quarter of a unit.
+      A satellite orbit must therefore be clamped to a fraction of the
+      distance to the parent's nearest neighbour, with a unit test pinning it
+      the way the Pandora clearance test does.
+
 ## Performance plan (delivered 2026-07-28)
 
 ### Goal

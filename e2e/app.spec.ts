@@ -582,6 +582,36 @@ test('the universe is yours to tune, and the sky survives a reload', async ({ pa
   await expect(page.locator('[data-nebula="on"]')).toBeVisible()
 })
 
+test('a moon is a world you can visit and scan', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Systems' }).click()
+  await page.getByRole('button', { name: /Jupiter/ }).click()
+  await expect(page.getByRole('heading', { name: 'Jupiter' })).toBeVisible()
+
+  // The Galilean moons orbit Jupiter on the canvas and are clickable there,
+  // but they are also offered as buttons — a few pixels of moving sprite is
+  // no way to be the only way in.
+  await page.getByRole('button', { name: 'Europa', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Europa' })).toBeVisible()
+
+  // It arrives as a world in its own right, scanning from measured prose
+  // rather than from the sliders.
+  await page.getByRole('tab', { name: 'Scan' }).click()
+  await page.getByRole('button', { name: /Run spectrometer on Europa/ }).click()
+  await expect(page.getByText('Thin oxygen, made by radiation')).toBeVisible({ timeout: 15_000 })
+
+  // The ocean is the headline, and it lives in the surface section.
+  await page.getByRole('button', { name: 'Surface & water' }).click()
+  await expect(page.getByText('a global ocean, under the ice')).toBeVisible()
+
+  // Reseeding detaches it into an ordinary icy world, exactly like Pluto.
+  await page.getByRole('tab', { name: 'Sculpt' }).click()
+  await page.getByLabel('Seed', { exact: true }).fill('12345')
+  await page.getByRole('tab', { name: 'Scan' }).click()
+  await page.getByRole('button', { name: /Run spectrometer on Europa/ }).click()
+  await expect(page.getByText('Thin oxygen, made by radiation')).toHaveCount(0, { timeout: 15_000 })
+})
+
 test('display choices survive a reload', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('tab', { name: 'Systems' }).click()

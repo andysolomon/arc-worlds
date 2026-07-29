@@ -4,7 +4,7 @@ import { SculptPanel } from './components/SculptPanel'
 import { SystemsPanel } from './components/SystemsPanel'
 import { Viewport } from './components/Viewport'
 import { WorldsPanel } from './components/WorldsPanel'
-import { PRESETS, typeOf, type AncientWorld } from './data/presets'
+import { MOONS, PRESETS, typeOf, type AncientWorld } from './data/presets'
 import { MILKY_WAY } from './data/systems'
 import {
   loadDisplay, nebulaCss, saveDisplay, type DisplayOptions, type TierChoice,
@@ -195,6 +195,18 @@ export default function App() {
     setName(a.name)
     setScan(null)
     setSavedSlug(null)
+  }, [])
+
+  /** Clicking a moon that is a world visits it, the way a planet card does. */
+  const visitMoon = useCallback((w: { preset: PresetKey; seed: number }) => {
+    const m = MOONS.find((x) => x.key === w.preset && x.params.seed === w.seed)
+    if (!m) return
+    setParams({ ...DEFAULT_PARAMS, ...m.params, preset: m.key, texture: null, cloudTexture: null })
+    setName(m.name)
+    setScan(null)
+    setSavedSlug(null)
+    setView('single')
+    setTab('sculpt')
   }, [])
 
   const reshape = useCallback(() => {
@@ -422,6 +434,7 @@ export default function App() {
             scanNonce={scanNonce}
             resetNonce={resetNonce}
             onPick={visitBody}
+            onPickMoon={visitMoon}
             background={nebulaCss(display.nebula)}
           />
 
@@ -464,6 +477,7 @@ export default function App() {
                 name={name}
                 tier={display.tier}
                 onTier={setTier}
+                onVisitMoon={visitMoon}
                 onName={setName}
                 onParam={setParam}
                 onPreset={applyPreset}

@@ -56,6 +56,7 @@ const PRESET_KEYS = new Set<string>([
   'mercury', 'venus', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune', 'pluto',
   'archean', 'proterozoic', 'noachian',
   'erid', 'adrian', 'pandora',
+  'luna', 'io', 'europa', 'ganymede', 'titan', 'enceladus', 'triton',
 ])
 
 /**
