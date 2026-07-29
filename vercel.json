@@ -3,6 +3,7 @@
   "regions": ["iad1"],
   "rewrites": [
     { "source": "/w/:slug", "destination": "/index.html" },
-    { "source": "/s/:slug", "destination": "/index.html" }
+    { "source": "/s/:slug", "destination": "/index.html" },
+    { "source": "/venus", "destination": "/index.html" }
   ]
 }
