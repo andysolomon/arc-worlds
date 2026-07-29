@@ -11,7 +11,7 @@ import {
 } from './lib/display'
 import { DEFAULT_PARAMS, sanitize, surprise } from './lib/params'
 import {
-  addRolledWorld, addWorld, duplicateBody, sanitizeSystem,
+  addMoon, addRolledWorld, addWorld, duplicateBody, sanitizeSystem,
 } from './lib/systems'
 import { computeScan, type ScanResult } from './lib/scan'
 import {
@@ -290,6 +290,12 @@ export default function App() {
   }, [])
 
   /** Another world like the one already in orbit, further out. */
+  /** Roll a moon into orbit around one of the system's own worlds. */
+  const addMoonTo = useCallback((index: number) => {
+    setSystem((s) => addMoon(s, index))
+    setSavedSystemSlug(null)
+  }, [])
+
   const duplicateWorld = useCallback((i: number) => {
     setSystem((s) => duplicateBody(s, i))
     setSavedSystemSlug(null)
@@ -508,6 +514,7 @@ export default function App() {
                 onAddCurrent={addCurrentWorld}
                 onAddRolled={addRolled}
                 onAddSaved={addSavedWorld}
+                onAddMoon={addMoonTo}
                 onDuplicate={duplicateWorld}
                 currentWorld={name}
                 worlds={worlds}

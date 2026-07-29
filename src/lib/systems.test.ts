@@ -6,9 +6,10 @@ import {
 import { ORBITS } from '../engine/planets'
 import { periodFor, starRadius, starSize } from '../engine/scale'
 import {
-  A_MAX, MASS_MAX, MASS_MIN, MAX_BODIES, STAR_KINDS,
-  addRolledWorld, addWorld, bodyFromWorld, dayFor, duplicateBody, duplicateSystem,
-  emptySystem, hasRoom, nextDistance, retime, rollSystem, sanitizeSystem, sortByDistance,
+  A_MAX, A_MIN, MASS_MAX, MASS_MIN, MAX_BODIES, STAR_KINDS,
+  addMoon, addRolledWorld, addWorld, bodyFromWorld, dayFor, duplicateBody,
+  duplicateSystem, emptySystem, hasRoom, nextDistance, removeBodyAt, retime,
+  rollSystem, sanitizeSystem, satPeriodFor, setParent, sortByDistance,
   worldInSystem,
 } from './systems'
 import { DEFAULT_PARAMS } from './params'
@@ -486,5 +487,66 @@ describe('worldInSystem', () => {
 
   it('is empty-system safe', () => {
     expect(worldInSystem(emptySystem(1), params)).toBe(false)
+  })
+})
+
+describe('building your own moons', () => {
+  const twoWorlds = () => {
+    let d = addRolledWorld(emptySystem(11), 'temperate', 5)
+    d = addRolledWorld(d, 'gasAmber', 6)
+    return d
+  }
+
+  it('rolls a moon into orbit around the body you asked for', () => {
+    const d = addMoon(twoWorlds(), 0)
+    const moon = d.bodies.find((b) => b.orbits)!
+    expect(moon.orbits).toBe(d.bodies[0].name)
+    // Its distance is measured from the planet, so it is far inside the
+    // floor an ordinary orbit has to clear.
+    expect(moon.a).toBeLessThan(A_MIN)
+    expect(moon.period).toBeGreaterThan(0)
+  })
+
+  it('derives a moon’s year from the planet, close to the real ones', () => {
+    // The Moon at its true distance from an Earth-sized planet.
+    expect(satPeriodFor(0.002569, 1, false) * 365.25).toBeCloseTo(27.3, 0)
+    // A bigger planet pulls harder, so the same orbit comes round sooner.
+    expect(satPeriodFor(0.002569, 4, false)).toBeLessThan(satPeriodFor(0.002569, 1, false))
+  })
+
+  it('refuses moons of moons, in both directions', () => {
+    const d = addMoon(twoWorlds(), 0)
+    const moonIndex = d.bodies.findIndex((b) => b.orbits)
+    // Neither by asking for a moon of a moon...
+    expect(addMoon(d, moonIndex)).toBe(d)
+    // ...nor by making a planet that already has one into a moon itself.
+    const planetIndex = d.bodies.findIndex((b) => !b.orbits)
+    const other = d.bodies.find((b, k) => !b.orbits && k !== planetIndex)!
+    expect(setParent(d, planetIndex, other.name)).toBe(d)
+  })
+
+  it('returns a world to the star, with a distance that means something', () => {
+    const d = addMoon(twoWorlds(), 0)
+    const i = d.bodies.findIndex((b) => b.orbits)
+    const back = setParent(d, i, '')
+    const world = back.bodies.find((b) => b.name === d.bodies[i].name)!
+    expect(world.orbits).toBeUndefined()
+    // Its old distance was measured from a planet and would be nonsense here.
+    expect(world.a).toBeGreaterThanOrEqual(A_MIN)
+  })
+
+  it('does not leave a moon orbiting a planet that has been removed', () => {
+    const d = addMoon(twoWorlds(), 0)
+    const parent = d.bodies.find((b) => !b.orbits)!
+    const out = removeBodyAt(d, d.bodies.indexOf(parent))
+    expect(out.bodies.some((b) => b.name === parent.name)).toBe(false)
+    for (const b of out.bodies) expect(b.orbits).toBeUndefined()
+  })
+
+  it('survives the round trip through storage', () => {
+    const out = sanitizeSystem(addMoon(twoWorlds(), 0))
+    const moon = out.bodies.find((b) => b.orbits)!
+    expect(moon.orbits).toBeTruthy()
+    expect(out.bodies.some((b) => b.name === moon.orbits)).toBe(true)
   })
 })

@@ -226,6 +226,19 @@ Promoted set — the ones with real character: **the Moon**, **Io**, **Europa**,
       Build-bodies and first-render both came out faster than before the
       satellites existed.
 
+### 11. Building your own moons
+
+- [x] Any body in a system you own can be given a moon, or told to orbit
+      another body instead of the star. A moon's distance is measured from
+      its planet and quoted in that planet's radii; its year follows from the
+      planet's size, since mass goes as the cube of radius at a given density
+      — which reproduces the Moon within half a percent and Jupiter's moons
+      within three.
+- [x] Guards: moons of moons are refused at both ends, removing a planet
+      returns its moons to the star with a distance that means something
+      there, and a distance measured from a planet is re-derived rather than
+      carried over when a world changes what it orbits.
+
 ## Performance plan (delivered 2026-07-28)
 
 ### Goal

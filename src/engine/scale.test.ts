@@ -137,28 +137,37 @@ describe('moon scaling', () => {
 
 describe('satellite orbits', () => {
   it('always draws a moon clear of the planet it orbits', () => {
-    // The one thing that must never happen: a moon inside its own planet.
-    // Room goes negative in same-size mode, where every planet is drawn 0.24
-    // wide with only 0.29 between orbits, so the floor has to hold there too.
+    // The one thing that must never happen: a moon buried in its own planet.
+    // The gap has to clear both radii — in same-size mode a planet is drawn
+    // 0.24 and its moon 0.092 — and room goes negative there, since planets
+    // sit 0.29 apart and already overlap at conjunction. So the floor has to
+    // hold on its own, without any room to spend.
+    const MOON_R = 0.092
     for (const room of [-2, -0.093, 0, 0.385, 5.4]) {
-      for (const r of [0.092, 0.24, 0.616, 1.524]) {
+      for (const [r, moonR] of [[0.24, MOON_R], [0.616, 0.12], [1.524, 0.3]]) {
         for (const t of [0, 0.5, 1]) {
-          const orbit = r * satMult(t, r, room)
-          expect(orbit, `room ${room}, radius ${r}, t ${t}`).toBeGreaterThan(r * 1.25)
+          const surfaceGap = r * satMult(t, r, room) - r - moonR
+          expect(surfaceGap, `room ${room}, radius ${r}, t ${t}`).toBeGreaterThan(0)
         }
       }
     }
   })
 
-  it('spends the room it is given, and no more', () => {
-    // Jupiter has 5.4 units of clearance in scale mode and Earth has 0.385.
-    // The outermost moon should use its planet's room rather than a constant.
-    const jupiter = 1.524 * satMult(1, 1.524, 5.448)
-    const earth = 0.616 * satMult(1, 0.616, 0.385)
-    expect(jupiter - 1.524).toBeLessThanOrEqual(5.448)
-    expect(earth - 0.616).toBeLessThanOrEqual(0.385)
-    // And a planet with room to spare puts its moons further out, in radii.
-    expect(jupiter / 1.524).toBeGreaterThan(earth / 0.616)
+  it('spends the room it is given, where there is room to spend', () => {
+    // Jupiter has 5.4 units of clearance in scale mode and Earth has 0.385,
+    // so Jupiter's moons should spread further out in its own radii.
+    expect(satMult(1, 1.524, 5.448)).toBeGreaterThan(satMult(1, 0.616, 0.385))
+    // Where there is genuinely room, the outermost moon stays inside it.
+    expect(1.524 * satMult(1, 1.524, 5.448) - 1.524).toBeLessThanOrEqual(5.448)
+  })
+
+  it('never stacks two moons on the same orbit, however tight it gets', () => {
+    // A band with no width would put every moon of a planet in one place,
+    // which is worse than crossing a neighbouring orbit line — so the band
+    // keeps a minimum width even when the room available is negative.
+    for (const room of [-2, 0, 0.4, 5]) {
+      expect(satMult(1, 1.524, room) - satMult(0, 1.524, room)).toBeGreaterThan(0.2)
+    }
   })
 
   it('keeps moons in their true order, however tight the band', () => {

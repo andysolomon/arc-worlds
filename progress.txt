@@ -592,3 +592,44 @@ NEXT
   with a satellite has no UI to create one yet.
 - Same-size mode's overlapping planets at conjunction remain a
   pre-existing oddity now shared by satellites.
+
+2026-07-29 building your own moons
+
+DONE
+- A ☾ button on any body in a system you own rolls a moon into orbit
+  around it, and an Orbits selector moves any world between the star
+  and any planet. A moon's distance is measured from its planet and
+  quoted in that planet's radii, which is how moons are actually
+  quoted.
+- satPeriodFor: a moon's year from its planet's size. Mass goes as the
+  cube of radius at a given density, and splitting gas giants from rock
+  at their real density ratio reproduces the Moon within 0.4% and
+  Jupiter's moons within 3%. Saturn's come out a third quick because
+  Saturn is half Jupiter's density — a fair trade for one constant, on
+  systems that were invented anyway. Measured satellites keep their
+  measured years and never go through it.
+- Note for anyone reusing periodFor: it floors mass at 0.02 solar
+  masses because it was written for stars, so it returns nonsense for
+  planets. satPeriodFor does the arithmetic directly.
+- Guards, all unit-tested: moons of moons refused at both ends (you
+  cannot add a moon to a moon, and a planet carrying moons cannot
+  become one — the selector disables itself and says why); removing a
+  planet returns its moons to the star with a real distance; changing
+  what a world orbits re-derives its distance, since the old number was
+  measured from somewhere else.
+- Drawn band corrected: the floor was clearing the planet's radius but
+  not the moon's own, so a user-built moon sat slightly inside its
+  planet. Floor raised to 1.55x and the unit test now asserts surface
+  clearance rather than centre distance. A second test pins that the
+  band never collapses to zero width — stacked moons are worse than
+  crossing an orbit line, which same-size mode does anyway.
+
+VERIFIED
+- typecheck, lint, 130 unit (7 new), 29 e2e (1 new), all bundle
+  budgets, perf median green.
+
+NEXT
+- The e2e suite is 29 specs and contention flakes are getting more
+  frequent locally (two per full run, always clean in isolation). CI is
+  serial with retries so it is not a merge risk, but the fixed-sleep
+  to poll pass is now overdue.

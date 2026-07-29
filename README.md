@@ -69,7 +69,7 @@ Five kinds of system sit side by side, and the tab is careful about which is whi
   masses), and Alpha Centauri A (Polyphemus and Pandora from *Avatar*). Each scans with chemistry
   from its fiction, opening with the word **Fiction**; reseed one and it detaches into an ordinary
   world of its family, exactly like Pluto and the ancient reconstructions.
-- **Yours** — duplicate an existing system, roll a whole one from a seed, or start empty. Set each world's distance, size and orbital stretch, pick a star, and save it for a permanent `/s/:slug` link.
+- **Yours** — duplicate an existing system, roll a whole one from a seed, or start empty. Any world can be given a moon (☾), or told to orbit another world instead of the star: a moon's distance is then measured in its planet's radii and its year follows from that planet's size, the same way a planet's year follows from its star. Moons of moons are refused, and removing a planet hands its moons back to the star rather than leaving them orbiting nothing. Set each world's distance, size and orbital stretch, pick a star, and save it for a permanent `/s/:slug` link.
 
 Worlds go into a system four ways, and none of them needs a trip through the sculptor first: pick
 one of the eight world types and a new world of that type is rolled straight into orbit; add the

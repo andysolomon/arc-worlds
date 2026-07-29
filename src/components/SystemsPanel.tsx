@@ -1,9 +1,10 @@
 import { BUILT_IN_SYSTEMS } from '../data/systems'
 import { ANCIENT, PRESETS, SOLAR } from '../data/presets'
-import { periodFor, starRadius, starSize } from '../engine/scale'
+import { periodFor, satRadii, starRadius, starSize } from '../engine/scale'
 import {
-  A_MAX, A_MIN, MASS_MAX, MASS_MIN, MAX_BODIES, STAR_KINDS,
-  duplicateSystem, emptySystem, retime, rollSystem,
+  A_MAX, A_MIN, A_SAT_MAX, A_SAT_MIN, MASS_MAX, MASS_MIN, MAX_BODIES, STAR_KINDS,
+  duplicateSystem, emptySystem, isGasBody, removeBodyAt, retime, rollSystem,
+  satPeriodFor, setParent,
 } from '../lib/systems'
 import type { SavedSystem, SavedWorld } from '../lib/api'
 import { NEBULAE, type DisplayOptions } from '../lib/display'
@@ -29,6 +30,8 @@ interface Props {
   onAddRolled: (preset?: PresetKey) => void
   /** Add one of the saved worlds from the gallery. */
   onAddSaved: (w: SavedWorld) => void
+  /** Roll a moon into orbit around the body at this index. */
+  onAddMoon: (index: number) => void
   /** Another world like the one at this index, further out. */
   onDuplicate: (index: number) => void
   currentWorld: string
@@ -57,11 +60,17 @@ function logScale(lo: number, hi: number) {
 }
 
 const DIST = logScale(A_MIN, A_MAX)
+// A moon's distance is measured from its planet, over a far shorter range.
+const SAT_DIST = logScale(A_SAT_MIN, A_SAT_MAX)
 const R_MIN = 0.15
 const R_MAX = 16
 const SIZE = logScale(R_MIN, R_MAX)
 
 const fmtAU = (a: number) => (a < 10 ? `${a.toFixed(2)} AU` : `${a.toFixed(1)} AU`)
+
+/** Moons are quoted in the radii of the planet they orbit, as astronomers do. */
+const fmtMoonDist = (a: number, parentRadius: number) =>
+  `${(satRadii(a, parentRadius)).toFixed(1)} radii`
 
 /**
  * A star chip's dot is drawn at the size the renderer will draw that star, so
@@ -98,7 +107,7 @@ function bodyDot(b: SystemBody): string {
 export function SystemsPanel(props: Props) {
   const {
     system, view, sizeMode, display, onDisplay, onDisplaySet, onView, onSizeMode, onVisit,
-    onSystem, onAddCurrent, onAddRolled, onAddSaved, onDuplicate, currentWorld,
+    onSystem, onAddCurrent, onAddRolled, onAddSaved, onAddMoon, onDuplicate, currentWorld,
     worlds, worldsError, onSave, saving, savedSlug, systems, systemsLoading,
     systemsError, onOpenSaved,
   } = props
@@ -110,8 +119,14 @@ export function SystemsPanel(props: Props) {
     const bodies = system.bodies.map((b, k) => {
       if (k !== i) return b
       const next = { ...b, ...patch }
-      // A year is a consequence of the distance, so moving a planet re-times it.
-      if (patch.a !== undefined) next.period = periodFor(next.a, system.star.mass)
+      // A year is a consequence of the distance, so moving a world re-times
+      // it — around its planet if it has one, otherwise around the star.
+      if (patch.a !== undefined) {
+        const parent = next.orbits ? system.bodies.find((x) => x.name === next.orbits) : null
+        next.period = parent
+          ? satPeriodFor(next.a, parent.radius, isGasBody(parent))
+          : periodFor(next.a, system.star.mass)
+      }
       return next
     })
     // Deliberately not re-sorted here: dragging one planet past another would
@@ -120,8 +135,12 @@ export function SystemsPanel(props: Props) {
     onSystem({ ...system, bodies })
   }
 
-  const removeBody = (i: number) =>
-    onSystem({ ...system, bodies: system.bodies.filter((_, k) => k !== i) })
+  const removeBody = (i: number) => onSystem(removeBodyAt(system, i))
+
+  /** A body that already carries moons cannot become one itself. */
+  const hasMoons = (name: string) => system.bodies.some((x) => x.orbits === name)
+  const parentOf = (b: SystemBody) =>
+    b.orbits ? system.bodies.find((x) => x.name === b.orbits) : undefined
 
   return (
     <>
@@ -465,6 +484,23 @@ export function SystemsPanel(props: Props) {
                   >
                     ⧉
                   </button>
+                  {!b.orbits && (
+                    <button
+                      className="icon-btn"
+                      style={{ height: 44, width: 'auto', padding: '0 12px' }}
+                      type="button"
+                      disabled={full}
+                      title={
+                        full
+                          ? `Full — ${MAX_BODIES} worlds is the limit`
+                          : `Roll a moon into orbit around ${b.name}`
+                      }
+                      aria-label={`Add a moon to ${b.name}`}
+                      onClick={() => onAddMoon(i)}
+                    >
+                      ☾
+                    </button>
+                  )}
                   <button
                     className="icon-btn"
                     style={{ height: 44 }}
@@ -478,11 +514,36 @@ export function SystemsPanel(props: Props) {
                 </div>
               </div>
               <div style={{ marginTop: 10 }}>
+                <Field label="Orbits">
+                  <select
+                    value={b.orbits ?? ''}
+                    aria-label={`What ${b.name} orbits`}
+                    disabled={hasMoons(b.name)}
+                    title={hasMoons(b.name) ? `${b.name} has moons of its own` : undefined}
+                    onChange={(e) => onSystem(setParent(system, i, e.target.value))}
+                  >
+                    <option value="">{system.star.name} — the star</option>
+                    {system.bodies
+                      .filter((x, k) => k !== i && !x.orbits)
+                      .map((x) => (
+                        <option key={x.name} value={x.name}>
+                          {x.name} — as a moon
+                        </option>
+                      ))}
+                    {b.orbits && !system.bodies.some((x) => x.name === b.orbits) && (
+                      <option value={b.orbits}>{b.orbits}</option>
+                    )}
+                  </select>
+                </Field>
                 <Slider
-                  name="Distance"
-                  value={DIST.to(b.a)}
-                  format={() => `${fmtAU(b.a)} · ${fmtPeriod(b.period)}`}
-                  onChange={(t) => setBody(i, { a: DIST.from(t) })}
+                  name={b.orbits ? `Distance from ${b.orbits}` : 'Distance'}
+                  value={b.orbits ? SAT_DIST.to(b.a) : DIST.to(b.a)}
+                  format={() =>
+                    b.orbits
+                      ? `${fmtMoonDist(b.a, parentOf(b)?.radius ?? 1)} · ${fmtPeriod(b.period)}`
+                      : `${fmtAU(b.a)} · ${fmtPeriod(b.period)}`
+                  }
+                  onChange={(t) => setBody(i, { a: b.orbits ? SAT_DIST.from(t) : DIST.from(t) })}
                 />
                 <Slider
                   name="Size"

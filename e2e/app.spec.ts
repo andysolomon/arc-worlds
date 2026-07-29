@@ -631,6 +631,41 @@ test('a moon is a world you can visit and scan', async ({ page }) => {
   await expect(page.getByText('Thin oxygen, made by radiation')).toHaveCount(0, { timeout: 15_000 })
 })
 
+test('you can give a world of your own a moon', async ({ page }) => {
+  test.slow() // a sculpt round trip plus an orbit render
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Systems' }).click()
+  await page.getByRole('button', { name: 'New, empty' }).click()
+  await page.getByRole('button', { name: 'Amber giant', exact: true }).click()
+
+  // The giant is the only world here, so it is the only thing a moon could
+  // orbit — and the button says so.
+  const giant = page.getByLabel('Name of world 1')
+  const name = await giant.inputValue()
+  await page.getByRole('button', { name: `Add a moon to ${name}` }).click()
+
+  // The moon arrives as a second world, orbiting the first rather than the
+  // star, with its distance quoted in the planet's own radii.
+  await expect(page.getByLabel('Name of world 2')).toBeVisible()
+  const moon = page.getByLabel('Name of world 2')
+  const moonName = await moon.inputValue()
+  await expect(page.getByLabel(`What ${moonName} orbits`)).toHaveValue(name)
+  await expect(page.getByText(/radii/).first()).toBeVisible()
+
+  // A planet carrying a moon cannot itself become one.
+  await expect(page.getByLabel(`What ${name} orbits`)).toBeDisabled()
+
+  // It draws where it belongs, and hands the moon back to the star cleanly.
+  await page.getByRole('button', { name: 'Orbit view' }).click()
+  await page.waitForTimeout(2500)
+  expect(await hasDrawnGeometry(page)).toBe(true)
+
+  await page.getByRole('button', { name: 'Body list' }).click()
+  await page.getByLabel(`What ${moonName} orbits`).selectOption('')
+  await expect(page.getByLabel(`What ${name} orbits`)).toBeEnabled()
+  await expect(page.getByText(/radii/)).toHaveCount(0)
+})
+
 test('display choices survive a reload', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('tab', { name: 'Systems' }).click()

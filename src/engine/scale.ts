@@ -156,8 +156,13 @@ export function satRadii(aAu: number, parentEarthRadii: number): number {
   return (aAu * AU_KM) / Math.max(1e-9, parentEarthRadii * EARTH_KM)
 }
 
-/** Nearest and furthest a satellite may be drawn, as multiples of its planet. */
-const SAT_MIN_MULT = 1.3
+/**
+ * Nearest and furthest a satellite may be drawn, as multiples of its planet.
+ * The floor has to clear both radii, not just the planet's: in same-size mode
+ * a planet is drawn 0.24 and a moon 0.092, so anything under about 1.47×
+ * leaves the moon buried in its own planet.
+ */
+const SAT_MIN_MULT = 1.55
 const SAT_MAX_MULT = 4
 
 /**
@@ -178,7 +183,12 @@ const SAT_MAX_MULT = 4
  * innermost, so ordering and relative spacing survive.
  */
 export function satMult(t: number, parentRadius: number, room: number): number {
-  const head = room > 0 ? 1 + room / Math.max(1e-6, parentRadius) : SAT_MIN_MULT + 0.25
+  // Two things outrank the room available. A moon must clear its planet, so
+  // the floor is fixed; and several moons must not stack on one another, so
+  // the band keeps a minimum width even where there is no room for it. What
+  // that costs is crossing a neighbouring orbit line, which same-size mode
+  // does anyway — its planets already overlap at conjunction.
+  const head = room > 0 ? 1 + room / Math.max(1e-6, parentRadius) : 0
   const top = Math.min(SAT_MAX_MULT, Math.max(SAT_MIN_MULT + 0.25, head))
   return SAT_MIN_MULT + Math.min(1, Math.max(0, t)) * (top - SAT_MIN_MULT)
 }
