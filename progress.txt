@@ -660,5 +660,45 @@ VERIFIED
 - typecheck, lint, 130 unit, bundle budgets green.
 
 NEXT
-- Startup shader-compile shave is the one long-standing perf item left,
-  now that the attribution instrumentation exists to aim it.
+- Safari re-profiling on the original Metal hardware is the one perf
+  item left, and it is now a specific question rather than a vague one:
+  the shader shave above already cut transition programs 12 -> 4 and
+  found that the remaining long task is not ours. In every sample it
+  began within 0.2 ms of first render with renderer.render measuring
+  26-41 ms inside a 256-437 ms browser task, which points at
+  first-presentation driver work. The supporting oddity: longTaskMax is
+  consistently WORSE on this Apple Silicon machine (337-663 ms) than on
+  a two-core CI runner (176-304 ms). A CPU-bound cost would run the
+  other way; real Metal/ANGLE compilation against CI's software
+  renderer explains it. Safari on the target hardware is what settles
+  it.
+
+2026-07-29 note: what commit 53c8af3 actually contains
+
+The commit titled "feat: drop the Star Wars collection" also carries the
+Orbit-transition shader work logged above (the 2026-07-29 performance
+follow-up entry). That work was sitting uncommitted in the working tree
+and was swept in by a `git add -A` while staging an unrelated change, so
+its message describes none of it.
+
+Files in 53c8af3 that belong to the shader work, not to the Star Wars
+removal:
+- PERFORMANCE_RESULTS.md      (new: the attribution write-up)
+- AGENTS.md                   (transition-budget guidance)
+- performance-budget.json     (orbitShaderKickoffMs, orbitShaderProgramsAdded,
+                               and their regression entries)
+- scripts/performance-benchmark.mjs  (arc:orbit phase measures, program
+                               counts, per-run attribution timeline)
+- src/engine/viewport.ts      (compileAsync scoped to the active system
+                               subtree; labels genuinely opt-in;
+                               recordOrbitMeasure instrumentation)
+
+The Star Wars removal itself touched only the data and test files:
+types, palettes, presets, params, scan, fiction, systems and their specs.
+
+Left as-is rather than rewritten: the branch history is shared and the
+commits after it build on that tree, so a reword would rewrite four
+commits to fix a message. This note is the cheaper honest fix. Lesson
+worth keeping: `git add -A` is not safe when the working tree holds work
+you did not put there — stage by path, or read the file list before
+committing.
