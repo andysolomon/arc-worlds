@@ -303,7 +303,7 @@ test('each browser asks for its own gallery', async ({ browser }) => {
 })
 
 /** The engine publishes draw counts on the canvas; orbit paths render as lines. */
-function datum(page: Page, key: 'lines' | 'triangles'): Promise<number> {
+function datum(page: Page, key: 'lines' | 'triangles' | 'points'): Promise<number> {
   return page.evaluate((k) => Number(document.querySelector('canvas')?.dataset[k] ?? -1), key)
 }
 
@@ -579,6 +579,27 @@ test('a gas giant takes the animated flat tier by default', async ({ page }) => 
   const flat = await settledTriangles(page)
   await page.getByRole('button', { name: 'Detailed', exact: true }).click()
   await expect.poll(() => datum(page, 'triangles')).toBeGreaterThan(flat)
+})
+
+test('the universe is yours to tune, and the sky survives a reload', async ({ page }) => {
+  await page.goto('/')
+  // The classic sky is exactly half the pool — the default draws the same
+  // 1400 stars the app has always drawn.
+  await expect.poll(() => datum(page, 'points')).toBe(1400)
+
+  await page.getByRole('tab', { name: 'Systems' }).click()
+  await page.getByLabel('Star density').focus()
+  await page.keyboard.press('End')
+  await expect.poll(() => datum(page, 'points')).toBe(2800)
+
+  // The nebula is CSS behind the transparent canvas — free to the GPU.
+  await page.getByRole('button', { name: 'Violet' }).click()
+  await expect(page.locator('[data-nebula="on"]')).toBeVisible()
+
+  // A viewer preference, so it persists per browser.
+  await page.reload()
+  await expect.poll(() => datum(page, 'points')).toBe(2800)
+  await expect(page.locator('[data-nebula="on"]')).toBeVisible()
 })
 
 test('display choices survive a reload', async ({ page }) => {

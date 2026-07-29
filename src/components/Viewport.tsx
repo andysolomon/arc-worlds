@@ -12,6 +12,8 @@ interface Props {
   /** Bumping this number re-frames the camera. */
   resetNonce?: number
   onPick?: (index: number) => void
+  /** Nebula tint: plain CSS behind the transparent canvas, free to the GPU. */
+  background?: string
 }
 
 /**
@@ -21,7 +23,9 @@ interface Props {
  * once on mount and fed params imperatively — re-rendering React must never
  * rebuild the scene.
  */
-export function Viewport({ params, system, scanNonce = 0, resetNonce = 0, onPick }: Props) {
+export function Viewport({
+  params, system, scanNonce = 0, resetNonce = 0, onPick, background,
+}: Props) {
   const host = useRef<HTMLDivElement>(null)
   const engine = useRef<PlanetViewport | null>(null)
   const pickRef = useRef(onPick)
@@ -54,5 +58,11 @@ export function Viewport({ params, system, scanNonce = 0, resetNonce = 0, onPick
     if (resetNonce > 0) engine.current?.resetView()
   }, [resetNonce])
 
-  return <div ref={host} style={{ width: '100%', height: '100%' }} />
+  return (
+    <div
+      ref={host}
+      data-nebula={background ? 'on' : 'off'}
+      style={{ width: '100%', height: '100%', background: background || undefined }}
+    />
+  )
 }

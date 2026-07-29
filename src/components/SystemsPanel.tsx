@@ -6,7 +6,7 @@ import {
   duplicateSystem, emptySystem, retime, rollSystem,
 } from '../lib/systems'
 import type { SavedSystem, SavedWorld } from '../lib/api'
-import type { DisplayOptions } from '../lib/display'
+import { NEBULAE, type DisplayOptions } from '../lib/display'
 import type { PresetKey, SystemBody, SystemDef } from '../engine/types'
 import { Chip, Field, Segmented, Slider } from './ui'
 
@@ -16,6 +16,8 @@ interface Props {
   sizeMode: 'same' | 'scale'
   display: DisplayOptions
   onDisplay: (k: 'paths' | 'labels' | 'moons') => void
+  /** Set any display field — the Universe controls are not toggles. */
+  onDisplaySet: <K extends keyof DisplayOptions>(k: K, v: DisplayOptions[K]) => void
   onView: (v: 'single' | 'system') => void
   onSizeMode: (v: 'same' | 'scale') => void
   onVisit: (index: number) => void
@@ -95,7 +97,7 @@ function bodyDot(b: SystemBody): string {
 
 export function SystemsPanel(props: Props) {
   const {
-    system, view, sizeMode, display, onDisplay, onView, onSizeMode, onVisit,
+    system, view, sizeMode, display, onDisplay, onDisplaySet, onView, onSizeMode, onVisit,
     onSystem, onAddCurrent, onAddRolled, onAddSaved, onDuplicate, currentWorld,
     worlds, worldsError, onSave, saving, savedSlug, systems, systemsLoading,
     systemsError, onOpenSaved,
@@ -200,6 +202,41 @@ export function SystemsPanel(props: Props) {
           </div>
         )}
       </div>
+
+      {/* --- universe ------------------------------------------------------- */}
+      <Field label="Universe">
+        <Slider
+          name="Star density"
+          value={display.starDensity}
+          onChange={(v) => onDisplaySet('starDensity', v)}
+        />
+        <Slider
+          name="Star brightness"
+          value={display.starBright}
+          onChange={(v) => onDisplaySet('starBright', v)}
+        />
+        <Slider
+          name="Exposure"
+          value={display.exposure}
+          onChange={(v) => onDisplaySet('exposure', v)}
+        />
+        <div className="chips" style={{ marginTop: 8 }}>
+          {NEBULAE.map((n) => (
+            <Chip
+              key={n.key}
+              on={display.nebula === n.key}
+              dot={n.dot}
+              onClick={() => onDisplaySet('nebula', n.key)}
+            >
+              {n.label}
+            </Chip>
+          ))}
+        </div>
+        <div className="note" style={{ marginTop: 10 }}>
+          How this browser likes its sky: star count and glow, overall exposure, and a nebula
+          wash behind everything. Yours alone — never part of a world or a shared system.
+        </div>
+      </Field>
 
       {/* --- the view ------------------------------------------------------- */}
       {view === 'system' ? (

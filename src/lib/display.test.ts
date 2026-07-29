@@ -22,15 +22,36 @@ afterEach(() => {
 })
 
 describe('loadDisplay', () => {
-  it('starts from the defaults: paths and moons on, labels off, tier auto', () => {
+  it('starts from the defaults: the exact look the app always drew', () => {
     vi.stubGlobal('localStorage', fakeStorage())
-    expect(loadDisplay()).toEqual({ paths: true, labels: false, moons: true, tier: 'auto' })
+    expect(loadDisplay()).toEqual({
+      paths: true, labels: false, moons: true, tier: 'auto',
+      starDensity: 0.5, starBright: 0.5, nebula: 'none', exposure: 0.5,
+    })
   })
 
   it('round-trips what was saved', () => {
     vi.stubGlobal('localStorage', fakeStorage())
-    saveDisplay({ paths: false, labels: true, moons: false, tier: 'flat' })
-    expect(loadDisplay()).toEqual({ paths: false, labels: true, moons: false, tier: 'flat' })
+    const chosen = {
+      paths: false, labels: true, moons: false, tier: 'flat',
+      starDensity: 0.9, starBright: 0.2, nebula: 'violet', exposure: 0.7,
+    } as const
+    saveDisplay(chosen)
+    expect(loadDisplay()).toEqual(chosen)
+  })
+
+  it('clamps universe numbers and rejects an unknown nebula', () => {
+    const store = fakeStorage()
+    store.map.set(
+      'little-worlds.display',
+      JSON.stringify({ starDensity: 7, starBright: -2, nebula: 'plaid', exposure: 'high' }),
+    )
+    vi.stubGlobal('localStorage', store)
+    const d = loadDisplay()
+    expect(d.starDensity).toBe(1)
+    expect(d.starBright).toBe(0)
+    expect(d.nebula).toBe('none')
+    expect(d.exposure).toBe(0.5)
   })
 
   it('rejects a tier value it does not recognise', () => {
@@ -48,11 +69,15 @@ describe('loadDisplay', () => {
   })
 
   it('fills in fields missing from an older stored shape', () => {
-    // A phase-1 blob has no tier; it must load with tier defaulted, not fail.
+    // A phase-1 blob has neither tier nor universe; it must load with those
+    // defaulted, not fail.
     const store = fakeStorage()
     store.map.set('little-worlds.display', JSON.stringify({ paths: false }))
     vi.stubGlobal('localStorage', store)
-    expect(loadDisplay()).toEqual({ paths: false, labels: false, moons: true, tier: 'auto' })
+    expect(loadDisplay()).toEqual({
+      paths: false, labels: false, moons: true, tier: 'auto',
+      starDensity: 0.5, starBright: 0.5, nebula: 'none', exposure: 0.5,
+    })
   })
 
   it('still answers when localStorage is unavailable', () => {

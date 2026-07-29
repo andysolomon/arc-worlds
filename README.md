@@ -47,7 +47,7 @@ Fluids visibly move: light shimmers across open water, lava creeps and breathes 
 
 **Scan** — a spectrometer readout for whatever world is currently on screen, split across Atmosphere, Surface & water, and Light. It reports composition by volume with a per-gas explanation, surface mineralogy, the state of any water, a biosignature assessment, and the specific absorption lines that would give each result away. The chemistry responds to the sliders: push sea level and cloud cover up on a Meadow world and you get a nitrogen–oxygen atmosphere flagged as out of equilibrium; drop them and the same seed reads as anoxic nitrogen–CO₂.
 
-**Systems** — a star and the worlds that orbit it, in two views.
+**Systems** — a star and the worlds that orbit it, in two views. A **Universe** section tunes the sky itself: star density and brightness, overall exposure, and a nebula wash behind everything (plain CSS behind the transparent canvas, so it costs the GPU nothing). All of it is a per-browser viewer preference — never part of a world, a system, or a shared link — and every default reproduces exactly the look the app always had.
 
 - *Body list* — visit any world in the system and see it rendered on its own, then hit **Reshape** to pull it into the sculptor and start editing.
 - *Orbit view* — everything orbiting its star on real elliptical, inclined paths at the pace its own orbit implies (one Earth year ≈ 14 seconds). **Same size** draws every planet alike so the small ones stay findable; **To scale** ranks them by true size. Click any planet to visit it.

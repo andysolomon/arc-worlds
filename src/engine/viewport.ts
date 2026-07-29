@@ -26,6 +26,9 @@ interface MoonInstance {
 /** Orbit-path opacity when shown. Hidden paths fade to 0 and back on hover. */
 const PATH_OPACITY = 0.55
 
+/** Starfield pool size; density 0.5 draws exactly the classic 1400. */
+const STAR_POOL = 2800
+
 interface SysNode {
   index: number
   plane: THREE.Group
@@ -186,6 +189,7 @@ export class PlanetViewport {
   private lastPublishedTriangles = -1
   private lastPublishedSunScale = Number.NaN
   private lastPublishedLines = -1
+  private lastPublishedPoints = -1
 
   /**
    * Fluid motion: one clock for every moving surface, driven from `this.t` so
@@ -368,11 +372,14 @@ export class PlanetViewport {
     )
     this.tiltG.add(this.atmo)
 
-    // Fixed starfield, far enough out that it never intersects anything.
+    // Fixed starfield, far enough out that it never intersects anything. The
+    // pool holds twice the classic count and density draws a prefix of it via
+    // setDrawRange — the same RNG sequence means the first 1400 stars are
+    // exactly the ones the app has always drawn.
     const sg = new THREE.BufferGeometry()
-    const sp = new Float32Array(1400 * 3)
+    const sp = new Float32Array(STAR_POOL * 3)
     const rs = mulberry32(42)
-    for (let k = 0; k < 1400; k++) {
+    for (let k = 0; k < STAR_POOL; k++) {
       const u = rs() * 2 - 1
       const ph = rs() * Math.PI * 2
       const rr = Math.sqrt(1 - u * u)
@@ -382,6 +389,7 @@ export class PlanetViewport {
       sp[k * 3 + 2] = rr * Math.sin(ph) * rad
     }
     sg.setAttribute('position', new THREE.BufferAttribute(sp, 3))
+    sg.setDrawRange(0, STAR_POOL / 2)
     this.stars = new THREE.Points(
       sg,
       new THREE.PointsMaterial({
@@ -389,6 +397,11 @@ export class PlanetViewport {
       }),
     )
     this.scene.add(this.stars)
+
+    // Exposure rides the tone-mapping stage. Linear at 1.0 is exactly the
+    // identity, so the neutral setting cannot change a single pixel.
+    renderer.toneMapping = THREE.LinearToneMapping
+    renderer.toneMappingExposure = 1
 
     this.scanRing = new THREE.Mesh(
       new THREE.TorusGeometry(1, 0.012, 8, 90),
@@ -1172,6 +1185,15 @@ export class PlanetViewport {
     this.showLabels = P.showLabels === true
     this.showMoons = P.showMoons !== false
 
+    // Universe appearance: cheap uniforms and a draw range, applied in both
+    // views. Every default is the exact look the app has always had.
+    this.stars.geometry.setDrawRange(0, Math.round(STAR_POOL * (P.starDensity ?? 0.5)))
+    const bright = P.starBright ?? 0.5
+    const smat = this.stars.material as THREE.PointsMaterial
+    smat.opacity = Math.min(1, 0.25 + bright * 1.2)
+    smat.size = 1.4 + bright * 0.6
+    this.renderer.toneMappingExposure = 0.7 + (P.exposure ?? 0.5) * 0.6
+
     if (P.mode === 'system') return this.regenSystem(P)
 
     if (this.mode !== 'single') {
@@ -1880,6 +1902,12 @@ export class PlanetViewport {
     if (lines !== this.lastPublishedLines) {
       this.lastPublishedLines = lines
       cv.dataset.lines = String(lines)
+    }
+    // The starfield draws as points; density changes show up here.
+    const points = this.renderer.info.render.points
+    if (points !== this.lastPublishedPoints) {
+      this.lastPublishedPoints = points
+      cv.dataset.points = String(points)
     }
     const sunScale = this.sunMesh?.scale.x ?? 0
     if (sunScale !== this.lastPublishedSunScale) {

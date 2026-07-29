@@ -17,6 +17,44 @@ const STORAGE_KEY = 'little-worlds.display'
  */
 export type TierChoice = 'auto' | 'flat' | 'detailed'
 
+/** Background nebula tints — a wash of colour behind the starfield. */
+export type NebulaKey = 'none' | 'ember' | 'teal' | 'violet' | 'rose'
+
+export const NEBULAE: Array<{ key: NebulaKey; label: string; dot: string | undefined }> = [
+  { key: 'none', label: 'None', dot: undefined },
+  // Labelled Dawn, not Ember: the Sculpt tab already has an Ember chip, and
+  // two buttons must never answer to the same name — the perf benchmark and
+  // the tests address chips by their accessible name alone.
+  { key: 'ember', label: 'Dawn', dot: '#ff8a5f' },
+  { key: 'teal', label: 'Teal', dot: '#5fcdd0' },
+  { key: 'violet', label: 'Violet', dot: '#8f5fbc' },
+  { key: 'rose', label: 'Rose', dot: '#ff8fc7' },
+]
+
+/**
+ * The tint is plain CSS behind the transparent canvas: two soft radial washes,
+ * costing the GPU scene nothing at all — the budgets never see it.
+ */
+const NEBULA_CSS: Record<NebulaKey, string> = {
+  none: '',
+  ember:
+    'radial-gradient(120% 90% at 72% 18%, rgba(255,138,95,0.14), transparent 62%),' +
+    'radial-gradient(100% 80% at 18% 78%, rgba(184,80,138,0.10), transparent 58%)',
+  teal:
+    'radial-gradient(120% 90% at 70% 22%, rgba(95,205,208,0.12), transparent 62%),' +
+    'radial-gradient(100% 80% at 20% 76%, rgba(63,134,201,0.10), transparent 58%)',
+  violet:
+    'radial-gradient(120% 90% at 68% 20%, rgba(143,95,188,0.16), transparent 62%),' +
+    'radial-gradient(100% 80% at 22% 78%, rgba(63,42,106,0.14), transparent 58%)',
+  rose:
+    'radial-gradient(120% 90% at 72% 20%, rgba(255,143,199,0.13), transparent 62%),' +
+    'radial-gradient(100% 80% at 18% 76%, rgba(199,90,158,0.09), transparent 58%)',
+}
+
+export function nebulaCss(n: NebulaKey): string {
+  return NEBULA_CSS[n] ?? ''
+}
+
 export interface DisplayOptions {
   /** Orbit paths, for planets and moons alike. */
   paths: boolean
@@ -26,12 +64,26 @@ export interface DisplayOptions {
   moons: boolean
   /** Rendering tier for the single-world view; a quality choice, not identity. */
   tier: TierChoice
+  /** Starfield density, 0..1; 0.5 is the count the app always drew. */
+  starDensity: number
+  /** Starfield brightness, 0..1; 0.5 is the look the app always drew. */
+  starBright: number
+  /** Background nebula tint, behind the canvas. */
+  nebula: NebulaKey
+  /** Overall exposure, 0..1; 0.5 is exactly neutral. */
+  exposure: number
 }
 
-/** Paths and moons match what the app always drew; labels are opt-in. */
+/** Every default reproduces what the app always drew; labels are opt-in. */
 export const DEFAULT_DISPLAY: DisplayOptions = {
   paths: true, labels: false, moons: true, tier: 'auto',
+  starDensity: 0.5, starBright: 0.5, nebula: 'none', exposure: 0.5,
 }
+
+const unit = (v: unknown, fallback: number) =>
+  typeof v === 'number' && !Number.isNaN(v) ? Math.min(1, Math.max(0, v)) : fallback
+
+const NEBULA_KEYS = new Set(NEBULAE.map((n) => n.key))
 
 /** The stored preferences, or the defaults when unset, corrupt, or blocked. */
 export function loadDisplay(): DisplayOptions {
@@ -45,6 +97,10 @@ export function loadDisplay(): DisplayOptions {
       labels: typeof p.labels === 'boolean' ? p.labels : DEFAULT_DISPLAY.labels,
       moons: typeof p.moons === 'boolean' ? p.moons : DEFAULT_DISPLAY.moons,
       tier: p.tier === 'flat' || p.tier === 'detailed' ? p.tier : DEFAULT_DISPLAY.tier,
+      starDensity: unit(p.starDensity, DEFAULT_DISPLAY.starDensity),
+      starBright: unit(p.starBright, DEFAULT_DISPLAY.starBright),
+      nebula: NEBULA_KEYS.has(p.nebula as NebulaKey) ? (p.nebula as NebulaKey) : DEFAULT_DISPLAY.nebula,
+      exposure: unit(p.exposure, DEFAULT_DISPLAY.exposure),
     }
   } catch {
     return { ...DEFAULT_DISPLAY }

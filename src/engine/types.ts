@@ -47,6 +47,10 @@ export interface PlanetParams {
    * sculpted rock renders detailed. A quality choice, never identity.
    */
   tier?: 'flat' | 'detailed'
+  /** Universe appearance, 0..1 each with 0.5 the look the app always drew. */
+  starDensity?: number
+  starBright?: number
+  exposure?: number
 }
 
 export type PresetKey =

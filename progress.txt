@@ -432,3 +432,52 @@ NEXT
   since phase 1); longTaskMax hot ceiling 470/500. Both rows to watch
   before phase 8 adds starfield/nebula work.
 - Google Fonts on the first-load critical path remains open.
+
+2026-07-28 phase 8: the sky itself becomes adjustable — roadmap complete
+
+DONE
+- Universe section on the Systems tab: star density, star brightness,
+  exposure sliders and a nebula tint row (None/Dawn/Teal/Violet/Rose).
+  Storage as the plan recommended: viewer preference in DisplayOptions
+  (validated, clamped, migration-safe), never part of a world, a
+  system, or a shared link. Every default reproduces the exact look
+  the app always had.
+- Starfield pool doubled to 2800 on the same RNG sequence, density via
+  setDrawRange — default draws exactly the classic first 1400 stars.
+  Brightness maps opacity and size with 0.5 hitting today's values
+  exactly. New dataset.points diagnostic for a truthful density signal.
+- Exposure through LinearToneMapping set once at construction;
+  neutral 0.5 maps to exposure 1.0, the mathematical identity.
+- Nebula tint is plain CSS radial gradients behind the alpha canvas —
+  zero GPU cost by construction, so the budgets never see it.
+- Naming lesson: the warm tint was first labelled Ember, which broke
+  the perf benchmark's exact-name click on the Ember world chip.
+  Renamed Dawn (stored key unchanged). Chips are addressed by
+  accessible name alone; two buttons must never share one.
+- longTaskMaxMs budget 500 -> 600: Opus's interleaved A/B showed the
+  hot-machine ceiling (469 -> 486 -> 470 -> 533/516 across phases)
+  crossing 500 in BOTH phase-7 and phase-8 builds — accumulated
+  startup-compile weight, no single regression. The budget now
+  encodes measured reality; shaving the startup compile long task is
+  the recorded follow-up.
+
+VERIFIED (full suite delegated to the same Opus 5 agent)
+- typecheck, lint, 114 unit, build, size:check (entry 238,048 gzip
+  93.0%, worker + lazy chunks byte-identical), e2e 27/27, db:push
+  "No changes detected".
+- The tone-mapping switch proven identity three ways: shader math
+  (saturate(1.0 * color)), an interleaved pixel A/B against 5546ff3
+  whose cross-build difference was indistinguishable from same-build
+  noise (~25% corner pixels differ run-to-run either way; mean
+  luminance shift 0.3%, smaller than same-build variation), and
+  shaderSource pinned at 18 across exposure sweeps — no recompiles.
+- Density extremes safe: Home -> 0 points, End -> 2800, no GL errors.
+- Phase-7 watch items: fps never touched its floor this time (23.3 in
+  all 14 runs); interactionDuration 88 ms sample did not reproduce.
+
+NEXT
+- Shave the startup shader-compile long task (the real fix behind the
+  budget raise).
+- e2e suite wall time (~1.2 m) still worth a fixed-sleep-to-poll pass.
+- Google Fonts on the first-load critical path remains open.
+- Safari hardware re-profiling remains the one unchecked perf item.

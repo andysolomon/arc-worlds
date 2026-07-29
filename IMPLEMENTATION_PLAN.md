@@ -150,13 +150,20 @@ Project Hail Mary (Erid at 40 Eridani, Adrian at Tau Ceti) and Avatar
 
 ### 8. Universe — appearance attributes
 
-- [ ] Adjustable universe theme: starfield density and brightness, background
-      nebula tint, overall exposure/glow.
-- [ ] Decide storage: global viewer preference (localStorage) versus part of
-      `SystemDef` (shareable, but then it enters the schema, sanitisation and
-      the immutable-cache story). Default recommendation: viewer preference
-      first; promote to saved-system state only if sharing a look turns out to
-      matter.
+- [x] Adjustable universe theme: starfield density (a doubled point pool
+      drawn by setDrawRange — the default draws exactly the classic 1400
+      stars), star brightness, overall exposure through LinearToneMapping
+      (neutral is exactly 1.0, the identity — proven by shader math and a
+      controlled A/B against the prior commit), and a nebula tint that is
+      plain CSS behind the transparent canvas, free to the GPU by
+      construction. A Universe section on the Systems tab; a new
+      dataset.points diagnostic keeps the density signal truthful.
+- [x] Storage decided as recommended: viewer preference (DisplayOptions,
+      localStorage, validated and migration-safe). Never part of a world, a
+      system, or a shared link; promotion to saved-system state remains open
+      if sharing a look ever matters. One naming lesson recorded: the warm
+      tint could not be called Ember — the Sculpt tab already answers to
+      that name, and the perf benchmark clicks chips by exact name.
 
 ## Performance plan (delivered 2026-07-28)
 

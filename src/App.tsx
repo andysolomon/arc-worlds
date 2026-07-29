@@ -6,7 +6,9 @@ import { Viewport } from './components/Viewport'
 import { WorldsPanel } from './components/WorldsPanel'
 import { PRESETS, typeOf, type AncientWorld } from './data/presets'
 import { MILKY_WAY } from './data/systems'
-import { loadDisplay, saveDisplay, type DisplayOptions, type TierChoice } from './lib/display'
+import {
+  loadDisplay, nebulaCss, saveDisplay, type DisplayOptions, type TierChoice,
+} from './lib/display'
 import { DEFAULT_PARAMS, sanitize, surprise } from './lib/params'
 import {
   addRolledWorld, addWorld, duplicateBody, sanitizeSystem,
@@ -87,6 +89,9 @@ export default function App() {
       showLabels: display.labels,
       showMoons: display.moons,
       tier: display.tier === 'auto' ? undefined : display.tier,
+      starDensity: display.starDensity,
+      starBright: display.starBright,
+      exposure: display.exposure,
     }),
     [params, view, sizeMode, timeScale, display],
   )
@@ -98,6 +103,13 @@ export default function App() {
   const setTier = useCallback((tier: TierChoice) => {
     setDisplay((d) => ({ ...d, tier }))
   }, [])
+
+  const setDisplayField = useCallback(
+    <K extends keyof DisplayOptions>(k: K, v: DisplayOptions[K]) => {
+      setDisplay((d) => ({ ...d, [k]: v }))
+    },
+    [],
+  )
 
   // Persisted outside the updater, which must stay pure under StrictMode.
   useEffect(() => saveDisplay(display), [display])
@@ -410,6 +422,7 @@ export default function App() {
             scanNonce={scanNonce}
             resetNonce={resetNonce}
             onPick={visitBody}
+            background={nebulaCss(display.nebula)}
           />
 
           <div className="view-title">
@@ -473,6 +486,7 @@ export default function App() {
                 sizeMode={sizeMode}
                 display={display}
                 onDisplay={toggleDisplay}
+                onDisplaySet={setDisplayField}
                 onView={setView}
                 onSizeMode={setSizeMode}
                 onVisit={visitBody}
