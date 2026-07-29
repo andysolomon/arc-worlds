@@ -239,22 +239,11 @@ Promoted set — the ones with real character: **the Moon**, **Io**, **Europa**,
       there, and a distance measured from a planet is re-derived rather than
       carried over when a world changes what it orbits.
 
-### 12. Venus field trip
+### Removed scope
 
-- [x] Add reactive, dependency-free in-app routing for `/`, `/w/:slug`,
-      `/s/:slug`, and the canonical `/venus` page, including accessible links
-      and browser Back/Forward restoration.
-- [x] Lazy-load one Venus-only guided scroll narrative while keeping `App` and
-      Three.js eager; add the `/venus` production rewrite without a catch-all.
-- [x] Reuse exactly one flat-tier Venus viewport with a static poster fallback,
-      accessible labelling, WebGL error reporting, and reduced-motion behavior.
-- [x] Teach six causal beats — veil, crush, heat trap, missing water, radar
-      world, and canonical scan — with accurate uncertainty and attributed
-      authoritative Magellan/USGS imagery.
-- [x] Offer the field trip only after visiting canonical Venus, without changing
-      the existing Visit interaction for any other world.
-- [x] Verify routing, registry data, scan facts, accessibility, WebGL lifecycle,
-      lazy chunk boundaries, bundle budgets, and same-machine Orbit performance.
+- The dedicated Venus field trip was removed on 2026-07-29 after product
+  review. Little Worlds retains the existing sculptor, world, and system
+  experiences without a `/venus` detail route or planet-page content pack.
 
 ## Performance plan (delivered 2026-07-28)
 

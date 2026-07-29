@@ -703,92 +703,6 @@ worth keeping: `git add -A` is not safe when the working tree holds work
 you did not put there — stage by path, or read the file list before
 committing.
 
-2026-07-29 Venus field trip
-
-CONTEXT
-- Venus is the first planet detail page: a single guided scroll lesson that
-  explains the causal chain from its massive CO2 atmosphere to pressure,
-  greenhouse heating, and severe water loss.
-- The existing share-link route is read only once at app boot. A `pushState`
-  to `/venus` would therefore change the address without changing the screen;
-  route state must become reactive before the page can be linked internally.
-- The clean current-engine entry starts at 241,914 B gzip against its 256,000 B budget, and
-  every lazy chunk is capped at 16,384 B gzip. `App` stays eager and only the
-  Venus lesson code and styles may load on `/venus`.
-
-PLANNED
-- Add a pure route parser, tiny History API navigation store, real internal
-  links, browser Back/Forward handling, and the explicit Vercel rewrite.
-- Add the lazy Venus registry/page, one reused flat-tier viewport, poster and
-  WebGL fallback, semantic beat navigation, and reduced-motion behavior.
-- Add six always-available sections using canonical `computeScan` output and
-  attributed, accurately described Magellan/USGS radar imagery.
-- Add route, registry, scan, browser navigation, accessibility, reduced-motion,
-  canvas, attribution, and production-rewrite tests.
-
-MEASURED (clean current-engine baseline, same machine and browser, three-run median)
-- Entry bundle: 241,914 B gzip; bake worker: 92,993 B raw.
-- First system frame 474.5 ms; interaction 0 ms; long-task max 424 ms;
-  long-task total 484 ms; main-thread task duration 1,706 ms.
-- Orbit shader kickoff 2.0 ms; 4 programs added; active renderer 23.3 fps;
-  paused frames/task time 0; no browser errors.
-
-DONE
-- Replaced boot-only share parsing with a pure route parser and a reactive
-  History API store. Real links intercept only ordinary same-origin clicks;
-  modifiers, new tabs, Back/Forward, and direct `/w`, `/s`, and `/venus`
-  loading retain browser behavior.
-- Kept `App`, Three.js, and the sculptor eager. The Venus story, content
-  metadata, imagery paths, diagrams, and CSS now exist only in the lazy
-  Venus assets; the entry contains only the small route loader.
-- Added canonical-only "Explore Venus" in system view and "Open the Venus
-  field trip" after Visit. Reseeding removes the offer because the result is
-  no longer the measured planet. Existing Visit buttons and behavior remain.
-- Built one guided scroll lesson with all six semantic sections always in the
-  DOM, a section-anchor navigator, one sticky/inline flat-tier viewport, slow
-  rotation, reduced-motion pause, accessible labelling, and a mission-image
-  fallback for WebGL creation or context loss.
-- Tightened the canonical scan itself: the present greenhouse state no longer
-  asserts a settled climate history, deuterium establishes substantial water
-  loss rather than a proven ocean, and volcanic-flow coverage is at least 85%.
-- Added an authoritative public-domain USGS/PDS Magellan C3-MDIR
-  equirectangular mosaic. The page accurately labels it synthetic colour and
-  radar brightness, distinct from visible colour and topography. Added the
-  NASA/JPL-Caltech Mariner 10 orange/UV cloud composite for the veil.
-- Stored source, credit, licence, transformation, caption, alt text, and
-  responsive-source metadata beside both assets. Derived 640/1280 radar and
-  640/1080 cloud AVIF/WebP variants; below-fold figures lazy-load.
-- Added the explicit `/venus` Vercel rewrite and no catch-all or router
-  dependency.
-
-VERIFIED
-- `bun run typecheck`
-- `bun run lint`
-- `bun run test`: 138 passed
-- `bun run build`
-- `bun run size:check`
-- `bun run test:e2e`: 34 passed, including direct route, semantic content,
-  geometry, canonical-only navigation, Back/Forward, share routes,
-  reduced-motion idle, poster fallback, scan facts, and attribution.
-- Build inspection: entry excludes Venus prose and styles; Venus JavaScript
-  is 4,855 B gzip and its separate CSS is 2,290 B gzip, both lazy.
-- One canvas is mounted on `/venus`; route travel leaves one replacement
-  canvas, demonstrating teardown rather than a retained hidden context.
-- Visual inspection at 1440×1000 and 390×844 confirmed desktop sticky and
-  mobile inline layouts without a second canvas or compositor filters.
-
-MEASURED (same-machine A/B against a clean worktree at c97e53f)
-- Entry: 241,914 -> 242,964 B gzip (+0.43%); every JavaScript/worker budget
-  passes.
-- First system frame: 474.5 -> 439.5 ms (-7.4%).
-- Long-task max: 424 -> 408 ms (-3.8%); total: 484 -> 408 ms (-15.7%).
-- Main-thread task duration: 1,706 -> 1,597 ms (-6.4%).
-- Shader kickoff stayed 2.0 ms, programs added stayed 4, active rendering
-  stayed 23.3 fps, paused work stayed zero, and neither sample logged errors.
-- Interaction measured 0 -> 32 ms; the zero baseline cannot yield a relative
-  percentage, while the candidate remains far below the 200 ms absolute
-  budget. The checked relative-regression table reports no regressions.
-
 2026-07-29 the Safari re-profile, and what it overturned
 
 DONE
@@ -834,3 +748,26 @@ NEXT
   its engine: safaridriver needs an administrator and cannot run
   headless. WebKit and Chromium-on-Metal agree within 7 ms, so a
   disagreement would be a surprise.
+
+2026-07-29 Venus field trip rollback
+
+CONTEXT
+- Product review concluded that the dedicated Venus field trip should not
+  remain in Little Worlds.
+
+DONE
+- Reverted merge commit 86e19ce so the `/venus` route, lesson UI, imagery,
+  navigation store, canonical-only affordances, viewport wrapper additions,
+  feature-specific science copy, tests, and Vercel rewrite are removed.
+- Preserved the later Safari performance profiling work merged after the
+  Venus feature.
+
+VERIFIED
+- `bun run typecheck`
+- `bun run lint`
+- `bun run test`: 131 passed
+- `bun run build`
+- `bun run size:check`: entry returned to 241,914 B gzip and every budget
+  passed.
+- `bun run test:e2e`: 29 passed, with the Venus-only cases removed and the
+  existing sculptor, world, system, scan, sharing, and display behavior intact.
