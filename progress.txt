@@ -788,3 +788,49 @@ MEASURED (same-machine A/B against a clean worktree at c97e53f)
 - Interaction measured 0 -> 32 ms; the zero baseline cannot yield a relative
   percentage, while the candidate remains far below the 200 ms absolute
   budget. The checked relative-regression table reports no regressions.
+
+2026-07-29 the Safari re-profile, and what it overturned
+
+DONE
+- bun run perf:engines: a portable profiler over WebKit and Chromium.
+  It measures the largest gap between animation frames instead of long
+  tasks, because WebKit has never implemented the Long Tasks API — its
+  supportedEntryTypes are event, first-input, largest-contentful-paint,
+  mark, measure, navigation, paint, resource, and nothing more. Every
+  long-task number this project has recorded describes Chromium alone.
+
+MEASURED (M4 Pro, three runs per engine, medians, same production build)
+- WebKit / Apple GPU            stall  31 ms, 0 frames over 50 ms
+- Chromium headed / ANGLE Metal stall  38 ms, 0 frames over 50 ms
+- Chromium headless / SwiftShader stall 353 ms, 3 frames over 50 ms
+- Identical 55,920 triangles in all three, so the scene is the same and
+  only presentation differs.
+
+THE FINDING
+- On the hardware this app runs on, the long task does not exist. A
+  31-38 ms gap IS the passive cadence: 30 fps is a frame every 33 ms.
+- The 353 ms stall belongs to SwiftShader, the software rasteriser
+  headless Chromium falls back to with no GPU — which is the
+  environment every benchmark here has ever run in, local and CI.
+- This reverses the standing hypothesis. The attribution work reasoned
+  that a long task starting 0.2 ms after first render implied driver
+  shader compilation on Metal. The opposite is true: real drivers are
+  fast enough to be invisible and software is the slow one. Shader
+  readiness is 13-17 ms everywhere, SwiftShader included, so it was
+  never the cost either.
+- Cold-start ruled out: against a fresh profile with an empty GPU
+  pipeline cache, Metal gave 38 ms and zero frames over 50 ms —
+  indistinguishable from warm. There is no first-visit penalty.
+- The original success criterion, no main-thread task over 50 ms, is
+  met on real hardware in both engines by a wide margin, and probably
+  has been for some time. The tooling could not see it.
+
+NEXT
+- longTaskMaxMs/longTaskTotalMs stay as relative regression detectors
+  on a consistent runner, which is what the CI profile and noise floors
+  already make them. They are not user-facing numbers and the 600 ms
+  ceiling describes SwiftShader's first draw.
+- The one measurement still outstanding is Safari itself rather than
+  its engine: safaridriver needs an administrator and cannot run
+  headless. WebKit and Chromium-on-Metal agree within 7 ms, so a
+  disagreement would be a surprise.

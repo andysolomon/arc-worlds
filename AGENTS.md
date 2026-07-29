@@ -54,6 +54,11 @@ While implementing:
   `.artifacts/performance/results.json`.
 - `bun run perf:budget` checks the recorded median.
 - `bun run perf:ci` builds and runs all absolute bundle/browser budgets.
+- `bun run perf:engines` profiles the Orbit transition in WebKit and Chromium
+  against a running preview, on real GPUs. Use it whenever a change could
+  affect what a visitor feels: the long-task budgets are measured under
+  headless Chromium's software rasteriser and are roughly ten times what real
+  hardware does, and Safari cannot report long tasks at all.
 
 Two budget profiles exist, selected automatically by the `CI` environment
 variable (`--profile local|ci` overrides). The `browser` block is calibrated on

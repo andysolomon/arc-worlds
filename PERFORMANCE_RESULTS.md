@@ -128,3 +128,70 @@ The benchmark artifact now includes those phase start times and durations so a
 Safari run on the original Metal/ANGLE path can test the driver-compilation
 hypothesis directly. The new absolute guards allow at most four
 transition-added programs and at most 50 ms of synchronous shader kickoff.
+
+## Safari re-profile on the target hardware
+
+Measured 2026-07-29 on the Apple Silicon machine the original Safari trace came
+from (M4 Pro), with `bun run perf:engines`. Three runs per engine, medians. The
+same production build and the same Orbit transition in every case.
+
+Long tasks could not be used. **WebKit has never implemented the Long Tasks
+API** — `PerformanceObserver.supportedEntryTypes` offers `event`, `first-input`,
+`largest-contentful-paint`, `mark`, `measure`, `navigation`, `paint` and
+`resource`, and nothing else — so every long-task number this project has ever
+recorded describes Chromium and only Chromium. The portable substitute is the
+largest gap between animation frames: a task that blocks the main thread also
+blocks `requestAnimationFrame`, whoever is drawing.
+
+| Engine | Renderer | Largest stall | Frames > 50 ms | Shader-ready | First render |
+| --- | --- | ---: | ---: | ---: | ---: |
+| WebKit | Apple GPU | **31 ms** | 0 | 13 ms | 28 ms |
+| Chromium, headed | ANGLE Metal, Apple M4 Pro | **38 ms** | 0 | 17.1 ms | 36.9 ms |
+| Chromium, headless | SwiftShader (software) | **353 ms** | 3 | 15.7 ms | 38.4 ms |
+
+All three drew an identical 55,920 triangles, so the scene being built is the
+same in every column; only presentation differs.
+
+### The finding
+
+**On the hardware this app actually runs on, the long task does not exist.**
+The largest gap between frames is 31–38 ms, which is the passive render cadence
+the app deliberately targets — 30 fps is a frame every 33 ms. Nothing stalls, on
+either Metal path, and no frame anywhere exceeds 50 ms.
+
+The 353 ms stall is a property of **SwiftShader**, the software rasteriser that
+headless Chromium falls back to when there is no GPU. That is the environment
+every benchmark in this repository has run in, local and CI alike.
+
+This overturns the hypothesis the earlier attribution pointed at. The reasoning
+had been that a long task starting within 0.2 ms of first render, with
+`renderer.render` measuring 26–41 ms inside a 256–437 ms browser task, implied
+driver-side shader compilation on the Metal path. It is the reverse: the real
+drivers compile fast enough to be invisible, and the software rasteriser is the
+slow one. Shader readiness is 13–17 ms everywhere, including SwiftShader, so it
+was never the cost either.
+
+A cold-start check ruled out the remaining alternative. Run against a freshly
+created browser profile with an empty GPU pipeline cache, Metal produced a 38 ms
+stall and zero frames over 50 ms — indistinguishable from the warm case, so
+there is no first-visit compilation penalty to find.
+
+### What this means for the budgets
+
+`longTaskMaxMs` and `longTaskTotalMs` measure a software rasteriser. They remain
+useful as *relative* regression detectors, because every run compares like with
+like on the same runner, and the CI profile plus per-metric noise floors already
+treat them that way. They should not be read as anything a visitor experiences,
+and the 600 ms ceiling in particular describes SwiftShader's first draw rather
+than a user-facing budget.
+
+The performance plan's original success criterion — "no procedural-bake task
+over 50 ms on the browser main thread" — is met on real hardware, in both
+engines, by a wide margin. It has probably been met for some time; the tooling
+simply could not see it.
+
+Remaining gap: this is WebKit driving Apple's GPU, not Safari itself. Safari
+proper needs `safaridriver --enable`, which requires an administrator, and it
+cannot run headless. Given WebKit and Chromium's Metal backend agree to within
+7 ms, a Safari run is unlikely to disagree — but it is the one measurement still
+outstanding.

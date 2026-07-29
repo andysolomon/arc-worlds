@@ -19,7 +19,8 @@
     "perf:ci": "bun run build && bun run size:check && bun run perf:benchmark && bun run perf:budget",
     "db:push": "dotenv -e .env.local -- drizzle-kit push",
     "db:generate": "drizzle-kit generate",
-    "db:studio": "dotenv -e .env.local -- drizzle-kit studio"
+    "db:studio": "dotenv -e .env.local -- drizzle-kit studio",
+    "perf:engines": "bun scripts/profile-engines.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
