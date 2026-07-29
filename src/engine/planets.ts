@@ -126,6 +126,30 @@ export function realKeyFor(orbitName: string): string {
  * Identity comes from the photographic map when there is one, and from the
  * canonical seed when there is not; changing the seed detaches either kind.
  */
+/**
+ * The planet a world is a moon of, when it is one.
+ *
+ * The measured moon tables already say who orbits whom; this reads them the
+ * other way round. Distances come back in the moon's own radii rather than its
+ * planet's, which is the frame the single-world view draws in — the moon is
+ * the unit sphere there, and everything else is measured against it.
+ */
+export function parentOf(
+  p: Pick<PlanetParams, 'preset' | 'seed'>,
+): { key: string; radius: number; distance: number; period: number; texture?: string | null } | null {
+  for (const key of Object.keys(REAL)) {
+    for (const m of REAL[key].moons) {
+      if (m.world?.preset !== p.preset || m.world.seed !== p.seed) continue
+      // m.r and m.a are both in planet radii, so dividing by m.r converts
+      // them into the moon's radii: the planet is 1/m.r across, and sits
+      // m.a/m.r away.
+      if (!(m.r > 0)) return null
+      return { key, radius: 1 / m.r, distance: m.a / m.r, period: m.P }
+    }
+  }
+  return null
+}
+
 export function realFor(
   p: Pick<PlanetParams, 'preset' | 'texture' | 'seed'>,
 ): RealBody | null {

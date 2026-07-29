@@ -771,3 +771,43 @@ VERIFIED
   passed.
 - `bun run test:e2e`: 29 passed, with the Venus-only cases removed and the
   existing sculptor, world, system, scan, sharing, and display behavior intact.
+
+2026-07-29 a moon sees the planet it orbits
+
+DONE
+- Visiting a moon now shows its planet, revolving around it. The camera
+  has to stay on the world being sculpted, and from the moon's own frame
+  "the moon orbits the planet" and "the planet wheels around the moon"
+  are the same motion — so the relationship draws truthfully without the
+  subject moving at all. parentOf() in engine/planets.ts reads the
+  measured moon tables backwards and converts into the moon's own radii,
+  which is the frame this view works in.
+- Locked to the moon's own rotation by sharing `spin`, so a tidally
+  locked moon keeps one face toward its planet exactly rather than
+  approximately, and the time controls speed rotation and orbit together.
+- Angular sizes are measured, not chosen: Jupiter 11.9 degrees from
+  Europa, 18.8 from Io, Saturn 27.5 from Enceladus, Earth 1.9 from the
+  Moon. Unit-tested against those figures.
+- Extended to invented satellites at Andrew's direction, reading a
+  system's own parent links: Pandora sees Polyphemus (32 degrees, which
+  suits the fiction), and so does any moon somebody builds themselves.
+
+WHAT THE GEOMETRY FORCED
+- True distances (221 to 945 moon radii) put the planet off screen for
+  all but a sliver of each orbit: with the moon filling a 45 degree view
+  there is about a degree of room beside it. Distance is compressed the
+  way the orbit view already compresses moons, keeping radius-over-
+  distance exact so the angle from the moon stays true.
+- A satellite's view opens to 8.5 radii rather than 3.15, because framed
+  tight there is nowhere for the planet to be.
+- Accepted cost, chosen deliberately: Saturn is genuinely enormous from
+  Enceladus, so for part of each orbit it passes between the eye and the
+  moon and hides it. Alternatives were to keep the planet always beyond
+  the moon (never eclipsing, but visible only a quarter of the time) or
+  to pull back into a wide diorama (unmistakable orbit, subject a third
+  the size). Andrew chose the current framing.
+
+NEXT
+- An invented parent draws as a flat palette disc, since only the
+  measured planets have photographic maps. Polyphemus would read better
+  with its bands baked, which is the same worker the orbit view uses.
