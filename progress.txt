@@ -629,7 +629,36 @@ VERIFIED
   budgets, perf median green.
 
 NEXT
-- The e2e suite is 29 specs and contention flakes are getting more
-  frequent locally (two per full run, always clean in isolation). CI is
-  serial with retries so it is not a merge risk, but the fixed-sleep
-  to poll pass is now overdue.
+- (done, same day — see below)
+
+2026-07-29 the e2e suite stops flaking
+
+DONE
+- Fourteen fixed sleeps replaced by polls on the signal each one was
+  really waiting for: geometry on the GPU (awaitGeometry), orbit-path
+  line counts, texture requests, settled triangle counts. Only three
+  sleeps remain and all three are correct — two measure that frames do
+  NOT advance while paused, one is a hover settle.
+- A real bug this surfaced, and the most useful thing in the pass: the
+  star-size spec began failing 4 runs in 6 once I polled it. Not
+  contention — my poll returned at the FIRST change of the published
+  star radius, and choosing a star kind publishes it twice, because
+  re-timing the orbits blanks the size mode and resizes the star again.
+  The old 1200 ms sleep had been hiding a genuine two-step update.
+  Fixed with settledValue(), which waits for three equal samples;
+  settledTriangles is now built on it too.
+- Local worker count halved (capped at 4). Every spec drives a live
+  WebGL context, so one worker per core oversubscribes the GPU rather
+  than the CPU — at six workers `page.goto` itself timed out, which is
+  starvation, not test design. Per-test timeout raised to 60 s for a
+  cold context on a loaded machine. CI stays serial with retries.
+
+VERIFIED
+- 8 consecutive full-suite runs, 29/29 every time, ~1.1 m each. Before
+  the pass: 5 failures across 8 runs, a different spec almost every
+  time.
+- typecheck, lint, 130 unit, bundle budgets green.
+
+NEXT
+- Startup shader-compile shave is the one long-standing perf item left,
+  now that the attribution instrumentation exists to aim it.
