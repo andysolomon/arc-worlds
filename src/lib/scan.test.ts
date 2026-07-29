@@ -30,16 +30,6 @@ describe('measured profiles', () => {
     const reseeded = await computeScan({ ...pluto, seed: pluto.seed + 1 })
     expect(reseeded.atmoTitle).not.toBe('Thin nitrogen, seasonally alive')
   })
-
-  it('generates the canonical Venus field-trip facts from the measured profile', async () => {
-    const venus = await computeScan(solarParams('venus'))
-    expect(venus.pressure).toBe('92 bar')
-    expect(venus.atmoSummary).toContain('464 °C')
-    expect(venus.gases.find((gas) => gas.f === 'CO₂')?.pct).toBe('96.5%')
-    expect(venus.water.detail).toMatch(/substantial water loss/)
-    expect(venus.water.detail).toMatch(/whether it once had a surface ocean/)
-    expect(venus.compounds.some((compound) => compound.note.includes('at least 85%'))).toBe(true)
-  })
 })
 
 describe('ancient reconstructions', () => {

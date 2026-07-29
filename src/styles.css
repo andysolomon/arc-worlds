@@ -93,18 +93,6 @@ a:hover { color: #d95f3f; }
   border-radius: 999px; padding: 9px 16px; cursor: pointer;
 }
 .btn-ghost:hover { background: rgba(48, 34, 60, 0.86); }
-.btn-field-trip {
-  color: #2a1206;
-  background: linear-gradient(180deg, #ffd39a, #ff9c62);
-  border: 0;
-  border-radius: 999px;
-  padding: 9px 16px;
-  font-size: 13px;
-  font-weight: 800;
-  text-decoration: none;
-  box-shadow: 0 4px 16px rgba(255, 140, 90, 0.22);
-}
-.btn-field-trip:hover { color: #2a1206; filter: brightness(1.06); }
 .hint { font-size: 12px; color: #9a89a6; }
 
 /* --- panel -------------------------------------------------------------- */
