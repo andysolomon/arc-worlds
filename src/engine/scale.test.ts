@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { ORBITS } from './planets'
+import { ORBITS, parentOf } from './planets'
 import { TRAPPIST } from '../data/systems'
+import { MOONS } from '../data/presets'
 import {
   kepler, moonDist, moonPeriodSec, moonRad, sameDist, satMult, satRadii,
   satRank, sizeMap, systemStretch, tempoFor, visDist,
@@ -183,5 +184,38 @@ describe('satellite orbits', () => {
     // The Moon is a shade over sixty Earth radii away, which is the number
     // the measured moon table has always carried.
     expect(satRadii(0.002569, 1)).toBeCloseTo(60.3, 1)
+  })
+})
+
+describe('a moon knows its planet', () => {
+  it('finds a parent for every moon that is a world, and nothing else', () => {
+    for (const m of MOONS) {
+      const parent = parentOf({ preset: m.key, seed: m.params.seed! })
+      expect(parent, m.name).not.toBeNull()
+      expect(parent!.distance, m.name).toBeGreaterThan(parent!.radius)
+    }
+    // A planet is not a moon, and neither is a world nobody has placed.
+    expect(parentOf({ preset: 'jupiter', seed: 55 })).toBeNull()
+    expect(parentOf({ preset: 'temperate', seed: 4242 })).toBeNull()
+    // Reseeding detaches it here too, exactly as it does everywhere else.
+    expect(parentOf({ preset: 'europa', seed: 1 })).toBeNull()
+  })
+
+  it('reports each planet at the size it really looks from that moon', () => {
+    // Degrees across, from the measured radius and distance. These are the
+    // numbers that make the view worth having: Jupiter dominates Io's sky,
+    // Saturn more than half fills Enceladus's, and Earth from our own Moon is
+    // a modest disc — about four times the Moon as we see it, and no more.
+    const apparent = (preset: string, seed: number) => {
+      const p = parentOf({ preset: preset as never, seed })!
+      return (2 * Math.atan(p.radius / p.distance) * 180) / Math.PI
+    }
+    expect(apparent('luna', 1969)).toBeCloseTo(1.9, 1)
+    expect(apparent('io', 1610)).toBeCloseTo(18.8, 0)
+    expect(apparent('europa', 1611)).toBeCloseTo(11.9, 0)
+    expect(apparent('enceladus', 1789)).toBeCloseTo(27.5, 0)
+    // And the ordering is the physical one: closer or bigger looks larger.
+    expect(apparent('io', 1610)).toBeGreaterThan(apparent('europa', 1611))
+    expect(apparent('europa', 1611)).toBeGreaterThan(apparent('ganymede', 1612))
   })
 })

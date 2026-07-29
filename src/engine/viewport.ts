@@ -3,7 +3,7 @@ import type { BakeWorkerRequest, BakeWorkerResponse } from './bake.worker'
 import { customRing, moonGeo, ringGeo, ringMaterial, toneTex } from './materials'
 import { mulberry32, type Noise3 } from './noise'
 import { makeSurface, noiseFor } from './surface'
-import { REAL, realFor } from './planets'
+import { parentOf, REAL, realFor } from './planets'
 import { isGas, PALETTES } from './palettes'
 import {
   D2R, DAY_SEC, kepler, moonDist, moonPeriodSec, moonRad, sameDist,
@@ -32,6 +32,34 @@ const PATH_OPACITY = 0.55
 
 /** The most of the frame's height a star may fill before the camera backs off. */
 const STAR_FRAME_SHARE = 0.4
+
+/**
+ * How far away a moon's planet is drawn, in the moon's own radii.
+ *
+ * True distances run from 221 radii (Earth from the Moon) to 945 (Saturn from
+ * Enceladus). At those distances the planet is the right angular size but
+ * almost never on screen: with the moon filling a 45° view there is barely a
+ * degree of room beside it, so the planet is only visible while it is directly
+ * behind — where the moon hides it. Compressing the distance is the same
+ * compromise the orbit view makes for moons, and the ratio of radius to
+ * distance is kept exactly, so each planet still looms as large relative to
+ * its distance as it truly does.
+ */
+const COMPANION_DIST = 4.6
+
+/** How far back to sit when a moon has a planet to show beside it. */
+const COMPANION_CAM = 8.5
+
+
+/** The photographic map for a parent, where the file name differs from the key. */
+const PARENT_MAP: Record<string, string> = {
+  temperate: 'images2k/earth.jpg',
+  jupiter: 'images2k/jupiter.jpg',
+  saturn: 'images2k/saturn.jpg',
+  neptune: 'images2k/neptune.jpg',
+  uranus: 'images2k/uranus.jpg',
+  mars: 'images2k/mars.jpg',
+}
 
 /** Starfield pool size; density 0.5 draws exactly the classic 1400. */
 const STAR_POOL = 2800
@@ -154,6 +182,10 @@ export class PlanetViewport {
   private sunDir = new THREE.Vector3(5, 3, 4).normalize()
 
   private planet: THREE.Mesh
+  /** The planet a moon orbits, shown in the moon's own view. */
+  private companion: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>
+  private companionKey = ''
+  private companionDist = 0
   private water: THREE.Mesh
   private clouds: THREE.Mesh
   private atmo: THREE.Mesh
@@ -482,6 +514,15 @@ export class PlanetViewport {
 
     this.moonRoot = new THREE.Group()
     this.tiltG.add(this.moonRoot)
+
+    // The planet a moon belongs to. Outside tiltG, because it must not inherit
+    // the moon's axial tilt or its spin — it keeps its own place in the sky.
+    this.companion = new THREE.Mesh(
+      new THREE.SphereGeometry(1, 64, 48),
+      new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0 }),
+    )
+    this.companion.visible = false
+    this.group.add(this.companion)
 
     this.loop = this.loop.bind(this)
     this.bindPointer(cv)
@@ -1429,6 +1470,17 @@ export class PlanetViewport {
     // Toggling paths must not rebuild moons, so visibility is applied here too.
     for (const mo of this.moons) mo.line.visible = this.showPaths
 
+    this.syncCompanion(P)
+
+    // A moon with a planet beside it needs room for both. Framed tight, the
+    // planet sits outside the view for all but a sliver of each orbit.
+    if (this.companion.visible) {
+      this.fitZ = COMPANION_CAM
+      if (!this.dragging && Math.abs(this.camZ - COMPANION_CAM) > 0.05 && this.camZ < COMPANION_CAM) {
+        this.camZ = COMPANION_CAM
+      }
+    }
+
     // The tier decides the pipeline, never the world: a photograph on the
     // flat tier renders as itself; a photographed planet forced detailed
     // renders the procedural interpretation its own params already encode;
@@ -1581,6 +1633,80 @@ export class PlanetViewport {
     if (showAtmo && !this.atmo.visible) this.compileNeeded = true
     this.atmo.visible = showAtmo
     this.stars.visible = P.stars !== false
+  }
+
+  /**
+   * Show the planet a moon belongs to, in the moon's own view.
+   *
+   * A moon on its own says nothing about being a moon. The camera has to stay
+   * on the world being sculpted, and from the moon's own frame of reference
+   * "the moon goes round the planet" and "the planet wheels around the moon"
+   * are the same motion — so the relationship can be drawn truthfully without
+   * moving the subject at all.
+   *
+   * Everything here is measured: the distance and both radii come from the
+   * same moon tables the orbit view uses, so each planet appears at its real
+   * angular size. Jupiter really is 12° wide from Europa, and Saturn 28° from
+   * Enceladus, against the 0.5° our own Moon manages from here.
+   */
+  private syncCompanion(P: PlanetParams) {
+    const parent = P.mode === 'system' ? null : (parentOf(P) ?? this.systemParentOf(P))
+    this.companion.visible = !!parent
+    if (!parent) {
+      this.companionKey = ''
+      return
+    }
+
+    // The ratio is what carries the truth: Jupiter fills 12° of Europa's sky
+    // and Saturn 28° of Enceladus's, and keeping radius-over-distance exact
+    // preserves that however far away it is drawn.
+    this.companionDist = COMPANION_DIST
+    this.companion.scale.setScalar(COMPANION_DIST * (parent.radius / parent.distance))
+
+    if (parent.key === this.companionKey) return
+    this.companionKey = parent.key
+
+    const url = parent.texture ?? PARENT_MAP[parent.key]
+    const mat = this.companion.material
+    if (url) {
+      mat.map = this.loadTex(url)
+      mat.color.set(0xffffff)
+    } else {
+      const pal = PALETTES[parent.key as PlanetParams['preset']] ?? PALETTES.temperate
+      mat.map = null
+      mat.color.set(isGas(pal) ? pal.bands[(pal.bands.length / 2) | 0][1] : pal.mid)
+    }
+    mat.needsUpdate = true
+    this.compileNeeded = true
+  }
+
+  /**
+   * The same relationship for a satellite of the system on screen rather than
+   * of the measured tables — Pandora around Polyphemus, or any moon somebody
+   * built themselves. The elements live on the body instead of in
+   * `engine/planets.ts`, and are converted into the moon's own radii here,
+   * which is the frame this view draws in.
+   */
+  private systemParentOf(P: PlanetParams): {
+    key: string
+    radius: number
+    distance: number
+    texture?: string | null
+  } | null {
+    const def = this.sysDef
+    if (!def) return null
+    const me = def.bodies.find(
+      (b) => b.orbits && b.params.preset === P.preset && b.params.seed === P.seed,
+    )
+    if (!me || !(me.radius > 0)) return null
+    const host = def.bodies.find((b) => b.name === me.orbits)
+    if (!host) return null
+    return {
+      key: host.params.preset,
+      radius: host.radius / me.radius,
+      distance: satRadii(me.a, me.radius),
+      texture: host.texture ?? host.params.texture ?? null,
+    }
   }
 
   /** Relief amplitude for a photographed world: subtle, and honestly derived. */
@@ -1849,6 +1975,7 @@ export class PlanetViewport {
     this.texMesh.visible = false
     this.gasMesh.visible = false
     this.moonRoot.visible = false
+    this.companion.visible = false
 
     const sm = P.sizeMode === 'scale' ? 'scale' : 'same'
     if (sm !== this.sizeMode) {
@@ -2096,6 +2223,14 @@ export class PlanetViewport {
       this.spin += sdt * this.spinRate
     }
     this.spinG.rotation.y = this.spin
+    // A real moon keeps one face toward its planet, so the planet's place in
+    // the sky follows the moon's own rotation exactly. Sharing `spin` is what
+    // makes that lock true rather than approximated.
+    if (this.companion.visible) {
+      this.companion.position.set(
+        Math.cos(this.spin) * this.companionDist, 0, Math.sin(this.spin) * this.companionDist,
+      )
+    }
     this.clouds.rotation.y = this.real ? this.spin * 0.06 : this.spin * 0.25
     this.gasMesh.material.uniforms.uTime.value = this.t
     // Fluid motion rides the same clock as rotation: paused, hidden and
