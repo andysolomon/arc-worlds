@@ -78,9 +78,6 @@ export type StoryWorld = AncientWorld
  * reseed and the world detaches into an ordinary member of its family.
  */
 export const FICTION: StoryWorld[] = [
-    {key:'tatooine',name:'Tatooine',label:'Desert',dot:'#e0c088',sub:'a hard desert farmed for its dew · from Star Wars',params:{seed:1977,mountains:.55,water:.02,roughness:.65,clouds:.08,glow:.35,ice:0,rings:false,moons:0,atmoColor:null,texture:null,cloudTexture:null}},
-    {key:'hoth',name:'Hoth',label:'Ice',dot:'#dfe8f2',sub:'snow, wind and very little else · from Star Wars',params:{seed:1980,mountains:.5,water:.3,roughness:.45,clouds:.5,glow:.5,ice:.96,rings:false,moons:0,atmoColor:null,texture:null,cloudTexture:null}},
-    {key:'mustafar',name:'Mustafar',label:'Ember',dot:'#ff5a2a',sub:'a mining world with rivers of fire · from Star Wars',params:{seed:2005,mountains:.8,water:.38,roughness:.75,clouds:.2,glow:.95,ice:0,rings:false,moons:0,atmoColor:null,texture:null,cloudTexture:null}},
     {key:'erid',name:'Erid',label:'Veiled',dot:'#c9b89a',sub:'lightless under twenty-nine atmospheres · from Project Hail Mary',params:{seed:2021,mountains:.45,water:0,roughness:.55,clouds:.97,glow:.25,ice:0,rings:false,moons:0,atmoColor:null,texture:null,cloudTexture:null}},
     {key:'adrian',name:'Adrian',label:'Hothouse',dot:'#d89a5f',sub:'the Astrophage breeding ground · from Project Hail Mary',params:{seed:1021,mountains:.4,water:0,roughness:.5,clouds:.85,glow:.5,ice:0,rings:false,moons:0,atmoColor:null,texture:null,cloudTexture:null}},
     {key:'pandora',name:'Pandora',label:'Jungle moon',dot:'#4a9e5f',sub:'a lush moon that glows after dark · from Avatar',params:{seed:2009,mountains:.6,water:.55,roughness:.55,clouds:.5,glow:.7,ice:.08,rings:false,moons:0,atmoColor:null,texture:null,cloudTexture:null}},

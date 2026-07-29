@@ -32,6 +32,11 @@ While implementing:
 - Keep procedural pixel/noise loops in module workers and transfer large buffers.
 - Keep interaction paths free of shader compilation and avoid setting
   `material.needsUpdate` for value-only changes.
+- When shader warmup is unavoidable, compile the smallest active `Object3D`
+  subtree. Three.js `compileAsync` traverses hidden descendants, so passing the
+  whole scene can compile unrelated material variants.
+- Build opt-in display layers such as canvas labels lazily. Hidden-by-default
+  resources must not be rasterized, uploaded, or included in transition warmup.
 - Reuse and explicitly dispose Three.js geometry, materials, textures, workers,
   observers, and event listeners.
 - Preserve narrow invalidation keys: presentation-only edits must not trigger
@@ -71,6 +76,12 @@ same machine and browser. A regression greater than 10% requires a fix or an
 explicit, documented product tradeoff. Do not loosen a budget merely to make CI
 pass; update it only with measured evidence and record the decision in
 `PERFORMANCE_RESULTS.md`.
+
+The browser benchmark window starts on the Orbit view button's `pointerdown`;
+its long-task metrics describe the Orbit transition, not page startup. The
+result also reports `arc:orbit:*` phase measures and the number of shader
+programs introduced by that transition. Keep `orbitShaderProgramsAdded` at or
+below four and shader kickoff below one 50 ms long-task boundary.
 
 The Performance GitHub workflow enforces absolute budgets on every pull request,
 push to `main`, nightly schedule, and manual run. Pull requests also benchmark

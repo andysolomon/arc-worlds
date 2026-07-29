@@ -92,3 +92,39 @@ requests additionally benchmark the base revision on the same hosted runner and
 fail when a comparable metric regresses by more than 10%. Hosted-runner results
 remain an engineering guardrail rather than a substitute for Safari profiling
 on the target hardware.
+
+## Orbit transition shader attribution and reduction
+
+Measured 2026-07-29 on the same Apple Silicon machine and headless Chromium
+configuration as the checked-in benchmark. The observation window begins on
+Orbit view `pointerdown`; these are transition metrics, not page-startup
+metrics.
+
+| Metric | Instrumented before | Scoped/lazy after | Change |
+| --- | ---: | ---: | ---: |
+| Shader programs introduced | 12 | 4 | 67% fewer |
+| `buildBodies` | 2.4 ms | 0.8 ms | 67% lower |
+| Hidden-label creation | 1.4 ms | 0 ms | eliminated |
+| Synchronous shader kickoff | 3.7 ms | 1.7 ms | 54% lower |
+| Shader-ready interval | 18.5 ms | 13.5 ms | 27% lower |
+| Longest task, initial paired sequence | 207 ms | 186 ms | 10% lower |
+
+The program reduction is structural: Three.js `compileAsync` calls `compile`,
+which traverses hidden descendants when given the whole scene. Warming only the
+visible system subtree excludes unrelated single-world materials. Default-off
+labels are now created only when enabled, excluding their canvas rasterization,
+texture upload, sprite material, and shader program from the default path.
+
+The long-task duration is noisy enough that the initial 10% change is not yet a
+reliable long-task win: a later hot-machine verification median was 436 ms even
+with four programs. That run did provide useful attribution. In all three
+samples the sole long task began within 0.2 ms of the first Orbit render, after
+shader kickoff had returned and readiness had resolved. The measured
+`renderer.render` call took 26–41 ms while the enclosing browser task lasted
+256–437 ms, pointing at browser/driver work around first presentation rather
+than body construction or label rasterization.
+
+The benchmark artifact now includes those phase start times and durations so a
+Safari run on the original Metal/ANGLE path can test the driver-compilation
+hypothesis directly. The new absolute guards allow at most four
+transition-added programs and at most 50 ms of synchronous shader kickoff.

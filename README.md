@@ -63,13 +63,10 @@ Five kinds of system sit side by side, and the tab is careful about which is whi
   internal ratio stays exact and TRAPPIST-1 h still orbits 12.4× slower than b.
 - **Andromeda** — an invented system around an orange dwarf, labelled as invented wherever it appears.
 - **Homage systems** — original interpretations of famous fictions, labelled invented like
-  Andromeda: the Outer Rim (Tatooine, Hoth and Mustafar under one sun — the engine draws single
-  stars, and Tatooine's scan owes the fiction its second one out loud), 40 Eridani and Tau Ceti
-  (Erid and Adrian from *Project Hail Mary*, on real star masses), and Alpha Centauri A
-  (Polyphemus with Pandora from *Avatar* — Pandora is really its moon, so it rides its own orbit
-  just outside and the caption says so). Each scans with chemistry from its fiction, opening with
-  the word **Fiction**; reseed one and it detaches into an ordinary world of its family, exactly
-  like Pluto and the ancient reconstructions.
+  Andromeda: 40 Eridani and Tau Ceti (Erid and Adrian from *Project Hail Mary*, on real star
+  masses), and Alpha Centauri A (Polyphemus and Pandora from *Avatar*). Each scans with chemistry
+  from its fiction, opening with the word **Fiction**; reseed one and it detaches into an ordinary
+  world of its family, exactly like Pluto and the ancient reconstructions.
 - **Yours** — duplicate an existing system, roll a whole one from a seed, or start empty. Set each world's distance, size and orbital stretch, pick a star, and save it for a permanent `/s/:slug` link.
 
 Worlds go into a system four ways, and none of them needs a trip through the sculptor first: pick

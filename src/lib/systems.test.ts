@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   ALPHA_CENTAURI, ANDROMEDA, ERIDANI_40, KEPLER_452, MILKY_WAY,
-  OUTER_RIM, PEGASI_51, PROXIMA, TAU_CETI, TRAPPIST,
+  PEGASI_51, PROXIMA, TAU_CETI, TRAPPIST,
 } from '../data/systems'
 import { ORBITS } from '../engine/planets'
 import { periodFor, sameDist, starRadius, starSize } from '../engine/scale'
@@ -139,7 +139,7 @@ describe('the built-in systems', () => {
   })
 
   it('marks every homage system as imagined, with no photographic maps', () => {
-    for (const s of [OUTER_RIM, ERIDANI_40, TAU_CETI, ALPHA_CENTAURI]) {
+    for (const s of [ERIDANI_40, TAU_CETI, ALPHA_CENTAURI]) {
       expect(s.origin, s.name).toBe('imagined')
       expect(s.sub, s.name).toMatch(/imagined/)
       for (const b of s.bodies) expect(b.texture, b.name).toBeNull()
@@ -149,7 +149,7 @@ describe('the built-in systems', () => {
   it('derives every homage year from its own star, like everything else', () => {
     // The fictions are invented but the physics is not negotiable: a saved
     // copy re-derives periods on sanitisation, so they must already agree.
-    for (const s of [OUTER_RIM, ERIDANI_40, TAU_CETI, ALPHA_CENTAURI]) {
+    for (const s of [ERIDANI_40, TAU_CETI, ALPHA_CENTAURI]) {
       for (const b of s.bodies) {
         const derived = periodFor(b.a, s.star.mass)
         expect(Math.abs(derived - b.period) / b.period, b.name).toBeLessThan(0.001)
@@ -159,9 +159,9 @@ describe('the built-in systems', () => {
 
   it('gives every story world its canonical seed, so its scan is the fiction', () => {
     const seeds: Record<string, number | undefined> = {
-      Mustafar: 2005, Tatooine: 1977, Hoth: 1980, Erid: 2021, Adrian: 1021, Pandora: 2009,
+      Erid: 2021, Adrian: 1021, Pandora: 2009,
     }
-    for (const s of [OUTER_RIM, ERIDANI_40, TAU_CETI, ALPHA_CENTAURI]) {
+    for (const s of [ERIDANI_40, TAU_CETI, ALPHA_CENTAURI]) {
       for (const b of s.bodies) {
         if (seeds[b.name] !== undefined) expect(b.params.seed, b.name).toBe(seeds[b.name])
       }

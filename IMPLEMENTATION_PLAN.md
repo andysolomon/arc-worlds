@@ -111,18 +111,22 @@ provenance — these need a labelling nuance the current origins lack:
 
 ### 6. Pop-culture worlds
 
-Homage systems from film and TV — Star Wars (Tatooine, Hoth, Mustafar),
-Project Hail Mary (Erid at 40 Eridani, Adrian at Tau Ceti) and Avatar
-(Pandora at Alpha Centauri A) — labelled invented, like Andromeda.
+Homage systems from film and TV — Project Hail Mary (Erid at 40 Eridani,
+Adrian at Tau Ceti) and Avatar (Pandora at Alpha Centauri A) — labelled
+invented, like Andromeda.
 
 - [x] Original procedural interpretations only: no copyrighted imagery or
       textures; short fictional names used referentially.
-- [x] Decided: scoped to single-star systems. Tatooine's star is named
-      Tatoo I and its scan note owes the fiction its second sun out loud;
-      binary rendering stays a possible future engine task, not a blocker.
-- [x] Avatar's Pandora is a moon of the gas giant Polyphemus, and moons only
-      render in the single-world view — so Pandora gets its own orbit just
-      outside its planet, and the system caption says exactly that.
+- [x] Scoped to single-star systems; binary rendering stays a possible future
+      engine task, not a blocker.
+- [x] The Star Wars collection (Outer Rim: Tatooine, Hoth, Mustafar) was
+      built, then dropped at Andrew's request on 2026-07-29. Removed whole —
+      presets, palettes, profiles, system and specs — rather than left
+      unreferenced.
+- [ ] Avatar's Pandora is a moon of the gas giant Polyphemus. It first shipped
+      on its own orbit because moons only render in the single-world view;
+      superseded by the satellite-orbit work below, so it truly orbits its
+      planet while staying a visitable, scannable, sculptable world.
 - [x] Each world gets Scan-tab chemistry consistent with its fiction where the
       fiction says (Erid's thick atmosphere, Adrian's Astrophage-warmed orbit,
       Pandora's xenon-heavy unbreathable air). Profiles open with "Fiction:"
@@ -133,7 +137,7 @@ Project Hail Mary (Erid at 40 Eridani, Adrian at Tau Ceti) and Avatar
 ### 7. Sculpting — animated fluids and two rendering tiers
 
 - [x] Visible motion for liquids and gas: the water shell's normal is
-      perturbed over time (one injected program variant, warmed at startup),
+      perturbed over time (one injected program variant, warmed before display),
       so light shimmers across water; lava ripples slower and heavier and
       pulses its glow; sculpted gas giants reach the animated gas shader —
       band drift and storm vortex — through the flat tier. Everything rides
@@ -223,3 +227,22 @@ systems, particularly in Safari on high-density displays.
 - [x] New local performance smoke and three-run median pass browser and idle-work budgets.
 - [x] Typecheck, lint, unit, build, and end-to-end suites pass with the guardrails.
 - [ ] Re-profile production on the original Safari hardware and record INP/p95 frame time.
+
+### Orbit transition shader warmup follow-up (delivered 2026-07-29)
+
+- [x] Correct the benchmark interpretation: long-task observation begins at
+      Orbit view `pointerdown`, so this is a view-transition metric rather than
+      page-startup work.
+- [x] Add phase attribution for system regeneration, body construction, label
+      rasterization, shader kickoff/readiness, first render, maximum render
+      duration, and shader-program count.
+- [x] Restrict `compileAsync` to the visible system subtree. Three.js compiles
+      hidden descendants when handed the whole scene; the scoped warmup reduced
+      transition-added programs from 12 to 4 in the controlled Chromium run.
+- [x] Defer planet label canvases, textures, sprites, and their shared program
+      until the Labels toggle is enabled; preserve rename, scale-mode, disposal,
+      and toggle behavior.
+- [x] Enforce ≤4 transition-added shader programs and ≤50 ms synchronous shader
+      kickoff in `performance-budget.json`.
+- [ ] Repeat the phase-attributed benchmark in Safari on the original hardware
+      to validate the Metal/ANGLE driver hypothesis.

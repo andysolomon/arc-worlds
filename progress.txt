@@ -393,7 +393,7 @@ DONE
 - Fluid motion, all on rotation's clock (this.t): water shimmer via a
   time-driven normal perturbation injected into the shell material
   (onBeforeCompile, customProgramCacheKey — exactly one program
-  variant, startup-warmed); lava (emissive palettes) ripples slow and
+  variant, warmed before display); lava (emissive palettes) ripples slow and
   heavy and pulses emissiveIntensity; sculpted gas giants reach the
   GAS_FRAG animation (differential band drift + storm vortex, swirl by
   roughness) through the flat tier. Paused/hidden/offscreen freeze all
@@ -417,7 +417,7 @@ VERIFIED (full suite delegated to the same Opus 5 agent)
   everywhere, db:push "No changes detected".
 - The two silent-failure risks probed directly: the shader anchor
   really matched (compiled GLSL contains the perturb block exactly
-  once across 18 startup shaders), and paused really is frozen
+  once across 18 compiled programs), and paused really is frozen
   (canvas pixels byte-identical 1.6 s apart; pixels differ while
   running). Texture ownership across photo->flat->photo restores
   Jupiter's exact 19,156 triangles with zero console errors; slider-
@@ -456,10 +456,10 @@ DONE
   accessible name alone; two buttons must never share one.
 - longTaskMaxMs budget 500 -> 600: Opus's interleaved A/B showed the
   hot-machine ceiling (469 -> 486 -> 470 -> 533/516 across phases)
-  crossing 500 in BOTH phase-7 and phase-8 builds — accumulated
-  startup-compile weight, no single regression. The budget now
-  encodes measured reality; shaving the startup compile long task is
-  the recorded follow-up.
+  crossing 500 in BOTH phase-7 and phase-8 builds — accumulated Orbit
+  transition cost, then still unattributed, with no single regression.
+  The budget encoded measured reality; phase attribution and reducing
+  transition shader topology became the recorded follow-up.
 
 VERIFIED (full suite delegated to the same Opus 5 agent)
 - typecheck, lint, 114 unit, build, size:check (entry 238,048 gzip
@@ -506,8 +506,43 @@ NEXT
   calibrated on local Apple Silicon. Fix is a runner-calibrated budget
   profile (or a CI multiplier), not code — the eight phases moved the
   needle ~7% on one row and improved the other.
-- Shave the startup shader-compile long task (the real fix behind the
-  budget raise).
+- Repeat the phase-attributed Orbit transition benchmark in Safari on
+  the original hardware to validate the Metal/ANGLE driver hypothesis.
 - e2e suite wall time (~1.2 m) still worth a fixed-sleep-to-poll pass.
 - Google Fonts on the first-load critical path remains open.
 - Safari hardware re-profiling remains the one unchecked perf item.
+
+2026-07-29 performance follow-up: shave the Orbit transition shader work
+
+DONE
+- Corrected the misleading "startup" label. The benchmark opens its
+  long-task window on Orbit view pointerdown, so every judged task is
+  part of the view transition.
+- Added permanent arc:orbit phase measures around regeneration, body
+  construction, label creation, shader kickoff/readiness and rendering,
+  plus transition shader-program counts and a per-run attribution
+  timeline in the benchmark artifact.
+- Scoped compileAsync to the active system subtree. Three.js compile()
+  traverses hidden objects when handed the whole scene; the old call
+  compiled single-world materials that could not render in Orbit view.
+- Made labels genuinely opt-in: the default transition creates no label
+  canvases, CanvasTextures, sprites or sprite shader. Enabling Labels
+  creates them once; later hide/show, rename, scaling and disposal keep
+  their existing behavior.
+- Added absolute guards: Orbit may add at most four shader programs and
+  the synchronous compileAsync kickoff must stay under 50 ms.
+
+MEASURED (same Apple Silicon machine, headless Chromium, three-run medians)
+- Instrumented before: 12 programs added, buildBodies 2.4 ms, hidden
+  labels 1.4 ms, shader kickoff 3.7 ms, shader ready 18.5 ms,
+  longTaskMax 207 ms.
+- After: 4 programs added, buildBodies 0.8 ms, labels 0 ms, shader
+  kickoff 1.7 ms, shader ready 13.5 ms, longTaskMax 186 ms.
+- The strongest deterministic win is program topology: 67% fewer
+  transition programs. A later hot-machine verification still produced
+  a 436 ms median, so the initial 10% long-task change is not treated as
+  proven. In all three later samples the long task began within 0.2 ms
+  of first render, after shader readiness; renderer.render itself
+  measured 26-41 ms inside a 256-437 ms enclosing browser task. That
+  points at first-presentation browser/driver work. Safari/Metal remains
+  the required environment for confirming the driver-side hypothesis.

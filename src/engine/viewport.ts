@@ -29,6 +29,14 @@ const PATH_OPACITY = 0.55
 /** Starfield pool size; density 0.5 draws exactly the classic 1400. */
 const STAR_POOL = 2800
 
+const ORBIT_PERF_PREFIX = 'arc:orbit:'
+
+function recordOrbitMeasure(name: string, start: number) {
+  const measureName = `${ORBIT_PERF_PREFIX}${name}`
+  performance.clearMeasures(measureName)
+  performance.measure(measureName, { start, end: performance.now() })
+}
+
 interface SysNode {
   index: number
   plane: THREE.Group
@@ -56,7 +64,8 @@ interface SysNode {
   lineScale: THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>
   /** Where this body's orbit-line opacity is headed; the loop eases toward it. */
   lineTarget: number
-  label: THREE.Sprite
+  /** Created only after labels are requested; labels are off by default. */
+  label: THREE.Sprite | null
   labelName: string
 }
 
@@ -190,6 +199,8 @@ export class PlanetViewport {
   private lastPublishedSunScale = Number.NaN
   private lastPublishedLines = -1
   private lastPublishedPoints = -1
+  private orbitFirstRenderPending = false
+  private orbitMaxRenderMs = 0
 
   /**
    * Fluid motion: one clock for every moving surface, driven from `this.t` so
@@ -316,7 +327,7 @@ export class PlanetViewport {
     // Visible fluid motion: perturb the shell's normal over time, the way a
     // normal map would, so specular light moves across water and lava. The
     // injection is part of the material from construction, so there is exactly
-    // one program variant and the startup warm covers it.
+    // one program variant and the pre-presentation warmup covers it.
     wmat.onBeforeCompile = (sh) => {
       sh.uniforms.uFluidT = this.fluidTime
       sh.uniforms.uFluidS = this.fluidStyle
@@ -824,8 +835,8 @@ export class PlanetViewport {
         l.geometry.dispose()
         l.material.dispose()
       }
-      u.label.material.map?.dispose()
-      u.label.material.dispose()
+      u.label?.material.map?.dispose()
+      u.label?.material.dispose()
       u.plane.removeFromParent()
     }
     this.sysNodes = []
@@ -906,7 +917,11 @@ export class PlanetViewport {
    * view uses, so a world looks like itself wherever you meet it.
    */
   private buildBodies(def: SystemDef) {
+    const buildStart = performance.now()
+    let labelDuration = 0
     this.clearBodies()
+    this.orbitFirstRenderPending = true
+    this.orbitMaxRenderMs = 0
 
     def.bodies.forEach((b, i) => {
       const plane = new THREE.Group()
@@ -951,9 +966,10 @@ export class PlanetViewport {
       plane.add(lineSame)
       plane.add(lineScale)
 
-      const label = this.makeLabel(b.name)
-      label.visible = this.showLabels
-      node.add(label)
+      const labelStart = performance.now()
+      const label = this.showLabels ? this.makeLabel(b.name) : null
+      labelDuration += performance.now() - labelStart
+      if (label) node.add(label)
 
       const ring = b.ring ?? (b.params.rings ? customRing(b.params, pal) : null)
       let ringMesh: SysNode['ringMesh'] = null
@@ -998,6 +1014,8 @@ export class PlanetViewport {
       this.sysNodes.push(ud)
     })
     this.compileNeeded = true
+    recordOrbitMeasure('label-creation', performance.now() - labelDuration)
+    recordOrbitMeasure('build-bodies', buildStart)
   }
 
   /** Apply the orbital elements, which can change without a rebuild. */
@@ -1139,6 +1157,23 @@ export class PlanetViewport {
     return sprite
   }
 
+  /** Materialise label canvases only when the opt-in display layer is used. */
+  private syncLabels() {
+    let created = false
+    for (const u of this.sysNodes) {
+      if (this.showLabels && !u.label) {
+        u.label = this.makeLabel(u.labelName)
+        u.label.position.y = this.sizeMode === 'scale' ? u.rScale : u.rSame
+        u.node.add(u.label)
+        created = true
+      }
+      if (u.label) u.label.visible = this.showLabels
+    }
+    // The first visible sprite introduces one shared sprite program. Warm it
+    // when labels are explicitly enabled, never on the default Orbit path.
+    if (created) this.compileNeeded = true
+  }
+
   /** Where each orbit line is headed: shown, hidden, or revealed by hover. */
   private syncPathTargets() {
     for (const u of this.sysNodes) {
@@ -1163,7 +1198,7 @@ export class PlanetViewport {
       u.lineScale.visible = scaled && o > 0.01
       // The label floats off the pole; its screen offset comes from the sprite's
       // own anchor, so this world-space lift only needs to clear the body.
-      u.label.position.y = scaled ? u.rScale : u.rSame
+      if (u.label) u.label.position.y = scaled ? u.rScale : u.rSame
     }
     this.sunBase = scaled ? SIZE_MAX : 1.15
     this.sizeSun()
@@ -1496,6 +1531,8 @@ export class PlanetViewport {
     // Nothing to draw until a system has been handed to us. Falling back to a
     // built-in here would make the engine depend on the app's data.
     if (!def) return
+    const regenStart = performance.now()
+    let rebuilt = false
     this.ensureSystem()
     if (this.mode !== 'system') {
       this.mode = 'system'
@@ -1527,6 +1564,7 @@ export class PlanetViewport {
       this.sysCount = def.bodies.length
       this.sysShape = shape
       this.buildBodies(def)
+      rebuilt = true
       this.sysOrbitKey = ''
       this.sysPropertyKey = ''
     }
@@ -1576,18 +1614,21 @@ export class PlanetViewport {
         const u = this.sysNodes[i]
         if (!u || u.labelName === b.name) return
         u.labelName = b.name
-        u.label.material.map?.dispose()
-        u.label.material.map = this.labelTexture(b.name)
-        this.scaleLabel(u.label)
+        if (u.label) {
+          u.label.material.map?.dispose()
+          u.label.material.map = this.labelTexture(b.name)
+          this.scaleLabel(u.label)
+        }
       })
     }
-    for (const u of this.sysNodes) u.label.visible = this.showLabels
+    this.syncLabels()
 
     // With paths shown there is nothing for hover to reveal.
     if (this.showPaths) this.hoverIndex = -1
     this.syncPathTargets()
 
     this.stars.visible = P.stars !== false
+    if (rebuilt) recordOrbitMeasure('regen-system', regenStart)
   }
 
   private makeClouds() {
@@ -1678,12 +1719,24 @@ export class PlanetViewport {
   private warmShaders(): boolean {
     if (!this.compileNeeded || this.compiling) return !!this.compiling
     this.compileNeeded = false
-    const job: Promise<void> = this.renderer
-      .compileAsync(this.scene, this.camera)
-      .then(() => undefined, () => undefined)
+    const compileStart = performance.now()
+    const programsBefore = this.renderer.info.programs?.length ?? 0
+    // WebGLRenderer.compileAsync traverses hidden objects too. Restrict Orbit
+    // warmup to the system subtree so the transition does not compile every
+    // hidden single-world material and shader variant.
+    const job: Promise<void> = (
+      this.mode === 'system' && this.sys
+        ? this.renderer.compileAsync(this.sys, this.camera, this.scene)
+        : this.renderer.compileAsync(this.scene, this.camera)
+    ).then(() => undefined, () => undefined)
+    recordOrbitMeasure('shader-kickoff', compileStart)
     this.compiling = job
     job.finally(() => {
       if (this.compiling === job) this.compiling = null
+      recordOrbitMeasure('shader-ready', compileStart)
+      const canvas = this.renderer.domElement
+      canvas.dataset.compileProgramsBefore = String(programsBefore)
+      canvas.dataset.compileProgramsAfter = String(this.renderer.info.programs?.length ?? 0)
       this.invalidate()
     })
     return true
@@ -1880,7 +1933,19 @@ export class PlanetViewport {
       for (const u of this.sysNodes) if (u.ringMesh) this.ringLight(u.ringMesh)
     }
 
+    const renderStart = performance.now()
     this.renderer.render(this.scene, this.camera)
+    if (this.sys?.visible) {
+      const renderDuration = performance.now() - renderStart
+      if (this.orbitFirstRenderPending) {
+        this.orbitFirstRenderPending = false
+        recordOrbitMeasure('first-render', renderStart)
+      }
+      if (renderDuration > this.orbitMaxRenderMs) {
+        this.orbitMaxRenderMs = renderDuration
+        this.renderer.domElement.dataset.orbitMaxRenderMs = String(renderDuration)
+      }
+    }
 
     // Observability hook: WebGL does not preserve its drawing buffer, so the
     // canvas cannot be read back after the frame. Publishing the frame count

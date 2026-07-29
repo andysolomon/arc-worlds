@@ -182,26 +182,6 @@ function storyWorld(key: PresetKey): PlanetParams {
   return { ...DEFAULT_PARAMS, ...(f?.params ?? {}), preset: key } as PlanetParams
 }
 
-const TATOO_MASS = 1.02
-
-/**
- * Three famous Star Wars worlds gathered under one invented sun. The fiction
- * scatters them across a galaxy and gives Tatooine two suns; this engine draws
- * single stars, so the star is Tatoo I and the scan notes own what is missing.
- */
-export const OUTER_RIM: SystemDef = {
-  id: 'outer-rim',
-  name: 'Outer Rim',
-  sub: 'imagined · three worlds from Star Wars, drawn from memory',
-  origin: 'imagined',
-  star: { name: 'Tatoo I', color: 0xfff2c9, mass: TATOO_MASS },
-  bodies: [
-    body('Mustafar', 0.42, 0.66, storyWorld('mustafar'), { e: 0.03, inc: 1.8, node: 40, peri: 210, tilt: 2.1, day: 36 }, TATOO_MASS),
-    body('Tatooine', 0.95, 1.04, storyWorld('tatooine'), { e: 0.04, inc: 0.9, node: 118, peri: 12, tilt: 11.3, day: 23 }, TATOO_MASS),
-    body('Hoth', 2.9, 0.92, storyWorld('hoth'), { e: 0.05, inc: 2.6, node: 240, peri: 155, tilt: 32, day: 23 }, TATOO_MASS),
-  ],
-}
-
 /**
  * Project Hail Mary puts its planets at real stars, so these two systems wear
  * real star masses — 40 Eridani A and Tau Ceti — under invented worlds and
@@ -253,7 +233,7 @@ export const ALPHA_CENTAURI: SystemDef = {
 
 export const BUILT_IN_SYSTEMS: SystemDef[] = [
   MILKY_WAY, TRAPPIST, PROXIMA, PEGASI_51, KEPLER_452,
-  OUTER_RIM, ERIDANI_40, TAU_CETI, ALPHA_CENTAURI, ANDROMEDA,
+  ERIDANI_40, TAU_CETI, ALPHA_CENTAURI, ANDROMEDA,
 ]
 
 export function builtInSystem(id: string): SystemDef | null {
