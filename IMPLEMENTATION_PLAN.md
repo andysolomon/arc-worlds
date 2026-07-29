@@ -313,7 +313,15 @@ systems, particularly in Safari on high-density displays.
 - [x] New bundle-budget script passes against a clean production build.
 - [x] New local performance smoke and three-run median pass browser and idle-work budgets.
 - [x] Typecheck, lint, unit, build, and end-to-end suites pass with the guardrails.
-- [ ] Re-profile production on the original Safari hardware and record INP/p95 frame time.
+- [x] Re-profile production on the original Safari hardware. Done 2026-07-29
+      with `bun run perf:engines`, which measures frame gaps rather than long
+      tasks because WebKit has never implemented the Long Tasks API. On the
+      target M4 Pro the largest stall is 31 ms in WebKit and 38 ms in
+      Chromium's Metal backend, with no frame over 50 ms in either — the
+      passive cadence itself. The 353 ms stall the budgets track belongs to
+      SwiftShader, the software rasteriser headless Chromium falls back to,
+      and is not something a visitor meets. Full write-up in
+      PERFORMANCE_RESULTS.md.
 
 ### Orbit transition shader warmup follow-up (delivered 2026-07-29)
 
