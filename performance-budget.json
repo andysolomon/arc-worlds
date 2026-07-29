@@ -49,8 +49,26 @@
       "unit": "errors"
     }
   },
+  "browserCiOverrides": {
+    "interactionDurationMs": {
+      "max": 500,
+      "unit": "ms"
+    },
+    "taskDurationMs": {
+      "max": 7500,
+      "unit": "ms"
+    }
+  },
   "regression": {
     "maxPercent": 10,
+    "noiseFloor": {
+      "firstSystemFrameMs": 150,
+      "interactionDurationMs": 80,
+      "longTaskMaxMs": 150,
+      "longTaskTotalMs": 150,
+      "taskDurationMs": 600,
+      "activeRendererFps": 3
+    },
     "lowerIsBetter": [
       "firstSystemFrameMs",
       "interactionDurationMs",
