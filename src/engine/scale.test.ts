@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { ORBITS } from './planets'
 import { TRAPPIST } from '../data/systems'
 import {
-  kepler, moonDist, moonPeriodSec, moonRad, sameDist, sizeMap,
-  systemStretch, tempoFor, visDist,
+  kepler, moonDist, moonPeriodSec, moonRad, sameDist, satMult, satRadii,
+  satRank, sizeMap, systemStretch, tempoFor, visDist,
 } from './scale'
 
 describe('visDist', () => {
@@ -132,5 +132,47 @@ describe('moon scaling', () => {
 
   it('treats retrograde periods as the same duration', () => {
     expect(moonPeriodSec(-5.877)).toBeCloseTo(moonPeriodSec(5.877), 10)
+  })
+})
+
+describe('satellite orbits', () => {
+  it('always draws a moon clear of the planet it orbits', () => {
+    // The one thing that must never happen: a moon inside its own planet.
+    // Room goes negative in same-size mode, where every planet is drawn 0.24
+    // wide with only 0.29 between orbits, so the floor has to hold there too.
+    for (const room of [-2, -0.093, 0, 0.385, 5.4]) {
+      for (const r of [0.092, 0.24, 0.616, 1.524]) {
+        for (const t of [0, 0.5, 1]) {
+          const orbit = r * satMult(t, r, room)
+          expect(orbit, `room ${room}, radius ${r}, t ${t}`).toBeGreaterThan(r * 1.25)
+        }
+      }
+    }
+  })
+
+  it('spends the room it is given, and no more', () => {
+    // Jupiter has 5.4 units of clearance in scale mode and Earth has 0.385.
+    // The outermost moon should use its planet's room rather than a constant.
+    const jupiter = 1.524 * satMult(1, 1.524, 5.448)
+    const earth = 0.616 * satMult(1, 0.616, 0.385)
+    expect(jupiter - 1.524).toBeLessThanOrEqual(5.448)
+    expect(earth - 0.616).toBeLessThanOrEqual(0.385)
+    // And a planet with room to spare puts its moons further out, in radii.
+    expect(jupiter / 1.524).toBeGreaterThan(earth / 0.616)
+  })
+
+  it('keeps moons in their true order, however tight the band', () => {
+    const inner = satRank(6.03, 6.03, 15.31) // Io
+    const outer = satRank(15.31, 6.03, 15.31) // Ganymede
+    expect(inner).toBeLessThan(outer)
+    for (const room of [-1, 0.4, 5]) {
+      expect(satMult(inner, 1.524, room)).toBeLessThan(satMult(outer, 1.524, room))
+    }
+  })
+
+  it('converts a satellite distance into its planet’s radii', () => {
+    // The Moon is a shade over sixty Earth radii away, which is the number
+    // the measured moon table has always carried.
+    expect(satRadii(0.002569, 1)).toBeCloseTo(60.3, 1)
   })
 })

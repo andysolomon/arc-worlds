@@ -13,12 +13,19 @@ import type {
 import { PRESETS } from '../data/presets.js'
 import { genName, safeTexture, sanitize, serialize, surprise } from './params.js'
 
-/** Enough for a generous system without letting one payload get silly. */
-export const MAX_BODIES = 12
+/**
+ * Enough for a generous system without letting one payload get silly. Raised
+ * from 12 when moons became worlds: the Solar System alone carries nine
+ * planets and seven satellites, and a copy of it has to survive intact.
+ */
+export const MAX_BODIES = 24
 
 // Low enough for real compact systems: TRAPPIST-1 b orbits at 0.0115 AU, and
 // a duplicated copy of it must survive sanitisation with its orbits intact.
 export const A_MIN = 0.01
+// A satellite's distance is measured from its planet: the Moon is 0.00257 AU
+// from Earth, and Pandora closer still to Polyphemus.
+export const A_SAT_MIN = 0.0001
 export const A_MAX = 90
 export const MASS_MIN = 0.08
 export const MASS_MAX = 3
@@ -77,15 +84,21 @@ function safeRing(v: unknown): RingConfig | null {
 function sanitizeBody(input: unknown, index: number, mass: number): SystemBody {
   const b = (input ?? {}) as Record<string, unknown>
   const params = sanitize(b.params)
-  const a = num(b.a, A_MIN, A_MAX, 0.4 + index * 0.9)
+  // A satellite's distance is measured from its planet, not the star, so it
+  // sits far below the floor an ordinary orbit has to clear.
+  const orbits = typeof b.orbits === 'string' ? text(b.orbits, '', 40) : ''
+  const a = num(b.a, orbits ? A_SAT_MIN : A_MIN, A_MAX, 0.4 + index * 0.9)
 
   return {
     name: text(b.name, `Body ${index + 1}`, 40),
     a,
+    ...(orbits ? { orbits } : null),
     // The period is never taken from the client: it is a consequence of the
     // distance and the star, and deriving it stops a saved system from
-    // orbiting at a speed its own geometry cannot justify.
-    period: periodFor(a, mass),
+    // orbiting at a speed its own geometry cannot justify. A satellite orbits
+    // its planet instead, whose mass we do not carry, so its own period is
+    // kept — clamped to something a year could actually be.
+    period: orbits ? num(b.period, 1e-5, 1e4, 0.1) : periodFor(a, mass),
     e: num(b.e, 0, 0.7, 0),
     inc: num(b.inc, -40, 40, 0),
     node: num(b.node, 0, 360, 0),
@@ -131,9 +144,23 @@ export function sanitizeSystem(input: unknown): SystemDef {
 
 /* --- editing ------------------------------------------------------------- */
 
-/** Bodies always read outward from the star, however they were added. */
+/**
+ * Bodies always read outward from the star, however they were added — and a
+ * satellite reads directly after the planet it orbits rather than by its own
+ * distance, which is measured from that planet and would otherwise sort it in
+ * front of Mercury.
+ */
 export function sortByDistance(bodies: SystemBody[]): SystemBody[] {
-  return [...bodies].sort((x, y) => x.a - y.a)
+  const planets = bodies.filter((b) => !b.orbits).sort((x, y) => x.a - y.a)
+  const out: SystemBody[] = []
+  for (const p of planets) {
+    out.push(p)
+    out.push(...bodies.filter((b) => b.orbits === p.name).sort((x, y) => x.a - y.a))
+  }
+  // Anything naming a parent that is not here keeps its place rather than
+  // vanishing; it simply orbits the star like everything else.
+  const orphans = bodies.filter((b) => !out.includes(b)).sort((x, y) => x.a - y.a)
+  return [...out, ...orphans]
 }
 
 /** Re-derive every period. Call after the star's mass changes. */

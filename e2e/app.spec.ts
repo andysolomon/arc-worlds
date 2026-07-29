@@ -214,7 +214,8 @@ test('adding a world never edits a read-only system in place', async ({ page }) 
   // The original is still there, still measured, still nine bodies.
   await page.getByRole('button', { name: 'The Solar System', exact: true }).click()
   await expect(page.getByText(/every number measured/)).toBeVisible()
-  await expect(page.getByRole('button', { name: /Visit/ })).toHaveCount(9)
+  // Nine planets, plus the seven moons that are worlds in their own right.
+  await expect(page.getByRole('button', { name: /Visit/ })).toHaveCount(16)
 })
 
 test('an imagined system is never presented as a measured one', async ({ page }) => {
@@ -515,16 +516,20 @@ test('an ancient world loads whole and scans as a reconstruction', async ({ page
   await expect(page.getByText('Alive, but not advertising')).toBeVisible()
 })
 
-test('Pandora rides beside the planet it cannot orbit', async ({ page }) => {
+test('Pandora orbits Polyphemus, and is still a whole world', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('tab', { name: 'Systems' }).click()
   await page.getByRole('button', { name: 'Alpha Centauri A' }).click()
-
-  // Moons only render in the single-world view, so Pandora gets its own
-  // orbit — and the caption says so rather than pretending otherwise.
-  await expect(page.getByText(/Pandora is Polyphemus’s moon/)).toBeVisible()
+  await expect(page.getByText(/Pandora and the giant it orbits/)).toBeVisible()
   await expect(page.getByRole('button', { name: /Visit/ })).toHaveCount(2)
 
+  // It orbits its planet rather than the star, and the orbit view draws it
+  // there — a satellite that is nonetheless visitable and scannable.
+  await page.getByRole('button', { name: 'Orbit view' }).click()
+  await page.waitForTimeout(2500)
+  expect(await hasDrawnGeometry(page)).toBe(true)
+
+  await page.getByRole('button', { name: 'Body list' }).click()
   await page.getByRole('button', { name: /Pandora/ }).click()
   await expect(page.getByRole('heading', { name: 'Pandora' })).toBeVisible()
 
@@ -532,9 +537,23 @@ test('Pandora rides beside the planet it cannot orbit', async ({ page }) => {
   await page.getByRole('button', { name: /Run spectrometer on Pandora/ }).click()
   await expect(page.getByText('Fiction: rich air, wrong for us')).toBeVisible({ timeout: 15_000 })
 
-  // The biosignature verdict renders in the surface section, not the default.
   await page.getByRole('button', { name: 'Surface & water' }).click()
   await expect(page.getByText('Strong — and networked')).toBeVisible()
+})
+
+test('the moons toggle drops every satellite from the orbit view', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Systems' }).click()
+  await page.getByRole('button', { name: 'Orbit view' }).click()
+  const withMoons = await settledTriangles(page)
+
+  // Moons off is the performance lever, and satellites are moons: they are
+  // not built at all, so the geometry actually leaves the scene.
+  await page.getByRole('button', { name: 'Moons' }).click()
+  await expect.poll(() => datum(page, 'triangles')).toBeLessThan(withMoons)
+
+  await page.getByRole('button', { name: 'Moons' }).click()
+  await expect.poll(() => datum(page, 'triangles')).toBe(withMoons)
 })
 
 test('the rendering tiers trade shells for a baked map, and back', async ({ page }) => {

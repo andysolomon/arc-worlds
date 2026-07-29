@@ -10,19 +10,61 @@ import { ORBITS, REAL, realKeyFor } from '../engine/planets'
 import { periodFor } from '../engine/scale'
 import type { PlanetParams, PresetKey, SystemBody, SystemDef } from '../engine/types'
 import { DEFAULT_PARAMS } from '../lib/params'
-import { FICTION, PRESETS, SOLAR } from './presets'
+import { FICTION, MOONS, PRESETS, SOLAR } from './presets'
 
 export const MILKY_WAY_ID = 'milky-way'
 export const ANDROMEDA_ID = 'andromeda'
 
 /** Our own, from measured data. */
+/** Kilometres per AU and per Earth radius, for converting moon distances. */
+const AU_KM = 149597870.7
+const EARTH_KM = 6371
+const DAYS_PER_YEAR = 365.25
+
+/**
+ * The moons that are worlds, as bodies orbiting their planets.
+ *
+ * Everything here is measured and already on file: `engine/planets.ts` holds
+ * each moon's radius and distance in planet radii and its period in days, so
+ * this only converts those into the units a `SystemBody` speaks — AU, years,
+ * Earth radii — and names the planet it belongs to. Tidally locked, so the
+ * sidereal day is the orbital period, sign and all.
+ */
+function satellitesOf(planet: string, planetRadius: number, key: string): SystemBody[] {
+  const R = REAL[key]
+  if (!R) return []
+  return R.moons.flatMap((m) => {
+    if (!m.world) return []
+    const w = MOONS.find((x) => x.key === m.world!.preset)
+    if (!w) return []
+    const own = REAL[m.world.preset]
+    return [{
+      name: m.n,
+      a: (m.a * planetRadius * EARTH_KM) / AU_KM,
+      period: Math.abs(m.P) / DAYS_PER_YEAR,
+      e: m.e ?? 0,
+      inc: m.inc,
+      node: 0,
+      peri: 0,
+      radius: m.r * planetRadius,
+      tilt: own?.ob ?? 0,
+      flattening: own?.f ?? 0,
+      day: m.P * 24,
+      params: { ...DEFAULT_PARAMS, ...w.params, preset: w.key } as PlanetParams,
+      texture: null,
+      ring: null,
+      orbits: planet,
+    } satisfies SystemBody]
+  })
+}
+
 export const MILKY_WAY: SystemDef = {
   id: MILKY_WAY_ID,
   name: 'The Solar System',
   sub: 'ours · every number measured',
   origin: 'measured',
   star: { name: 'The Sun', color: 0xffffff, mass: 1 },
-  bodies: ORBITS.map((o, i) => {
+  bodies: ORBITS.map((o, i): SystemBody => {
     const R = REAL[realKeyFor(o[0])]
     const s = SOLAR[i]
     return {
@@ -41,7 +83,9 @@ export const MILKY_WAY: SystemDef = {
       ring: R.ring ?? null,
       params: { ...DEFAULT_PARAMS, ...s.params, preset: s.key } as PlanetParams,
     } satisfies SystemBody
-  }),
+  }).concat(
+    ORBITS.flatMap((o, i) => satellitesOf(SOLAR[i].name, o[7], realKeyFor(o[0]))),
+  ),
 }
 
 /** A sculpted world, at the defaults for its type. */
@@ -212,22 +256,24 @@ export const TAU_CETI: SystemDef = {
 const ALPHA_CEN_MASS = 1.08
 
 /**
- * Avatar's Pandora is a moon of the gas giant Polyphemus, and moons only
- * render in the single-world view — so here Pandora rides its own orbit just
- * outside its planet, and the caption says so rather than pretending. Its
- * distance is chosen for the drawing, not the fiction: in same-size mode the
- * orbits of 1.25 and 2.2 AU stay far enough apart that a conjunction never
- * pushes Pandora through the giant's drawn surface.
+ * Avatar's Pandora is a moon of the gas giant Polyphemus, and now orbits it —
+ * a satellite that is nonetheless a whole world, visitable and scannable like
+ * any other. Its 2.7-day year around a Jupiter-sized planet is the fiction's.
  */
 export const ALPHA_CENTAURI: SystemDef = {
   id: 'alpha-centauri-a',
   name: 'Alpha Centauri A',
-  sub: 'imagined · Pandora is Polyphemus’s moon; here it gets its own orbit',
+  sub: 'imagined · Pandora and the giant it orbits',
   origin: 'imagined',
   star: { name: 'Alpha Centauri A', color: 0xfff6e0, mass: ALPHA_CEN_MASS },
   bodies: [
     body('Polyphemus', 1.25, 11.5, world('gasMist', 2154, { rings: false, glow: 0.5, roughness: 0.6 }), { e: 0.02, inc: 0.8, node: 150, peri: 30, tilt: 7.6, flattening: 0.06, day: 16 }, ALPHA_CEN_MASS),
-    body('Pandora', 2.2, 0.72, storyWorld('pandora'), { e: 0.015, inc: 1.2, node: 152, peri: 40, tilt: 18.5, day: 26 }, ALPHA_CEN_MASS),
+    // Pandora orbits Polyphemus, as the fiction has it. The distance and the
+    // year are its own, measured from the planet rather than from the star.
+    body('Pandora', 0.00169, 0.72, storyWorld('pandora'), {
+      e: 0.015, inc: 1.2, node: 152, peri: 40, tilt: 18.5, day: 26,
+      period: 0.0074, orbits: 'Polyphemus',
+    }, ALPHA_CEN_MASS),
   ],
 }
 

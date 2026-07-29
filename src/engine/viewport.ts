@@ -7,7 +7,8 @@ import { REAL, realFor } from './planets'
 import { isGas, PALETTES } from './palettes'
 import {
   D2R, DAY_SEC, kepler, moonDist, moonPeriodSec, moonRad, sameDist,
-  SIZE_MAX, sizeMap, starSize, systemStretch, tempoFor, visDist, YEAR_SEC,
+  satMult, satRadii, satRank, SIZE_MAX, sizeMap, starSize, systemStretch,
+  tempoFor, visDist, YEAR_SEC,
 } from './scale'
 import { ATMO_FRAG, ATMO_VERT, GAS_FRAG, GAS_VERT, SUN_FRAG, SUN_VERT } from './shaders'
 import { effectiveTier } from './tiers'
@@ -27,6 +28,9 @@ interface MoonInstance {
 
 /** Orbit-path opacity when shown. Hidden paths fade to 0 and back on hover. */
 const PATH_OPACITY = 0.55
+
+/** The most of the frame's height a star may fill before the camera backs off. */
+const STAR_FRAME_SHARE = 0.4
 
 /** Starfield pool size; density 0.5 draws exactly the classic 1400. */
 const STAR_POOL = 2800
@@ -69,6 +73,8 @@ interface SysNode {
   /** Created only after labels are requested; labels are off by default. */
   label: THREE.Sprite | null
   labelName: string
+  /** Index of the body this one orbits, or -1 for the ones orbiting the star. */
+  parent: number
 }
 
 /**
@@ -166,6 +172,8 @@ export class PlanetViewport {
   private sysGeo?: THREE.SphereGeometry
   private sysPlanets: THREE.Mesh[] = []
   private sysNodes: SysNode[] = []
+  /** The bodies actually built, which is every body unless moons are off. */
+  private sysBodies: SystemBody[] = []
   private sysDef: SystemDef | null = null
   private sysId = ''
   private sysShape = ''
@@ -952,9 +960,19 @@ export class PlanetViewport {
     this.orbitFirstRenderPending = true
     this.orbitMaxRenderMs = 0
 
-    def.bodies.forEach((b, i) => {
+    // Satellites are moons, and the moons toggle is what turns moons off.
+    const shown = def.bodies.filter((b) => this.showMoons || !b.orbits)
+    this.sysBodies = shown
+    const indexOf = new Map(shown.map((b, i) => [b.name, i]))
+
+    shown.forEach((b, i) => {
+      const parent = b.orbits ? indexOf.get(b.orbits) ?? -1 : -1
       const plane = new THREE.Group()
-      this.sysRoot!.add(plane)
+      // A satellite's plane hangs off its planet's node rather than the star's
+      // root, so it inherits the planet's position every frame — orbit line
+      // included — and nothing has to be ordered by hand.
+      if (parent >= 0) this.sysNodes[parent].node.add(plane)
+      else this.sysRoot!.add(plane)
 
       const node = new THREE.Group()
       plane.add(node)
@@ -1031,13 +1049,21 @@ export class PlanetViewport {
         index: i, plane, node, tilt, spin, mesh: m, ringMesh, baked: null,
         ownsMap: !b.texture,
         a: 0, e: b.e, period: b.period, aSame: 0, aScale: 0,
-        rSame: 0.24, rScale: sizeMap(b.radius * 6371) * 0.85,
+        // Same-size mode draws every planet alike so the small ones stay
+        // findable; a moon drawn the size of its planet would undo that, so
+        // satellites get their own smaller flat size.
+        rSame: parent >= 0 ? 0.092 : 0.24, rScale: sizeMap(b.radius * 6371) * 0.85,
         peri: 0, angle: (i * 2.3994) % 6.2832, day: b.day, f: b.flattening,
         lineSame, lineScale, lineTarget: lineOpacity, label, labelName: b.name,
+        parent,
       }
       m.userData = ud
 
-      if (!b.texture) this.queueWorldBake(ud, b.params)
+      // A satellite is a handful of pixels wide at system scale, where the
+      // palette tone it already wears is indistinguishable from a baked map.
+      // It gets the real surface in the single-world view, where it is big
+      // enough to deserve one.
+      if (!b.texture && parent < 0) this.queueWorldBake(ud, b.params)
 
       this.sysPlanets.push(m)
       this.sysNodes.push(ud)
@@ -1048,40 +1074,78 @@ export class PlanetViewport {
   }
 
   /** Apply the orbital elements, which can change without a rebuild. */
-  private applyOrbits(def: SystemDef) {
+  private applyOrbits() {
     this.fitSame = 0
     this.fitScale = 0
+    const bodies = this.sysBodies
 
     // Compact systems are stretched and slowed as a whole — one factor each,
     // so internal geometry and relative pacing survive exactly.
-    const aMax = def.bodies.reduce((m, b) => Math.max(m, b.a), 0)
-    const pMin = def.bodies.reduce((m, b) => Math.min(m, b.period), Infinity)
+    // Satellites sit inside their planet's neighbourhood and orbit in days,
+    // so they must not drive the whole system's stretch or its tempo.
+    const orbiting = bodies.filter((b) => !b.orbits)
+    const aMax = orbiting.reduce((m, b) => Math.max(m, b.a), 0)
+    const pMin = orbiting.reduce((m, b) => Math.min(m, b.period), Infinity)
     const stretch = systemStretch(aMax)
     const tempo = tempoFor(pMin)
 
-    def.bodies.forEach((b, i) => {
+    // Parents first: a satellite's drawn orbit is measured against its
+    // planet's, so the planet's has to exist by the time the moon asks.
+    const order = bodies
+      .map((_, i) => i)
+      .sort((x, y) => (bodies[x].orbits ? 1 : 0) - (bodies[y].orbits ? 1 : 0))
+
+    order.forEach((i) => {
+      const b = bodies[i]
       const u = this.sysNodes[i]
       if (!u) return
 
       u.plane.rotation.y = b.node * D2R // longitude of ascending node
       u.plane.rotation.x = b.inc * D2R // inclination to the reference plane
       u.e = b.e
-      // The drawn period; the body list keeps quoting the measured one.
-      u.period = b.period * tempo
+      // The drawn period; the body list keeps quoting the measured one. A
+      // satellite's real year is days, which at the system's pace would be a
+      // blur, so it borrows the easing the single-world view already applies
+      // to moons — inner moons quick, outer ones slower, all of them watchable.
+      u.period = b.orbits
+        ? moonPeriodSec(b.period * 365.25) / YEAR_SEC
+        : b.period * tempo
       u.peri = (b.peri - b.node) * D2R
-      u.aSame = sameDist(b.a * stretch)
-      u.aScale = visDist(b.a * stretch)
+      if (u.parent >= 0) {
+        // A satellite's true distance is unusable at system scale — the Moon
+        // would sit a fraction of a pixel from Earth — so it is mapped into a
+        // band starting clear of the planet's drawn disc. The band's outer
+        // edge is whatever room there actually is before the nearest other
+        // orbit, which is generous to scale and nothing at all to same size.
+        const p = this.sysNodes[u.parent]
+        const siblings = bodies.filter((x) => x.orbits === b.orbits)
+        const radii = siblings.map((x) => satRadii(x.a, bodies[u.parent].radius))
+        const t = satRank(
+          satRadii(b.a, bodies[u.parent].radius),
+          Math.min(...radii), Math.max(...radii),
+        )
+        u.aSame = p.rSame * satMult(t, p.rSame, this.roomAt(bodies, u.parent, 'same'))
+        u.aScale = p.rScale * satMult(t, p.rScale, this.roomAt(bodies, u.parent, 'scale'))
+      } else {
+        u.aSame = sameDist(b.a * stretch)
+        u.aScale = visDist(b.a * stretch)
+      }
 
       const cp = Math.cos(u.peri)
       const sp = Math.sin(u.peri)
       const apo = 1 + b.e
-      this.fitSame = Math.max(this.fitSame, u.aSame * apo)
-      this.fitScale = Math.max(this.fitScale, u.aScale * apo)
+      // Satellites live inside their planet's neighbourhood, so they must not
+      // pull the camera back — the frame is set by what orbits the star.
+      if (u.parent < 0) {
+        this.fitSame = Math.max(this.fitSame, u.aSame * apo)
+        this.fitScale = Math.max(this.fitScale, u.aScale * apo)
+      }
 
+      const steps = u.parent >= 0 ? 64 : 200
       const shape = (line: THREE.Line<THREE.BufferGeometry>, AA: number) => {
         const pts: THREE.Vector3[] = []
-        for (let k = 0; k <= 200; k++) {
-          const E = (k / 200) * 6.2832
+        for (let k = 0; k <= steps; k++) {
+          const E = (k / steps) * 6.2832
           const x = AA * (Math.cos(E) - b.e)
           const z = AA * Math.sqrt(1 - b.e * b.e) * Math.sin(E)
           pts.push(new THREE.Vector3(x * cp - z * sp, 0, x * sp + z * cp))
@@ -1094,9 +1158,30 @@ export class PlanetViewport {
     })
   }
 
+  /**
+   * How much space a planet has around it before the nearest other orbit:
+   * half the distance to it, less the planet's own drawn radius. Negative
+   * means the planet is already wider than its share of the gap, which is
+   * ordinary in same-size mode — adjacent planets there overlap at
+   * conjunction — and the satellite band falls back to its floor.
+   */
+  private roomAt(bodies: SystemBody[], index: number, mode: 'same' | 'scale'): number {
+    const u = this.sysNodes[index]
+    const mine = mode === 'same' ? u.aSame : u.aScale
+    let gap = Infinity
+    for (let k = 0; k < this.sysNodes.length; k++) {
+      const o = this.sysNodes[k]
+      if (k === index || !o || o.parent >= 0 || bodies[k]?.orbits) continue
+      const d = Math.abs((mode === 'same' ? o.aSame : o.aScale) - mine)
+      if (d > 1e-6) gap = Math.min(gap, d)
+    }
+    if (!Number.isFinite(gap)) return (mode === 'same' ? u.rSame : u.rScale) * 3
+    return gap / 2 - (mode === 'same' ? u.rSame : u.rScale)
+  }
+
   /** Apply cheap body properties without rebuilding materials or baked maps. */
-  private applyBodyProperties(def: SystemDef) {
-    def.bodies.forEach((body, i) => {
+  private applyBodyProperties() {
+    this.sysBodies.forEach((body, i) => {
       const node = this.sysNodes[i]
       if (!node) return
       node.tilt.rotation.z = body.tilt * D2R
@@ -1232,7 +1317,18 @@ export class PlanetViewport {
     this.sunBase = scaled ? SIZE_MAX : 1.15
     this.sizeSun()
 
-    const fit = scaled ? this.fitScale * 0.97 : this.frameFor(this.fitSame)
+    // Scale mode parks the camera at the outermost orbit, which works while
+    // the star is a speck against it — the Sun is 3% of Pluto's orbit. It
+    // stops working when a system's only planet is close in: Alpha Centauri A
+    // has one at 1.25 AU now that Pandora orbits it rather than the star, and
+    // the frame ended up inside the star itself. So the star is also held to
+    // a share of the frame, which costs the Solar System nothing.
+    const sun = this.sunBase * starSize(this.sysDef?.star.mass ?? 1)
+    const halfV = Math.tan((this.camera.fov * D2R) / 2)
+    const byStar = sun / (STAR_FRAME_SHARE * halfV)
+    const fit = scaled
+      ? Math.max(this.fitScale * 0.97, byStar)
+      : this.frameFor(this.fitSame)
     this.fitZ = Math.max(4, fit)
     if (reframe) this.camZ = this.fitZ
   }
@@ -1585,7 +1681,7 @@ export class PlanetViewport {
       this.needFrame = true
     }
 
-    const shape = def.bodies.map(bodyKey).join('~')
+    const shape = `${this.showMoons ? 'm' : ''}|${def.bodies.map(bodyKey).join('~')}`
     if (shape !== this.sysShape) {
       // A system gaining or losing a world should come back into frame; nudging
       // an existing one's distance should not yank the camera about.
@@ -1602,14 +1698,14 @@ export class PlanetViewport {
       .join('~')
     if (properties !== this.sysPropertyKey) {
       this.sysPropertyKey = properties
-      this.applyBodyProperties(def)
+      this.applyBodyProperties()
     }
     const orbits = def.bodies
       .map((b) => `${b.a}:${b.e}:${b.inc}:${b.node}:${b.peri}:${b.period}`)
       .join('~')
     if (orbits !== this.sysOrbitKey) {
       this.sysOrbitKey = orbits
-      this.applyOrbits(def)
+      this.applyOrbits()
       this.sizeMode = '' // distances moved, so the size mode has to be reapplied
     }
     this.amb.intensity = 0.16
@@ -1636,10 +1732,10 @@ export class PlanetViewport {
 
     // Names are deliberately not in the bake key, so a rename reaches its
     // label here: a small canvas redraw, never a material or texture rebuild.
-    const names = def.bodies.map((b) => b.name).join('~')
+    const names = this.sysBodies.map((b) => b.name).join('~')
     if (names !== this.sysLabelKey) {
       this.sysLabelKey = names
-      def.bodies.forEach((b, i) => {
+      this.sysBodies.forEach((b, i) => {
         const u = this.sysNodes[i]
         if (!u || u.labelName === b.name) return
         u.labelName = b.name

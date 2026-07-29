@@ -145,3 +145,47 @@ export function tempoFor(pMin: number): number {
 }
 
 export { SIZE_MAX, SIZE_MIN }
+
+/** Kilometres in an astronomical unit, for satellite distances. */
+const AU_KM = 149597870.7
+/** Kilometres in an Earth radius. */
+const EARTH_KM = 6371
+
+/** A satellite's true distance from its planet, in that planet's radii. */
+export function satRadii(aAu: number, parentEarthRadii: number): number {
+  return (aAu * AU_KM) / Math.max(1e-9, parentEarthRadii * EARTH_KM)
+}
+
+/** Nearest and furthest a satellite may be drawn, as multiples of its planet. */
+const SAT_MIN_MULT = 1.3
+const SAT_MAX_MULT = 4
+
+/**
+ * Where a satellite's orbit is drawn, as a multiple of its planet's drawn
+ * radius.
+ *
+ * True distance is unusable here — the Moon at scale sits a third of a pixel
+ * from Earth — so satellites are mapped into a band that starts clear of the
+ * planet's own disc and stops before it reaches the neighbouring orbit.
+ * `room` is how much space there actually is: half the distance to the
+ * nearest other orbit, less the planet's drawn radius. In "to scale" mode
+ * that is generous. In "same size" mode it is negative — every planet is
+ * drawn 0.24 wide with 0.29 between orbits, so adjacent planets already
+ * overlap at conjunction — and the band collapses to its floor, which keeps
+ * the moon outside its planet and close to it.
+ *
+ * `t` is the satellite's rank within its own system of moons, 0 for the
+ * innermost, so ordering and relative spacing survive.
+ */
+export function satMult(t: number, parentRadius: number, room: number): number {
+  const head = room > 0 ? 1 + room / Math.max(1e-6, parentRadius) : SAT_MIN_MULT + 0.25
+  const top = Math.min(SAT_MAX_MULT, Math.max(SAT_MIN_MULT + 0.25, head))
+  return SAT_MIN_MULT + Math.min(1, Math.max(0, t)) * (top - SAT_MIN_MULT)
+}
+
+/** Rank a satellite by true distance, log-spaced so inner moons stay apart. */
+export function satRank(radii: number, lo: number, hi: number): number {
+  if (!(hi > lo)) return 1
+  const l = Math.log(Math.max(1.01, radii))
+  return (l - Math.log(Math.max(1.01, lo))) / (Math.log(Math.max(1.02, hi)) - Math.log(Math.max(1.01, lo)))
+}

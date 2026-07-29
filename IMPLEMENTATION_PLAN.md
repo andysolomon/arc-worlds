@@ -201,14 +201,30 @@ Promoted set — the ones with real character: **the Moon**, **Io**, **Europa**,
 
 ### 10. Satellite orbits in the orbit view
 
-- [ ] A body may orbit another body rather than the star, so Pandora truly
-      circles Polyphemus and the promoted moons circle their planets.
-- [ ] The drawn-distance problem is the whole risk, and phase 6 already
-      proved it bites: in "same size" mode every planet renders at one radius,
-      and the gap between adjacent drawn orbits is around a quarter of a unit.
-      A satellite orbit must therefore be clamped to a fraction of the
-      distance to the parent's nearest neighbour, with a unit test pinning it
-      the way the Pandora clearance test does.
+- [x] `SystemBody.orbits` names a parent, and the satellite's plane hangs off
+      that body's node in the scene graph — so it inherits the planet's
+      position every frame, orbit line included, with no hand-written
+      ordering. Pandora circles Polyphemus; the seven promoted moons circle
+      their planets.
+- [x] The drawn-distance problem, measured rather than guessed: satellites map
+      into a band starting at 1.3× the parent's drawn radius, whose outer edge
+      is the room actually available — half the distance to the nearest other
+      orbit, less the planet's own radius. Generous to scale (Jupiter has 5.4
+      units); nothing at all to same size, where planets are drawn 0.24 wide
+      with 0.29 between orbits and already overlap at conjunction, so the band
+      collapses to its floor. Unit-tested at both extremes.
+- [x] Satellites are moons, so the moons toggle drops them entirely — the
+      performance lever now does more work, and an e2e spec proves the
+      geometry leaves the scene.
+- [x] Framing bug this surfaced: scale mode parked the camera at the outermost
+      orbit, which fails when a system's only planet is close in — Alpha
+      Centauri A framed itself inside its own star. The star is now held to a
+      share of the frame, which costs the Solar System nothing.
+- [x] Satellites carry no baked map and a coarser path: a few pixels wide at
+      system scale, they are indistinguishable from the palette tone they
+      already wear, and they get the real surface in the single-world view.
+      Build-bodies and first-render both came out faster than before the
+      satellites existed.
 
 ## Performance plan (delivered 2026-07-28)
 

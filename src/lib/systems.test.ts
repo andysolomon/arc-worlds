@@ -4,7 +4,7 @@ import {
   PEGASI_51, PROXIMA, TAU_CETI, TRAPPIST,
 } from '../data/systems'
 import { ORBITS } from '../engine/planets'
-import { periodFor, sameDist, starRadius, starSize } from '../engine/scale'
+import { periodFor, starRadius, starSize } from '../engine/scale'
 import {
   A_MAX, MASS_MAX, MASS_MIN, MAX_BODIES, STAR_KINDS,
   addRolledWorld, addWorld, bodyFromWorld, dayFor, duplicateBody, duplicateSystem,
@@ -79,8 +79,10 @@ describe('starSize', () => {
 describe('the built-in systems', () => {
   it('carries the measured orbits straight through to the Solar System', () => {
     expect(MILKY_WAY.origin).toBe('measured')
-    expect(MILKY_WAY.bodies).toHaveLength(9)
-    MILKY_WAY.bodies.forEach((b, i) => {
+    // Nine planets orbit the Sun; the rest of the list is their moons.
+    const planets = MILKY_WAY.bodies.filter((b) => !b.orbits)
+    expect(planets).toHaveLength(9)
+    planets.forEach((b, i) => {
       expect(b.a).toBe(ORBITS[i][1])
       expect(b.period).toBe(ORBITS[i][2])
       // Pluto has no CC BY photographic map, so it renders procedurally and
@@ -150,7 +152,9 @@ describe('the built-in systems', () => {
     // The fictions are invented but the physics is not negotiable: a saved
     // copy re-derives periods on sanitisation, so they must already agree.
     for (const s of [ERIDANI_40, TAU_CETI, ALPHA_CENTAURI]) {
-      for (const b of s.bodies) {
+      // Satellites orbit their planet, not the star, so Kepler-from-the-star
+      // has nothing to say about them.
+      for (const b of s.bodies.filter((x) => !x.orbits)) {
         const derived = periodFor(b.a, s.star.mass)
         expect(Math.abs(derived - b.period) / b.period, b.name).toBeLessThan(0.001)
       }
@@ -168,20 +172,40 @@ describe('the built-in systems', () => {
     }
   })
 
-  it('keeps Pandora outside Polyphemus, since it cannot ride it as a moon', () => {
+  it('puts Pandora in orbit around Polyphemus, as the fiction has it', () => {
     const [polyphemus, pandora] = ALPHA_CENTAURI.bodies
     expect(polyphemus.name).toBe('Polyphemus')
     expect(pandora.name).toBe('Pandora')
-    expect(pandora.a).toBeGreaterThan(polyphemus.a)
-    expect(ALPHA_CENTAURI.sub).toMatch(/moon/)
+    expect(pandora.orbits).toBe('Polyphemus')
+    // Its distance and year are its own, measured from the planet.
+    expect(pandora.a).toBeLessThan(polyphemus.a)
+    expect(pandora.period).toBeLessThan(0.05)
   })
 
-  it('draws Pandora clear of Polyphemus even at conjunction', () => {
-    // In same-size mode every planet is a 0.24-radius disc, so these two
-    // drawn orbits need at least 0.48 of separation or a conjunction pushes
-    // the moon through its own planet's surface, once a minute, on screen.
-    const [polyphemus, pandora] = ALPHA_CENTAURI.bodies
-    expect(sameDist(pandora.a) - sameDist(polyphemus.a)).toBeGreaterThan(0.48)
+  it('keeps every satellite listed directly after the planet it orbits', () => {
+    // A satellite's distance is measured from its planet, so sorting the list
+    // by distance alone would file the Moon in front of Mercury.
+    const sorted = sortByDistance(MILKY_WAY.bodies)
+    for (let i = 0; i < sorted.length; i++) {
+      const b = sorted[i]
+      if (!b.orbits) continue
+      const parent = sorted.findIndex((x) => x.name === b.orbits)
+      expect(parent, b.name).toBeGreaterThanOrEqual(0)
+      expect(parent, b.name).toBeLessThan(i)
+      // Nothing orbiting the star may come between a planet and its moons.
+      for (let k = parent + 1; k < i; k++) expect(sorted[k].orbits, b.name).toBeTruthy()
+    }
+  })
+
+  it('lets a duplicated Solar System keep its moons through sanitisation', () => {
+    const out = sanitizeSystem(duplicateSystem(MILKY_WAY))
+    expect(out.bodies).toHaveLength(MILKY_WAY.bodies.length)
+    const moon = out.bodies.find((b) => b.name === 'Moon')!
+    expect(moon.orbits).toBe('Earth')
+    // Its year is its own — a Kepler year at 0.00257 AU from the Sun would be
+    // about a day and a half, which is not what the Moon does.
+    expect(moon.period).toBeCloseTo(27.322 / 365.25, 4)
+    expect(moon.a).toBeCloseTo(0.002569, 5)
   })
 
   it('marks Andromeda as imagined and gives it no photographic maps', () => {
@@ -362,8 +386,9 @@ describe('adding a world', () => {
     expect(out.bodies.at(-1)?.name).toBe('Peachmoss')
     expect(out.bodies.at(-1)!.a).toBeGreaterThan(MILKY_WAY.bodies.at(-1)!.a)
 
+    // The original is untouched: nine planets and their moons, as before.
     expect(MILKY_WAY.origin).toBe('measured')
-    expect(MILKY_WAY.bodies).toHaveLength(9)
+    expect(MILKY_WAY.bodies.filter((b) => !b.orbits)).toHaveLength(9)
   })
 
   it('never leaves a world nameless', () => {

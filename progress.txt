@@ -546,3 +546,49 @@ MEASURED (same Apple Silicon machine, headless Chromium, three-run medians)
   measured 26-41 ms inside a 256-437 ms enclosing browser task. That
   points at first-presentation browser/driver work. Safari/Metal remains
   the required environment for confirming the driver-side hypothesis.
+
+2026-07-29 satellite orbits: moons orbit their planets, and are worlds
+
+DONE
+- SystemBody.orbits names a parent. The satellite's plane is parented to
+  that body's node in the scene graph, so it inherits the planet's
+  position every frame — orbit path included — with no ordering code.
+- Drawn distance measured, not guessed: a band from 1.3x the parent's
+  drawn radius out to whatever room exists before the nearest other
+  orbit. Scale mode is generous (Jupiter 5.4 units of clearance);
+  same-size mode has none — planets are drawn 0.24 wide with 0.29
+  between orbits and already overlap at conjunction — so the band
+  collapses to its floor. Unit tests pin both extremes and the ordering.
+- The seven promoted moons orbit their planets in the Solar System;
+  Pandora orbits Polyphemus. Satellites keep their true a (AU) and
+  period (years) measured from the parent; the drawn year borrows the
+  single-view moon easing so the Moon is watchable rather than a blur.
+- Satellites are moons, so the moons toggle drops them entirely and the
+  geometry genuinely leaves the scene (e2e asserts the triangle count).
+- Library made satellite-aware: MAX_BODIES 12 -> 24 (the Solar System
+  alone is now 16 and a copy of it must survive), sortByDistance files
+  a satellite directly after its planet rather than by its own distance
+  — which would put the Moon in front of Mercury — and sanitisation
+  keeps a satellite's own period instead of deriving a Kepler year from
+  the star it does not orbit.
+- Two bugs found by looking at it rather than at numbers: Alpha
+  Centauri A framed itself inside its own star (scale mode parks the
+  camera at the outermost orbit, which fails when the only planet is
+  close in — the star is now held to 40% of the frame), and the first
+  screenshot showed the moons were being baked at full resolution for
+  a six-pixel dot.
+
+VERIFIED
+- typecheck, lint, 123 unit (4 new), 28 e2e (2 new), all bundle budgets,
+  perf median green.
+- Same-machine A/B against the pre-satellite build: firstSystemFrame
+  +5.6%, longTaskMax +77 ms (inside its 150 ms noise floor),
+  build-bodies -57% and first-render -21% — faster than before the
+  satellites existed, because satellites skip the bake and use a
+  coarser path. Later median settled at 326 ms, under the 452 baseline.
+
+NEXT
+- The satellite band is tuned for the built-in systems; a custom system
+  with a satellite has no UI to create one yet.
+- Same-size mode's overlapping planets at conjunction remain a
+  pre-existing oddity now shared by satellites.
