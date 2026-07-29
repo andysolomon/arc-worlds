@@ -50,6 +50,15 @@ While implementing:
 - `bun run perf:budget` checks the recorded median.
 - `bun run perf:ci` builds and runs all absolute bundle/browser budgets.
 
+Two budget profiles exist, selected automatically by the `CI` environment
+variable (`--profile local|ci` overrides). The `browser` block is calibrated on
+developer hardware; `browserCiOverrides` replaces the rows a two-core shared
+GitHub runner cannot meet (`interactionDurationMs`, `taskDurationMs`) with
+ceilings measured on that runner plus headroom. The 10% relative regression
+check against the pull request base remains the tight guard on CI — the CI
+overrides exist so the absolute check reports real regressions instead of
+failing on hardware it was never calibrated for.
+
 For performance-sensitive changes, include before/after measurements from the
 same machine and browser. A regression greater than 10% requires a fix or an
 explicit, documented product tradeoff. Do not loosen a budget merely to make CI

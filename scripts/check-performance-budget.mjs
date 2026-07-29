@@ -15,7 +15,18 @@ const results = JSON.parse(await readFile(resultsPath, 'utf8'))
 const summary = results.summary
 const failures = []
 
-for (const [metric, rule] of Object.entries(budget.browser)) {
+// The absolute browser budgets were calibrated on developer hardware, and a
+// two-core shared CI runner has never met two of them on any run it has ever
+// had. On CI those rows use their own calibrated ceilings — measured on the
+// runner, with headroom — while the relative regression check below stays the
+// tight guard. `--profile local` forces developer budgets anywhere.
+const profile = option('profile', process.env.CI ? 'ci' : 'local')
+const browser = profile === 'ci'
+  ? { ...budget.browser, ...(budget.browserCiOverrides ?? {}) }
+  : budget.browser
+console.log(`Budget profile: ${profile}`)
+
+for (const [metric, rule] of Object.entries(browser)) {
   const value = summary[metric]
   const suffix = rule.unit ? ` ${rule.unit}` : ''
 
@@ -63,7 +74,7 @@ if (baselineOption) {
   }
 }
 
-console.table(Object.entries(budget.browser).map(([metric, rule]) => ({
+console.table(Object.entries(browser).map(([metric, rule]) => ({
   metric,
   value: summary[metric],
   budget: 'equals' in rule

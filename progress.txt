@@ -475,6 +475,20 @@ VERIFIED (full suite delegated to the same Opus 5 agent)
 - Phase-7 watch items: fps never touched its floor this time (23.3 in
   all 14 runs); interactionDuration 88 ms sample did not reproduce.
 
+2026-07-29 fix: CI browser budgets calibrated for the shared runners
+
+DONE
+- Two budget profiles in check-performance-budget.mjs, selected by the
+  CI env var (--profile overrides): the browser block stays the
+  developer-hardware truth; browserCiOverrides replaces the two rows a
+  two-core GitHub runner has never met with ceilings measured on that
+  runner plus headroom (interactionDurationMs 352 observed -> 500,
+  taskDurationMs 5563 observed -> 7500). The 10% relative regression
+  check against the PR base remains CI's tight guard. AGENTS.md
+  documents the profile rule and why this is calibration, not
+  loosening: the absolute check should report real regressions, not
+  fail on hardware it was never calibrated for.
+
 NEXT
 - CI browser budgets have never fit GitHub's shared runners: the
   Performance workflow fails on interactionDurationMs (328 ms at the

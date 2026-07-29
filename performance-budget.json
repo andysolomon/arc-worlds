@@ -49,6 +49,16 @@
       "unit": "errors"
     }
   },
+  "browserCiOverrides": {
+    "interactionDurationMs": {
+      "max": 500,
+      "unit": "ms"
+    },
+    "taskDurationMs": {
+      "max": 7500,
+      "unit": "ms"
+    }
+  },
   "regression": {
     "maxPercent": 10,
     "lowerIsBetter": [
