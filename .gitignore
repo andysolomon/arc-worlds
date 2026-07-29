@@ -8,8 +8,14 @@ dist/
 *.tsbuildinfo
 test-results/
 playwright-report/
+.artifacts/
 .vercel
 .env*.local
 
 # agent-browser scratch output
 .playwright-cli/
+
+# Local agent tooling — never part of the project
+.agents/
+.claude/
+skills-lock.json

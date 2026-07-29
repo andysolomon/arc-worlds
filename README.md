@@ -2,7 +2,7 @@
 
 Sculpt a planet, then see who lives there.
 
-A browser-based 3D planet sculptor and star-system builder on Three.js. Generate procedural worlds from a seed and shape them with a handful of sliders, run a spectrometer over them to find out what the atmosphere is made of, visit the eight real planets rendered from measured data, then arrange worlds of your own into a system and set them orbiting.
+A browser-based 3D planet sculptor and star-system builder on Three.js. Generate procedural worlds from a seed and shape them with a handful of sliders, run a spectrometer over them to find out what the atmosphere is made of, visit the eight real planets — and Pluto — rendered from measured data, then arrange worlds of your own into a system and set them orbiting.
 
 The renderer runs entirely in the browser. Saving a world or a system stores its parameters in
 Postgres and gives you a permanent link, so both can be shared and browsed.
@@ -41,19 +41,35 @@ serve the repo over HTTP and open `prototype/Little Worlds.dc.html`.
 
 ## The four tabs
 
-**Sculpt** — the world-builder. A seed drives procedural terrain, and eight world types set the palette: five rocky (Meadow, Dune, Frost, Ember, Candy) and three gas giants (Amber, Mist, Storm). Sliders control mountains, sea level, roughness, cloud cover, ice caps, atmospheric glow, spin direction and speed, and sun angle. Rings are fully procedural — count, inner radius, width, gap, tilt, opacity and colour — as are up to three moons. **Surprise me** rolls the whole thing at random.
+**Sculpt** — the world-builder. A seed drives procedural terrain, and eight world types set the palette: five rocky (Meadow, Dune, Frost, Ember, Candy) and three gas giants (Amber, Mist, Storm). Sliders control mountains, sea level, roughness, cloud cover, ice caps, atmospheric glow, spin direction and speed, and sun angle. Rings are fully procedural — count, inner radius, width, gap, tilt, opacity and colour — as are up to three moons. **Surprise me** rolls the whole thing at random. An **Ancient worlds** row loads deep-time reconstructions whole — Archean Earth under its orange methane haze, Proterozoic Earth with continents nothing lives on, Noachian Mars while it still had a sea. Each keeps a canonical seed: hold onto it and the spectrometer reads the reconstruction (and says that is what it is); reseed it and the world detaches into an ordinary sculptable one, the same identity rule the measured planets follow.
+
+Fluids visibly move: light shimmers across open water, lava creeps and breathes its glow, gas-giant bands drift at different speeds by latitude while a storm vortex slowly turns. All of it rides the same clock as rotation, so pausing the world — or hiding the tab, or scrolling the canvas away — freezes every fluid with it, and the renderer goes back to sleep. A **Rendering** row picks the tier: **flat** is the world's baked map on a smooth sphere — exactly what the orbit view draws, and the cheap choice; **detailed** is displaced terrain with water, cloud and sky shells — what the sculptor draws. **Auto** lets each world pick: photographs and gas giants go flat (the gas shader is where the drifting bands live), sculpted rock goes detailed. It is a quality choice, never part of the world: the same `engine/surface.ts` colours both tiers, and a photographed planet forced detailed simply renders the procedural interpretation its own params already encode.
 
 **Scan** — a spectrometer readout for whatever world is currently on screen, split across Atmosphere, Surface & water, and Light. It reports composition by volume with a per-gas explanation, surface mineralogy, the state of any water, a biosignature assessment, and the specific absorption lines that would give each result away. The chemistry responds to the sliders: push sea level and cloud cover up on a Meadow world and you get a nitrogen–oxygen atmosphere flagged as out of equilibrium; drop them and the same seed reads as anoxic nitrogen–CO₂.
 
-**Systems** — a star and the worlds that orbit it, in two views.
+**Systems** — a star and the worlds that orbit it, in two views. A **Universe** section tunes the sky itself: star density and brightness, overall exposure, and a nebula wash behind everything (plain CSS behind the transparent canvas, so it costs the GPU nothing). All of it is a per-browser viewer preference — never part of a world, a system, or a shared link — and every default reproduces exactly the look the app always had.
 
 - *Body list* — visit any world in the system and see it rendered on its own, then hit **Reshape** to pull it into the sculptor and start editing.
 - *Orbit view* — everything orbiting its star on real elliptical, inclined paths at the pace its own orbit implies (one Earth year ≈ 14 seconds). **Same size** draws every planet alike so the small ones stay findable; **To scale** ranks them by true size. Click any planet to visit it.
 
-Three kinds of system sit side by side, and the tab is careful about which is which:
+Five kinds of system sit side by side, and the tab is careful about which is which:
 
 - **The Solar System** — ours, every number measured. Read-only; duplicating it gives you an editable copy.
+- **Observed systems** — TRAPPIST-1, Proxima Centauri, 51 Pegasi and Kepler-452: real exoplanet
+  systems whose distances, years, eccentricities and sizes are measured, wearing procedural
+  surfaces that are imagined — nobody has seen one up close, and the tab says exactly that. A
+  compact system like TRAPPIST-1, which would fit entirely inside Mercury's orbit, is stretched to
+  fill the frame and slowed just enough to watch — one factor each for distance and time, so every
+  internal ratio stays exact and TRAPPIST-1 h still orbits 12.4× slower than b.
 - **Andromeda** — an invented system around an orange dwarf, labelled as invented wherever it appears.
+- **Homage systems** — original interpretations of famous fictions, labelled invented like
+  Andromeda: the Outer Rim (Tatooine, Hoth and Mustafar under one sun — the engine draws single
+  stars, and Tatooine's scan owes the fiction its second one out loud), 40 Eridani and Tau Ceti
+  (Erid and Adrian from *Project Hail Mary*, on real star masses), and Alpha Centauri A
+  (Polyphemus with Pandora from *Avatar* — Pandora is really its moon, so it rides its own orbit
+  just outside and the caption says so). Each scans with chemistry from its fiction, opening with
+  the word **Fiction**; reseed one and it detaches into an ordinary world of its family, exactly
+  like Pluto and the ancient reconstructions.
 - **Yours** — duplicate an existing system, roll a whole one from a seed, or start empty. Set each world's distance, size and orbital stretch, pick a star, and save it for a permanent `/s/:slug` link.
 
 Worlds go into a system four ways, and none of them needs a trip through the sculptor first: pick
@@ -63,7 +79,10 @@ Worlds gallery; or duplicate something already orbiting, which carries the name 
 Mirabelle, Mirabelle II, Mirabelle III. Every new world lands on its own orbit outside everything
 already there, and every one of them stays fully sculptable afterwards. Adding from the gallery to
 a read-only system gives you an editable copy of it rather than refusing the click: the system
-being added to is on another tab, so the Worlds panel names it before you touch anything.
+being added to is on another tab, so the Worlds panel names it before you touch anything — and a
+picker there aims Add at any of your saved systems instead of the one currently on screen. If the
+chosen system already holds that exact world, the panel says so and asks before adding it again;
+duplicates are allowed, just never silent.
 
 A world knows nothing about where it is: `PlanetParams` describes a planet, and everything that
 only means something relative to a star — distance, eccentricity, inclination, axial tilt — lives on
@@ -79,14 +98,14 @@ The real planets are driven by measured values in `src/engine/planets.ts` rather
 
 - **Bodies** — axial tilt, oblateness (Saturn is visibly squashed), and sidereal rotation period, with retrograde spin for Venus and Uranus.
 - **Orbits** — semi-major axis, period, eccentricity, inclination to the ecliptic, longitude of ascending node, and longitude of perihelion. Positions are Kepler-solved, so the elliptical speed-up near perihelion is real.
-- **Moons** — 21 moons across six planets at their real relative radii, semi-major axes, orbital periods and inclinations. Tidally locked moons keep one face inward. Triton orbits retrograde and steeply inclined; Nereid runs its genuinely eccentric path; Iapetus carries its two-tone Cassini Regio colouring. Phobos, Deimos, Proteus and Nereid are modelled as irregular bodies rather than spheres.
+- **Moons** — 22 moons across seven bodies at their real relative radii, semi-major axes, orbital periods and inclinations. Tidally locked moons keep one face inward. Triton orbits retrograde and steeply inclined; Nereid runs its genuinely eccentric path; Iapetus carries its two-tone Cassini Regio colouring. Phobos, Deimos, Proteus and Nereid are modelled as irregular bodies rather than spheres. Charon, over half Pluto's own radius, rides the mutually locked pair's 6.4-day orbit.
 - **Rings** — generated in GLSL, not textured, each with its own radial profile: Saturn's C/B/A structure with the Cassini division and the Encke gap; Uranus's ten narrow dark ringlets; Neptune's clumpy Adams arcs. Rings cast a shadow onto the planet, and the unlit face renders dimmer than the lit one.
 
 Long-period moons are eased in wall-clock time so Iapetus and Nereid still visibly move without rushing the inner moons, and orbital distances are compressed — order-preserving, but not to scale, so that everything stays in frame.
 
 Invented systems get the same treatment. You give a world a distance and its year follows from
 Kepler's third law, `P² = a³ / M★` — so moving a planet outward slows it down, and making the star
-heavier speeds everything up. The same law reproduces all eight measured periods to the nearest
+heavier speeds everything up. The same law reproduces all nine measured periods to the nearest
 year, which is what makes it fair to use for the imagined ones.
 
 The star's mass also sets its size, by the main-sequence mass–radius relation: radius tracks mass

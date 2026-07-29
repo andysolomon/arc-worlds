@@ -4,8 +4,11 @@ import { SculptPanel } from './components/SculptPanel'
 import { SystemsPanel } from './components/SystemsPanel'
 import { Viewport } from './components/Viewport'
 import { WorldsPanel } from './components/WorldsPanel'
-import { PRESETS, typeOf } from './data/presets'
+import { PRESETS, typeOf, type AncientWorld } from './data/presets'
 import { MILKY_WAY } from './data/systems'
+import {
+  loadDisplay, nebulaCss, saveDisplay, type DisplayOptions, type TierChoice,
+} from './lib/display'
 import { DEFAULT_PARAMS, sanitize, surprise } from './lib/params'
 import {
   addRolledWorld, addWorld, duplicateBody, sanitizeSystem,
@@ -49,6 +52,7 @@ export default function App() {
   const [view, setView] = useState<'single' | 'system'>('single')
   const [sizeMode, setSizeMode] = useState<'same' | 'scale'>('same')
   const [timeScale, setTimeScale] = useState(1)
+  const [display, setDisplay] = useState<DisplayOptions>(loadDisplay)
 
   const [scan, setScan] = useState<ScanResult | null>(null)
   const [scanning, setScanning] = useState(false)
@@ -71,8 +75,9 @@ export default function App() {
 
   const scanTimer = useRef<number | null>(null)
 
-  // Params handed to the engine. `view` and `timeScale` are render concerns,
-  // not part of the world's identity, so they are merged in only here.
+  // Params handed to the engine. `view`, `timeScale` and the display toggles
+  // are render concerns, not part of the world's identity, so they are merged
+  // in only here.
   const enginePar = useMemo<PlanetParams>(
     () => ({
       ...params,
@@ -80,9 +85,34 @@ export default function App() {
       sizeMode,
       timeScale,
       autoRotate: timeScale > 0,
+      showPaths: display.paths,
+      showLabels: display.labels,
+      showMoons: display.moons,
+      tier: display.tier === 'auto' ? undefined : display.tier,
+      starDensity: display.starDensity,
+      starBright: display.starBright,
+      exposure: display.exposure,
     }),
-    [params, view, sizeMode, timeScale],
+    [params, view, sizeMode, timeScale, display],
   )
+
+  const toggleDisplay = useCallback((k: 'paths' | 'labels' | 'moons') => {
+    setDisplay((d) => ({ ...d, [k]: !d[k] }))
+  }, [])
+
+  const setTier = useCallback((tier: TierChoice) => {
+    setDisplay((d) => ({ ...d, tier }))
+  }, [])
+
+  const setDisplayField = useCallback(
+    <K extends keyof DisplayOptions>(k: K, v: DisplayOptions[K]) => {
+      setDisplay((d) => ({ ...d, [k]: v }))
+    },
+    [],
+  )
+
+  // Persisted outside the updater, which must stay pure under StrictMode.
+  useEffect(() => saveDisplay(display), [display])
 
   /* --- share links ------------------------------------------------------ */
 
@@ -134,12 +164,11 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (tab === 'worlds') refreshGallery()
-    // The systems tab can now add a saved world without leaving, so it needs
-    // the world gallery as well as the system one.
-    if (tab === 'solar') {
-      refreshSystems()
+    // Both galleries feed both tabs now: the systems tab can add a saved
+    // world, and the worlds tab can aim a world at any saved system.
+    if (tab === 'worlds' || tab === 'solar') {
       refreshGallery()
+      refreshSystems()
     }
   }, [tab, refreshGallery, refreshSystems])
 
@@ -156,6 +185,14 @@ export default function App() {
   const applyPreset = useCallback((key: PresetKey) => {
     const p = PRESETS.find((x) => x.key === key)
     setParams((s) => ({ ...s, ...(p?.def ?? {}), preset: key, texture: null, cloudTexture: null }))
+    setScan(null)
+    setSavedSlug(null)
+  }, [])
+
+  /** Load an ancient world whole — canonical seed, sliders, name and all. */
+  const applyAncient = useCallback((a: AncientWorld) => {
+    setParams({ ...DEFAULT_PARAMS, ...a.params, preset: a.key, texture: null, cloudTexture: null })
+    setName(a.name)
     setScan(null)
     setSavedSlug(null)
   }, [])
@@ -223,9 +260,18 @@ export default function App() {
     setSavedSystemSlug(null)
   }, [])
 
-  /** Add a world from the gallery, from either the systems or the worlds tab. */
-  const addSavedWorld = useCallback((w: SavedWorld) => {
-    setSystem((s) => addWorld(s, w.name, sanitize(w.params)))
+  /**
+   * Add a world from the gallery, from either the systems or the worlds tab.
+   * A target makes that saved system the active one first, so the world lands
+   * where it was aimed and the Systems tab is already showing the result.
+   */
+  const addSavedWorld = useCallback((w: SavedWorld, target?: SavedSystem | null) => {
+    if (target) {
+      setSystem(addWorld(sanitizeSystem(target.def), w.name, sanitize(w.params)))
+      if (window.location.pathname.startsWith('/s/')) window.history.replaceState(null, '', '/')
+    } else {
+      setSystem((s) => addWorld(s, w.name, sanitize(w.params)))
+    }
     setSavedSystemSlug(null)
     setAddedSlug(w.slug)
     window.setTimeout(() => setAddedSlug(null), 1600)
@@ -273,8 +319,12 @@ export default function App() {
     setScanNonce((n) => n + 1)
     if (scanTimer.current) window.clearTimeout(scanTimer.current)
     scanTimer.current = window.setTimeout(() => {
-      setScan(computeScan(params))
-      setScanning(false)
+      // The sweep animation has been masking the wait, so the profile chunk
+      // has had 2.1 s of runway; a failed fetch just yields no reading.
+      computeScan(params)
+        .then(setScan)
+        .catch(() => setScan(null))
+        .finally(() => setScanning(false))
     }, 2100)
   }, [scanning, params])
 
@@ -372,6 +422,7 @@ export default function App() {
             scanNonce={scanNonce}
             resetNonce={resetNonce}
             onPick={visitBody}
+            background={nebulaCss(display.nebula)}
           />
 
           <div className="view-title">
@@ -411,9 +462,12 @@ export default function App() {
               <SculptPanel
                 params={params}
                 name={name}
+                tier={display.tier}
+                onTier={setTier}
                 onName={setName}
                 onParam={setParam}
                 onPreset={applyPreset}
+                onAncient={applyAncient}
                 onReshape={reshape}
                 onSave={onSave}
                 saving={saving}
@@ -430,6 +484,9 @@ export default function App() {
                 system={system}
                 view={view}
                 sizeMode={sizeMode}
+                display={display}
+                onDisplay={toggleDisplay}
+                onDisplaySet={setDisplayField}
                 onView={setView}
                 onSizeMode={setSizeMode}
                 onVisit={visitBody}
@@ -460,6 +517,7 @@ export default function App() {
                 onCopyLink={copyLink}
                 copiedSlug={copiedSlug}
                 system={system}
+                systems={systems}
                 onAdd={addSavedWorld}
                 addedSlug={addedSlug}
               />

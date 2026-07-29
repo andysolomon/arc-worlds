@@ -34,6 +34,23 @@ export interface PlanetParams {
   stars?: boolean
   autoRotate?: boolean
   timeScale?: number
+  /** Orbit paths for planets and moons. Hidden paths still show on hover. */
+  showPaths?: boolean
+  /** Planet names in the orbit view. */
+  showLabels?: boolean
+  /** Off skips building moons entirely, which is a performance lever. */
+  showMoons?: boolean
+  /**
+   * Rendering tier for the single-world view. `flat` is the baked map on a
+   * smooth sphere; `detailed` is displaced geometry with fluid shells.
+   * Unset lets the world pick: photographs and gas giants render flat,
+   * sculpted rock renders detailed. A quality choice, never identity.
+   */
+  tier?: 'flat' | 'detailed'
+  /** Universe appearance, 0..1 each with 0.5 the look the app always drew. */
+  starDensity?: number
+  starBright?: number
+  exposure?: number
 }
 
 export type PresetKey =
@@ -52,6 +69,16 @@ export type PresetKey =
   | 'saturn'
   | 'uranus'
   | 'neptune'
+  | 'pluto'
+  | 'archean'
+  | 'proterozoic'
+  | 'noachian'
+  | 'tatooine'
+  | 'hoth'
+  | 'mustafar'
+  | 'erid'
+  | 'adrian'
+  | 'pandora'
 
 export interface RockyPalette {
   gas?: false
@@ -122,6 +149,13 @@ export interface RealBody {
   day: number
   ring?: RingConfig
   moons: Moon[]
+  /**
+   * Canonical seed, for measured bodies that have no photographic map. A
+   * textured body claims its measured identity through the texture; a
+   * texture-less one (Pluto) claims it by carrying this exact seed, and
+   * changing the seed detaches it — the same rule the sculptor applies.
+   */
+  seed?: number
 }
 
 /** name, a (AU), period (yr), eccentricity, inclination, node, perihelion, radius (Earth radii). */
@@ -175,9 +209,11 @@ export interface Star {
 /**
  * Where a system's numbers come from. The Solar System is measured and this
  * project is careful about saying so, which means anything invented has to be
- * marked as invented rather than sitting alongside it unlabelled.
+ * marked as invented rather than sitting alongside it unlabelled. `observed`
+ * is the honest middle: real exoplanet systems whose orbits and years are
+ * measured while every surface wearing them is imagined — nobody has seen one.
  */
-export type SystemOrigin = 'measured' | 'imagined' | 'custom'
+export type SystemOrigin = 'measured' | 'observed' | 'imagined' | 'custom'
 
 export interface SystemDef {
   id: string

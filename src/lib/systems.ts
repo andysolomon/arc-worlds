@@ -11,12 +11,14 @@ import type {
   PlanetParams, PresetKey, RingConfig, Star, SystemBody, SystemDef,
 } from '../engine/types.js'
 import { PRESETS } from '../data/presets.js'
-import { genName, safeTexture, sanitize, surprise } from './params.js'
+import { genName, safeTexture, sanitize, serialize, surprise } from './params.js'
 
 /** Enough for a generous system without letting one payload get silly. */
 export const MAX_BODIES = 12
 
-export const A_MIN = 0.04
+// Low enough for real compact systems: TRAPPIST-1 b orbits at 0.0115 AU, and
+// a duplicated copy of it must survive sanitisation with its orbits intact.
+export const A_MIN = 0.01
 export const A_MAX = 90
 export const MASS_MIN = 0.08
 export const MASS_MAX = 3
@@ -152,7 +154,12 @@ export function duplicateSystem(def: SystemDef, name?: string): SystemDef {
     ...def,
     id: 'custom',
     name: name ?? `${def.name} (copy)`,
-    sub: def.origin === 'measured' ? 'built from the Solar System' : 'a system of your own',
+    sub:
+      def.origin === 'measured'
+        ? 'built from the Solar System'
+        : def.origin === 'observed'
+          ? `built from ${def.name}`
+          : 'a system of your own',
     origin: 'custom',
     star: { ...def.star },
     bodies: def.bodies.map((b) => ({ ...b, params: { ...b.params }, ring: b.ring ? { ...b.ring } : null })),
@@ -233,6 +240,19 @@ export function editableCopy(def: SystemDef): SystemDef {
  * you asked for it. A full system is returned untouched rather than quietly
  * dropping the world or, worse, copying a read-only system to no purpose.
  */
+/**
+ * Whether this exact world is already orbiting in the system.
+ *
+ * Identity is the sanitized, serialized params — the same under-1KB object
+ * that gets saved and shared — so a renamed copy still counts as the same
+ * world and a reshaped one does not. Used to warn before a silent duplicate,
+ * never to refuse one: duplicates are allowed, just always deliberate.
+ */
+export function worldInSystem(def: SystemDef, params: PlanetParams): boolean {
+  const id = serialize(sanitize(params))
+  return def.bodies.some((b) => serialize(sanitize(b.params)) === id)
+}
+
 export function addWorld(def: SystemDef, name: string, params: PlanetParams): SystemDef {
   const s = editableCopy(def)
   if (!hasRoom(s)) return def
@@ -302,6 +322,8 @@ export interface StarKind {
 
 /** Roughly the main sequence, warm to hot, with plausible masses. */
 export const STAR_KINDS: StarKind[] = [
+  // Cool enough for the TRAPPIST-1 class; the drawn-size floor keeps it visible.
+  { label: 'ember dwarf', color: 0xff7a4a, mass: 0.1 },
   { label: 'red dwarf', color: 0xff8a5c, mass: 0.28 },
   { label: 'orange dwarf', color: 0xffb478, mass: 0.78 },
   { label: 'yellow dwarf', color: 0xffffff, mass: 1 },

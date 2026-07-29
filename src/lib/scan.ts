@@ -6,12 +6,31 @@
  * reveal each. Deterministic: the same world always scans the same way.
  */
 import { mulberry32 } from '../engine/noise'
+import { realFor } from '../engine/planets'
 import {
-  MINERAL_SETS, ODDITIES, PIG, REAL_PROFILES, SPECIES,
+  MINERAL_SETS, ODDITIES, PIG, SPECIES,
   type BioReading, type Profile, type SpectralLine, type WaterReading,
 } from '../data/spectrometer'
-import { PRESETS, typeOf } from '../data/presets'
-import type { PlanetParams } from '../engine/types'
+import { ANCIENT, FICTION, PRESETS, typeOf } from '../data/presets'
+import type { PlanetParams, PresetKey } from '../engine/types'
+
+/**
+ * Presets whose derived readings borrow another family's chemistry. Only
+ * reachable once a special world has been reseeded away from its canonical
+ * identity — at which point it really is just an icy or dusty world.
+ */
+const FAMILY: Partial<Record<PresetKey, PresetKey>> = {
+  pluto: 'ice',
+  archean: 'temperate',
+  proterozoic: 'temperate',
+  noachian: 'desert',
+  tatooine: 'desert',
+  hoth: 'ice',
+  mustafar: 'lava',
+  erid: 'desert',
+  adrian: 'lava',
+  pandora: 'temperate',
+}
 
 export interface GasReading {
   f: string
@@ -133,7 +152,7 @@ function gasProfile(P: PlanetParams, key: string, note: string): Profile {
 }
 
 function buildProfile(P: PlanetParams, r: () => number): Profile {
-  const key = P.preset
+  const key = FAMILY[P.preset] ?? P.preset
   const t = typeOf(key)
   const note = ODDITIES[(r() * ODDITIES.length) | 0]
   if ('gas' in t && t.gas) return gasProfile(P, key, note)
@@ -242,8 +261,14 @@ function buildProfile(P: PlanetParams, r: () => number): Profile {
   }
 }
 
-/** Run the spectrometer over a world. Pure — same params, same reading. */
-export function computeScan(P: PlanetParams): ScanResult {
+/**
+ * Run the spectrometer over a world. Deterministic — same params, same
+ * reading. Async because the hand-written profile prose lives in its own
+ * chunk, fetched the first time anyone actually runs a spectrometer; it has
+ * no business on the first-load path.
+ */
+export async function computeScan(P: PlanetParams): Promise<ScanResult> {
+  const { REAL_PROFILES, ANCIENT_PROFILES } = await import('../data/profiles')
   const pi = PRESETS.findIndex((x) => x.key === P.preset)
   const r = mulberry32(
     ((P.seed | 0) * 7919 +
@@ -253,10 +278,20 @@ export function computeScan(P: PlanetParams): ScanResult {
       pi * 911) | 0,
   )
 
-  // A real planet scans as itself, using its measured profile. Only a sculpted
-  // world gets one derived from the sliders.
-  const real = P.texture ? REAL_PROFILES[P.preset] : null
-  const prof = real ?? buildProfile(P, r)
+  // A real planet scans as itself, using its measured profile; an ancient
+  // world at its canonical seed scans as its reconstruction, which says so;
+  // a story world at its canonical seed scans as its fiction, which also says
+  // so. Only a sculpted world gets a reading derived from the sliders — and
+  // changing the seed is what turns any of the others into one. The fiction
+  // prose rides its own chunk, fetched only when a story world is scanned.
+  const real = realFor(P) ? REAL_PROFILES[P.preset] ?? null : null
+  const ancient = ANCIENT.some((a) => a.key === P.preset && a.params.seed === P.seed)
+    ? ANCIENT_PROFILES[P.preset] ?? null
+    : null
+  const story = FICTION.some((f) => f.key === P.preset && f.params.seed === P.seed)
+    ? (await import('../data/fiction')).FICTION_PROFILES[P.preset] ?? null
+    : null
+  const prof = real ?? ancient ?? story ?? buildProfile(P, r)
 
   const gases: GasReading[] = prof.gases
     .filter((g) => g[1] > 0)

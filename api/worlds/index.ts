@@ -1,16 +1,20 @@
-import { desc } from 'drizzle-orm'
+import { desc, eq } from 'drizzle-orm'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { getDb } from '../../db/index.js'
 import { worlds } from '../../db/schema.js'
-import { cacheFor, cleanName, fail, makeSlug, makeToken } from '../_lib.js'
+import { cachePrivate, cleanName, fail, makeSlug, makeToken, readOwnerKey } from '../_lib.js'
 import { sanitize } from '../../src/lib/params.js'
-import { PRESETS, SOLAR } from '../../src/data/presets.js'
+import { ANCIENT, FICTION, PRESETS, SOLAR } from '../../src/data/presets.js'
 
 const MAX_LIMIT = 48
 
 /** The accent colour and caption shown on a gallery card. */
 function describe(preset: string, seed: number) {
-  const p = PRESETS.find((x) => x.key === preset) ?? SOLAR.find((x) => x.key === preset)
+  const p =
+    PRESETS.find((x) => x.key === preset) ??
+    SOLAR.find((x) => x.key === preset) ??
+    ANCIENT.find((x) => x.key === preset) ??
+    FICTION.find((x) => x.key === preset)
   return { dot: p?.dot ?? '#7fae62', sub: `${p?.label ?? 'Meadow'} · seed ${seed}` }
 }
 
@@ -19,6 +23,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === 'GET') {
       const raw = Number(req.query.limit)
       const limit = Number.isFinite(raw) ? Math.min(MAX_LIMIT, Math.max(1, Math.floor(raw))) : 24
+
+      // A gallery is one browser's own worlds and nobody else's, so no key
+      // means no gallery — an empty list rather than an error, because that is
+      // the honest answer for a browser that has never saved anything.
+      const ownerKey = readOwnerKey(req)
+      cachePrivate(res)
+      if (!ownerKey) return res.status(200).json({ worlds: [] })
 
       const rows = await getDb()
         .select({
@@ -30,15 +41,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           createdAt: worlds.createdAt,
         })
         .from(worlds)
+        .where(eq(worlds.ownerKey, ownerKey))
         .orderBy(desc(worlds.createdAt))
         .limit(limit)
 
-      cacheFor(res, 10)
       return res.status(200).json({ worlds: rows })
     }
 
     if (req.method === 'POST') {
       const body = (req.body ?? {}) as { name?: unknown; params?: unknown }
+
+      // Refused rather than saved ownerless: a world nobody owns would never
+      // appear in the gallery it was saved from, which reads as data loss.
+      const ownerKey = readOwnerKey(req)
+      if (!ownerKey) return fail(res, 400, 'Missing or malformed owner key.')
 
       // Never trust the client: params are re-sanitized with the same function
       // the UI uses, so a hand-crafted payload cannot inject an asset path or
@@ -52,7 +68,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const [row] = await getDb()
         .insert(worlds)
-        .values({ slug, name, params, dot, sub, editToken })
+        .values({ slug, name, params, dot, sub, editToken, ownerKey })
         .returning({
           slug: worlds.slug,
           name: worlds.name,

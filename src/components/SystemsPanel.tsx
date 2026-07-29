@@ -1,18 +1,23 @@
 import { BUILT_IN_SYSTEMS } from '../data/systems'
-import { PRESETS, SOLAR } from '../data/presets'
+import { ANCIENT, PRESETS, SOLAR } from '../data/presets'
 import { periodFor, starRadius, starSize } from '../engine/scale'
 import {
   A_MAX, A_MIN, MASS_MAX, MASS_MIN, MAX_BODIES, STAR_KINDS,
   duplicateSystem, emptySystem, retime, rollSystem,
 } from '../lib/systems'
 import type { SavedSystem, SavedWorld } from '../lib/api'
+import { NEBULAE, type DisplayOptions } from '../lib/display'
 import type { PresetKey, SystemBody, SystemDef } from '../engine/types'
-import { Field, Segmented, Slider } from './ui'
+import { Chip, Field, Segmented, Slider } from './ui'
 
 interface Props {
   system: SystemDef
   view: 'single' | 'system'
   sizeMode: 'same' | 'scale'
+  display: DisplayOptions
+  onDisplay: (k: 'paths' | 'labels' | 'moons') => void
+  /** Set any display field — the Universe controls are not toggles. */
+  onDisplaySet: <K extends keyof DisplayOptions>(k: K, v: DisplayOptions[K]) => void
   onView: (v: 'single' | 'system') => void
   onSizeMode: (v: 'same' | 'scale') => void
   onVisit: (index: number) => void
@@ -75,21 +80,27 @@ function dotStyle(color: number, mass: number) {
 
 /** A year here, in Earth years or days — whichever reads better. */
 function fmtPeriod(years: number): string {
-  if (years < 1) return `${(years * 365.25).toFixed(0)} day year`
+  if (years < 1) {
+    const days = years * 365.25
+    // TRAPPIST-1 b's year is 1.5 days; rounding it to "2" would misquote it.
+    return `${days < 10 ? days.toFixed(1) : days.toFixed(0)} day year`
+  }
   return `${years < 10 ? years.toFixed(1) : years.toFixed(0)} year orbit`
 }
 
 function bodyDot(b: SystemBody): string {
   const p = PRESETS.find((x) => x.key === b.params.preset)
   const s = SOLAR.find((x) => x.key === b.params.preset)
-  return (b.texture ? s?.dot : p?.dot) ?? p?.dot ?? s?.dot ?? '#7fae62'
+  const a = ANCIENT.find((x) => x.key === b.params.preset)
+  return (b.texture ? s?.dot : p?.dot ?? a?.dot) ?? p?.dot ?? s?.dot ?? a?.dot ?? '#7fae62'
 }
 
 export function SystemsPanel(props: Props) {
   const {
-    system, view, sizeMode, onView, onSizeMode, onVisit, onSystem, onAddCurrent,
-    onAddRolled, onAddSaved, onDuplicate, currentWorld, worlds, worldsError,
-    onSave, saving, savedSlug, systems, systemsLoading, systemsError, onOpenSaved,
+    system, view, sizeMode, display, onDisplay, onDisplaySet, onView, onSizeMode, onVisit,
+    onSystem, onAddCurrent, onAddRolled, onAddSaved, onDuplicate, currentWorld,
+    worlds, worldsError, onSave, saving, savedSlug, systems, systemsLoading,
+    systemsError, onOpenSaved,
   } = props
 
   const editable = system.origin === 'custom'
@@ -155,6 +166,8 @@ export function SystemsPanel(props: Props) {
         <strong>{system.name}</strong> — {system.sub}.{' '}
         {system.origin === 'measured' &&
           'Duplicate it to move the planets around; the original stays as it is.'}
+        {system.origin === 'observed' &&
+          'The orbits and years are measured; the worlds wearing them are imagined — nobody has seen these surfaces.'}
         {system.origin === 'imagined' && 'Every number in it was invented, including the star.'}
         {system.origin === 'custom' &&
           'Yours to change — add worlds, move them about, then save it for a link.'}
@@ -165,6 +178,65 @@ export function SystemsPanel(props: Props) {
         value={view}
         onChange={onView}
       />
+
+      {/* --- display -------------------------------------------------------- */}
+      <div>
+        <div className="field-label">Display</div>
+        <div className="chips">
+          <Chip on={display.paths} onClick={() => onDisplay('paths')}>
+            Orbit paths
+          </Chip>
+          <Chip on={display.labels} onClick={() => onDisplay('labels')}>
+            Labels
+          </Chip>
+          <Chip on={display.moons} onClick={() => onDisplay('moons')}>
+            Moons
+          </Chip>
+        </div>
+        {(!display.paths || !display.moons) && (
+          <div className="note" style={{ marginTop: 10 }}>
+            {!display.paths &&
+              'Paths are hidden — hover a planet in the orbit view to glimpse its own. '}
+            {!display.moons &&
+              'Moons are off, so visiting a planet skips building them — the quickest performance win.'}
+          </div>
+        )}
+      </div>
+
+      {/* --- universe ------------------------------------------------------- */}
+      <Field label="Universe">
+        <Slider
+          name="Star density"
+          value={display.starDensity}
+          onChange={(v) => onDisplaySet('starDensity', v)}
+        />
+        <Slider
+          name="Star brightness"
+          value={display.starBright}
+          onChange={(v) => onDisplaySet('starBright', v)}
+        />
+        <Slider
+          name="Exposure"
+          value={display.exposure}
+          onChange={(v) => onDisplaySet('exposure', v)}
+        />
+        <div className="chips" style={{ marginTop: 8 }}>
+          {NEBULAE.map((n) => (
+            <Chip
+              key={n.key}
+              on={display.nebula === n.key}
+              dot={n.dot}
+              onClick={() => onDisplaySet('nebula', n.key)}
+            >
+              {n.label}
+            </Chip>
+          ))}
+        </div>
+        <div className="note" style={{ marginTop: 10 }}>
+          How this browser likes its sky: star count and glow, overall exposure, and a nebula
+          wash behind everything. Yours alone — never part of a world or a shared system.
+        </div>
+      </Field>
 
       {/* --- the view ------------------------------------------------------- */}
       {view === 'system' ? (
@@ -182,8 +254,10 @@ export function SystemsPanel(props: Props) {
             real elliptical, tilted path. <strong>Same size</strong> draws every planet alike for easy
             spotting; <strong>To scale</strong> ranks them by true size. Distances are eased inward and
             the star is far smaller than life, though stars are sized against one another — a
-            blue-white star really is about seven times the width of a red dwarf. Drag to tilt,
-            scroll to zoom, click a planet to visit it.
+            blue-white star really is about seven times the width of a red dwarf. A compact system
+            like TRAPPIST-1 is stretched to fill the frame and slowed just enough to watch, with
+            every internal ratio kept exact. Drag to tilt, scroll to zoom, click a planet to visit
+            it.
           </div>
         </>
       ) : system.bodies.length === 0 ? (
@@ -437,9 +511,9 @@ export function SystemsPanel(props: Props) {
         </>
       )}
 
-      {/* --- other people's systems ----------------------------------------- */}
+      {/* --- systems saved from this browser -------------------------------- */}
       <div className="field-label" style={{ marginTop: 4 }}>
-        Recently saved systems
+        Your saved systems
       </div>
       {systemsError ? (
         <p className="empty">{systemsError}</p>

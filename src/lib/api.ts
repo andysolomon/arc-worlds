@@ -1,4 +1,12 @@
+import { ownerHeaders } from './owner'
 import type { PlanetParams, SystemDef } from '../engine/types'
+
+/*
+ * Lists and saves carry the browser's owner key, so a gallery only ever shows
+ * what this browser saved. Fetching one thing by slug deliberately does not:
+ * a shared /w/:slug link has to work for whoever it was sent to, and leaving
+ * the header off keeps that response cacheable for everyone.
+ */
 
 export interface SavedWorld {
   slug: string
@@ -17,9 +25,9 @@ async function json<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>
 }
 
-/** Most recently saved worlds, for the gallery. */
+/** Worlds this browser has saved, newest first. */
 export async function listWorlds(limit = 24): Promise<SavedWorld[]> {
-  const res = await fetch(`/api/worlds?limit=${limit}`)
+  const res = await fetch(`/api/worlds?limit=${limit}`, { headers: ownerHeaders() })
   const body = await json<{ worlds: SavedWorld[] }>(res)
   return body.worlds
 }
@@ -33,7 +41,7 @@ export async function getWorld(slug: string): Promise<SavedWorld> {
 export async function saveWorld(name: string, params: PlanetParams): Promise<SavedWorld> {
   const res = await fetch('/api/worlds', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...ownerHeaders() },
     body: JSON.stringify({ name, params }),
   })
   const body = await json<{ world: SavedWorld }>(res)
@@ -51,8 +59,9 @@ export interface SavedSystem {
   createdAt: string
 }
 
+/** Systems this browser has saved, newest first. */
 export async function listSystems(limit = 24): Promise<SavedSystem[]> {
-  const res = await fetch(`/api/systems?limit=${limit}`)
+  const res = await fetch(`/api/systems?limit=${limit}`, { headers: ownerHeaders() })
   const body = await json<{ systems: SavedSystem[] }>(res)
   return body.systems
 }
@@ -66,7 +75,7 @@ export async function getSystem(slug: string): Promise<SavedSystem> {
 export async function saveSystem(def: SystemDef): Promise<SavedSystem> {
   const res = await fetch('/api/systems', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...ownerHeaders() },
     body: JSON.stringify({ def }),
   })
   const body = await json<{ system: SavedSystem }>(res)

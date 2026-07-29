@@ -22,6 +22,12 @@ describe('sanitize', () => {
     expect(sanitize({ preset: 'saturn' }).preset).toBe('saturn')
   })
 
+  it('keeps the story-world presets, so a saved homage survives the trip', () => {
+    for (const key of ['tatooine', 'hoth', 'mustafar', 'erid', 'adrian', 'pandora']) {
+      expect(sanitize({ preset: key }).preset).toBe(key)
+    }
+  })
+
   // The texture field becomes a URL the browser fetches, so it is the one
   // place a hostile payload could point the app somewhere it should not go.
   it('accepts only known-good texture paths', () => {
@@ -96,19 +102,19 @@ describe('serialize', () => {
 })
 
 describe('computeScan', () => {
-  it('is deterministic for the same world', () => {
-    expect(computeScan(DEFAULT_PARAMS)).toEqual(computeScan(DEFAULT_PARAMS))
+  it('is deterministic for the same world', async () => {
+    expect(await computeScan(DEFAULT_PARAMS)).toEqual(await computeScan(DEFAULT_PARAMS))
   })
 
-  it('uses the real measured profile for a real planet', () => {
+  it('uses the real measured profile for a real planet', async () => {
     const saturn = sanitize({ preset: 'saturn', texture: 'images2k/saturn.jpg' })
-    const scan = computeScan(saturn)
+    const scan = await computeScan(saturn)
     expect(scan.pressure).toBe('no surface')
     expect(scan.gases[0].f).toBe('H₂')
   })
 
-  it('derives a profile for a sculpted world', () => {
-    const scan = computeScan(sanitize({ preset: 'temperate', water: 0.55, clouds: 0.6 }))
+  it('derives a profile for a sculpted world', async () => {
+    const scan = await computeScan(sanitize({ preset: 'temperate', water: 0.55, clouds: 0.6 }))
     expect(scan.gases.length).toBeGreaterThan(0)
     expect(scan.lines.length).toBeGreaterThan(0)
     // Lines must be sorted by wavelength for the spectrum strip to read left-right.
@@ -117,10 +123,10 @@ describe('computeScan', () => {
     }
   })
 
-  it('reports free oxygen only on a wet, cloudy world', () => {
-    const wet = computeScan(sanitize({ preset: 'temperate', water: 0.55, clouds: 0.9 }))
-    const dry = computeScan(sanitize({ preset: 'temperate', water: 0.02, clouds: 0 }))
-    const hasO2 = (s: ReturnType<typeof computeScan>) => s.gases.some((g) => g.f === 'O₂')
+  it('reports free oxygen only on a wet, cloudy world', async () => {
+    const wet = await computeScan(sanitize({ preset: 'temperate', water: 0.55, clouds: 0.9 }))
+    const dry = await computeScan(sanitize({ preset: 'temperate', water: 0.02, clouds: 0 }))
+    const hasO2 = (s: Awaited<ReturnType<typeof computeScan>>) => s.gases.some((g) => g.f === 'O₂')
     expect(hasO2(wet)).toBe(true)
     expect(hasO2(dry)).toBe(false)
   })

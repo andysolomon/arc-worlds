@@ -1,4 +1,4 @@
-import type { OrbitRow, RealBody } from './types'
+import type { OrbitRow, PlanetParams, RealBody } from './types'
 
 /**
  * Measured values for the real bodies.
@@ -72,6 +72,15 @@ export const REAL: Record<string, RealBody> = {
       { n: 'Nereid', r: 0.00686, a: 222.7, P: 360.14, e: 0.751, inc: 32.6, c: 0x8d8880, irr: [1, 0.9, 0.86] },
     ],
   },
+
+  // Pluto has no CC BY photographic map in our set, so it renders procedurally
+  // and claims its measured identity through the canonical seed instead.
+  // Charon is over half Pluto's own radius — the two are mutually locked, so
+  // the existing one-face-inward moon behaviour is the physically right one.
+  pluto: {
+    seed: 99, f: 0.0, ob: 122.53, day: -153.29,
+    moons: [{ n: 'Charon', r: 0.512, a: 16.5, P: 6.387, inc: 0.08, c: 0x8f8781 }],
+  },
 }
 
 /**
@@ -88,9 +97,25 @@ export const ORBITS: OrbitRow[] = [
   ['saturn', 9.5367, 29.457, 0.0555, 2.485, 113.66, 93.06, 9.449],
   ['uranus', 19.189, 84.011, 0.0464, 0.773, 74.01, 173.01, 4.007],
   ['neptune', 30.07, 164.79, 0.0095, 1.77, 131.78, 48.12, 3.883],
+  // A dwarf planet, and honestly the odd one out: eccentric enough to cross
+  // inside Neptune's orbit and inclined 17° out of everyone else's plane.
+  ['pluto', 39.482, 247.94, 0.2488, 17.16, 110.3, 224.07, 0.187],
 ]
 
 /** Earth is keyed `temperate` in REAL, since it doubles as the Meadow preset. */
 export function realKeyFor(orbitName: string): string {
   return orbitName === 'earth' ? 'temperate' : orbitName
+}
+
+/**
+ * The measured body these params are showing, or null for a sculpted world.
+ * Identity comes from the photographic map when there is one, and from the
+ * canonical seed when there is not; changing the seed detaches either kind.
+ */
+export function realFor(
+  p: Pick<PlanetParams, 'preset' | 'texture' | 'seed'>,
+): RealBody | null {
+  const R = REAL[p.preset]
+  if (!R) return null
+  return p.texture || R.seed === p.seed ? R : null
 }

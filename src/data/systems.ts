@@ -10,7 +10,7 @@ import { ORBITS, REAL, realKeyFor } from '../engine/planets'
 import { periodFor } from '../engine/scale'
 import type { PlanetParams, PresetKey, SystemBody, SystemDef } from '../engine/types'
 import { DEFAULT_PARAMS } from '../lib/params'
-import { PRESETS, SOLAR } from './presets'
+import { FICTION, PRESETS, SOLAR } from './presets'
 
 export const MILKY_WAY_ID = 'milky-way'
 export const ANDROMEDA_ID = 'andromeda'
@@ -84,11 +84,12 @@ function body(
   radius: number,
   params: PlanetParams,
   over: Partial<Omit<SystemBody, 'name' | 'a' | 'radius' | 'params'>> = {},
+  mass: number = HALCYON_MASS,
 ): SystemBody {
   return {
     name,
     a,
-    period: periodFor(a, HALCYON_MASS),
+    period: periodFor(a, mass),
     e: 0,
     inc: 0,
     node: 0,
@@ -104,7 +105,156 @@ function body(
   }
 }
 
-export const BUILT_IN_SYSTEMS: SystemDef[] = [MILKY_WAY, ANDROMEDA]
+/**
+ * A body with measured orbital elements and an imagined world wearing them.
+ * `observed` systems keep their honesty in the split: distance, period,
+ * eccentricity and radius are real; the params are pure invention, exactly
+ * like a sculpted world, and derive their scans rather than claiming any.
+ * Tidally locked worlds carry their orbital period as their day.
+ */
+function observed(
+  name: string, a: number, period: number, e: number, radius: number,
+  day: number, params: PlanetParams,
+): SystemBody {
+  return {
+    name, a, period, e, inc: 0, node: 0, peri: 0, radius,
+    tilt: 0, flattening: 0.003, day, params, texture: null, ring: null,
+  }
+}
+
+/** Seven measured orbits around an ultracool dwarf, 40 light years out. */
+export const TRAPPIST: SystemDef = {
+  id: 'trappist-1',
+  name: 'TRAPPIST-1',
+  sub: 'observed · seven measured orbits, every surface imagined',
+  origin: 'observed',
+  star: { name: 'TRAPPIST-1', color: 0xff8659, mass: 0.0898 },
+  bodies: [
+    observed('TRAPPIST-1 b', 0.01154, 0.004136, 0.00622, 1.116, 36.26, world('lava', 701, { glow: 0.4, clouds: 0.05, ice: 0 })),
+    observed('TRAPPIST-1 c', 0.0158, 0.00663, 0.00654, 1.097, 58.12, world('desert', 702, { water: 0.02, clouds: 0.1 })),
+    observed('TRAPPIST-1 d', 0.02227, 0.011087, 0.00837, 0.788, 97.19, world('desert', 703, { water: 0.2, ice: 0.08, clouds: 0.25 })),
+    observed('TRAPPIST-1 e', 0.02925, 0.0167, 0.0051, 0.92, 146.39, world('temperate', 704, { water: 0.6, ice: 0.3, clouds: 0.45 })),
+    observed('TRAPPIST-1 f', 0.03849, 0.025207, 0.01007, 1.045, 220.96, world('ice', 705, { water: 0.55, ice: 0.75 })),
+    observed('TRAPPIST-1 g', 0.04683, 0.033822, 0.00208, 1.129, 296.49, world('ice', 706, { ice: 0.85 })),
+    observed('TRAPPIST-1 h', 0.06189, 0.051382, 0.00567, 0.755, 450.41, world('ice', 707, { ice: 0.95, clouds: 0.1 })),
+  ],
+}
+
+/** The nearest exoplanet there is. */
+export const PROXIMA: SystemDef = {
+  id: 'proxima-centauri',
+  name: 'Proxima Centauri',
+  sub: 'observed · the nearest exoplanet, surface imagined',
+  origin: 'observed',
+  star: { name: 'Proxima Centauri', color: 0xff9d6f, mass: 0.1221 },
+  bodies: [
+    observed('Proxima Centauri b', 0.04857, 0.030628, 0.02, 1.1, 268.5, world('ice', 711, { water: 0.5, ice: 0.6, clouds: 0.3 })),
+  ],
+}
+
+/** The first planet found around another Sun-like star, in 1995. */
+export const PEGASI_51: SystemDef = {
+  id: '51-pegasi',
+  name: '51 Pegasi',
+  sub: 'observed · the first exoplanet around a Sun-like star',
+  origin: 'observed',
+  star: { name: '51 Pegasi', color: 0xfff4e4, mass: 1.06 },
+  bodies: [
+    observed('51 Pegasi b', 0.0527, 0.011583, 0.008, 13.4, 101.5, world('gasAmber', 712, { rings: false, glow: 0.55 })),
+  ],
+}
+
+/** An Earth-sized year around a Sun-like star. */
+export const KEPLER_452: SystemDef = {
+  id: 'kepler-452',
+  name: 'Kepler-452',
+  sub: 'observed · an Earth-length year around a Sun-like star',
+  origin: 'observed',
+  star: { name: 'Kepler-452', color: 0xfff8ec, mass: 1.037 },
+  bodies: [
+    observed('Kepler-452 b', 1.046, 1.0537, 0.01, 1.63, 24, world('temperate', 713, { water: 0.6, clouds: 0.5, ice: 0.2 })),
+  ],
+}
+
+/** A homage world, loaded whole from its FICTION entry at its canonical seed. */
+function storyWorld(key: PresetKey): PlanetParams {
+  const f = FICTION.find((x) => x.key === key)
+  return { ...DEFAULT_PARAMS, ...(f?.params ?? {}), preset: key } as PlanetParams
+}
+
+const TATOO_MASS = 1.02
+
+/**
+ * Three famous Star Wars worlds gathered under one invented sun. The fiction
+ * scatters them across a galaxy and gives Tatooine two suns; this engine draws
+ * single stars, so the star is Tatoo I and the scan notes own what is missing.
+ */
+export const OUTER_RIM: SystemDef = {
+  id: 'outer-rim',
+  name: 'Outer Rim',
+  sub: 'imagined · three worlds from Star Wars, drawn from memory',
+  origin: 'imagined',
+  star: { name: 'Tatoo I', color: 0xfff2c9, mass: TATOO_MASS },
+  bodies: [
+    body('Mustafar', 0.42, 0.66, storyWorld('mustafar'), { e: 0.03, inc: 1.8, node: 40, peri: 210, tilt: 2.1, day: 36 }, TATOO_MASS),
+    body('Tatooine', 0.95, 1.04, storyWorld('tatooine'), { e: 0.04, inc: 0.9, node: 118, peri: 12, tilt: 11.3, day: 23 }, TATOO_MASS),
+    body('Hoth', 2.9, 0.92, storyWorld('hoth'), { e: 0.05, inc: 2.6, node: 240, peri: 155, tilt: 32, day: 23 }, TATOO_MASS),
+  ],
+}
+
+/**
+ * Project Hail Mary puts its planets at real stars, so these two systems wear
+ * real star masses — 40 Eridani A and Tau Ceti — under invented worlds and
+ * invented orbits. Origin stays `imagined`: a story is not a measurement.
+ */
+export const ERIDANI_40: SystemDef = {
+  id: '40-eridani',
+  name: '40 Eridani',
+  sub: 'imagined · a real star wearing a story — Project Hail Mary',
+  origin: 'imagined',
+  star: { name: '40 Eridani A', color: 0xffc98a, mass: 0.78 },
+  bodies: [
+    body('Erid', 0.218, 1.9, storyWorld('erid'), { e: 0.01, inc: 0.4, node: 68, peri: 300, tilt: 2.8, day: 122, flattening: 0.006 }, 0.78),
+  ],
+}
+
+export const TAU_CETI: SystemDef = {
+  id: 'tau-ceti',
+  name: 'Tau Ceti',
+  sub: 'imagined · the Astrophage nursery from Project Hail Mary',
+  origin: 'imagined',
+  star: { name: 'Tau Ceti', color: 0xfff0d8, mass: 0.783 },
+  bodies: [
+    body('Adrian', 0.25, 1.15, storyWorld('adrian'), { e: 0.02, inc: 1.1, node: 190, peri: 88, tilt: 3.4, day: 700 }, 0.783),
+  ],
+}
+
+const ALPHA_CEN_MASS = 1.08
+
+/**
+ * Avatar's Pandora is a moon of the gas giant Polyphemus, and moons only
+ * render in the single-world view — so here Pandora rides its own orbit just
+ * outside its planet, and the caption says so rather than pretending. Its
+ * distance is chosen for the drawing, not the fiction: in same-size mode the
+ * orbits of 1.25 and 2.2 AU stay far enough apart that a conjunction never
+ * pushes Pandora through the giant's drawn surface.
+ */
+export const ALPHA_CENTAURI: SystemDef = {
+  id: 'alpha-centauri-a',
+  name: 'Alpha Centauri A',
+  sub: 'imagined · Pandora is Polyphemus’s moon; here it gets its own orbit',
+  origin: 'imagined',
+  star: { name: 'Alpha Centauri A', color: 0xfff6e0, mass: ALPHA_CEN_MASS },
+  bodies: [
+    body('Polyphemus', 1.25, 11.5, world('gasMist', 2154, { rings: false, glow: 0.5, roughness: 0.6 }), { e: 0.02, inc: 0.8, node: 150, peri: 30, tilt: 7.6, flattening: 0.06, day: 16 }, ALPHA_CEN_MASS),
+    body('Pandora', 2.2, 0.72, storyWorld('pandora'), { e: 0.015, inc: 1.2, node: 152, peri: 40, tilt: 18.5, day: 26 }, ALPHA_CEN_MASS),
+  ],
+}
+
+export const BUILT_IN_SYSTEMS: SystemDef[] = [
+  MILKY_WAY, TRAPPIST, PROXIMA, PEGASI_51, KEPLER_452,
+  OUTER_RIM, ERIDANI_40, TAU_CETI, ALPHA_CENTAURI, ANDROMEDA,
+]
 
 export function builtInSystem(id: string): SystemDef | null {
   return BUILT_IN_SYSTEMS.find((s) => s.id === id) ?? null

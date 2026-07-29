@@ -24,9 +24,22 @@ export const worlds = pgTable(
      * delete their own world later without any account.
      */
     editToken: text('edit_token').notNull(),
+    /**
+     * Which browser saved this. Anonymous and self-issued — see src/lib/owner.ts
+     * — so it scopes the gallery without requiring accounts.
+     *
+     * Nullable only for rows written before the gallery was per-browser: those
+     * belong to nobody, so they never match a list query and are reachable by
+     * their /w/:slug link alone. Every new row sets it.
+     */
+    ownerKey: text('owner_key'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index('worlds_created_at_idx').on(t.createdAt)],
+  (t) => [
+    index('worlds_created_at_idx').on(t.createdAt),
+    // The gallery only ever reads one owner's newest rows.
+    index('worlds_owner_created_at_idx').on(t.ownerKey, t.createdAt),
+  ],
 )
 
 export type World = typeof worlds.$inferSelect
@@ -52,9 +65,14 @@ export const systems = pgTable(
     dot: text('dot').notNull(),
     sub: text('sub').notNull(),
     editToken: text('edit_token').notNull(),
+    /** Which browser saved this — same bargain as `worlds.ownerKey`. */
+    ownerKey: text('owner_key'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index('systems_created_at_idx').on(t.createdAt)],
+  (t) => [
+    index('systems_created_at_idx').on(t.createdAt),
+    index('systems_owner_created_at_idx').on(t.ownerKey, t.createdAt),
+  ],
 )
 
 export type System = typeof systems.$inferSelect

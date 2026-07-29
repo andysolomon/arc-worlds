@@ -36,6 +36,27 @@ test('renders a planet on first load', async ({ page }) => {
   expect(await hasDrawnGeometry(page)).toBe(true)
 })
 
+test('pause lets the renderer go idle', async ({ page }) => {
+  await page.goto('/')
+  // The setup wants 10 rendered frames before pausing. Under full-suite
+  // contention a cold renderer once managed only 9 inside the default 5 s,
+  // so the poll gets room to spare — the assertion under test is below.
+  await expect.poll(() =>
+    page.evaluate(() => Number(document.querySelector('canvas')?.dataset.frames ?? 0)),
+  { timeout: 20_000 }).toBeGreaterThan(10)
+
+  await page.getByRole('button', { name: 'Pause' }).click()
+  await page.waitForTimeout(500)
+  const settled = await page.evaluate(() =>
+    Number(document.querySelector('canvas')?.dataset.frames ?? 0),
+  )
+  await page.waitForTimeout(700)
+  const after = await page.evaluate(() =>
+    Number(document.querySelector('canvas')?.dataset.frames ?? 0),
+  )
+  expect(after).toBe(settled)
+})
+
 test('sculpting a world updates its identity', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Ember' }).click()
@@ -109,6 +130,11 @@ test('every planet texture loads', async ({ page }) => {
 })
 
 test('a system built from your own worlds renders in orbit', async ({ page }) => {
+  // Three sculpt round trips make this the longest test in the suite; under
+  // 6-worker contention it finishes within a second of the default cap.
+  test.slow()
+  const workerUrls: string[] = []
+  page.on('worker', (worker) => workerUrls.push(worker.url()))
   await page.goto('/')
   await page.getByRole('tab', { name: 'Systems' }).click()
   await page.getByRole('button', { name: 'New, empty' }).click()
@@ -128,6 +154,7 @@ test('a system built from your own worlds renders in orbit', async ({ page }) =>
   await page.getByRole('button', { name: 'Orbit view' }).click()
   await page.waitForTimeout(3000)
   expect(await hasDrawnGeometry(page)).toBe(true)
+  expect(workerUrls.some((url) => /bake\.worker-.*\.js$/.test(url))).toBe(true)
 
   // Each world orbits further out than the last, so a year gets longer too.
   await page.getByRole('button', { name: 'Body list' }).click()
@@ -140,6 +167,7 @@ test('a system built from your own worlds renders in orbit', async ({ page }) =>
 })
 
 test('a system can be filled without ever leaving the Systems tab', async ({ page }) => {
+  test.slow() // same pressure as its neighbour: ~27 s under 6-worker contention
   await page.goto('/')
   await page.getByRole('tab', { name: 'Systems' }).click()
   await page.getByRole('button', { name: 'New, empty' }).click()
@@ -155,9 +183,15 @@ test('a system can be filled without ever leaving the Systems tab', async ({ pag
   await expect(page.getByRole('button', { name: /Save & share/ })).toBeEnabled()
 
   // A duplicate joins the same line of worlds, on its own orbit further out.
+  // Rolled names sometimes already carry a regnal suffix, and the line
+  // continues from there — a copy of Wimpond III is Wimpond IV — so the
+  // expectation follows the family rather than hardcoding "II".
   const first = await page.getByLabel('Name of world 1').inputValue()
+  const base = first.replace(/ (?:II|III|IV)$/, '')
   await page.locator('.scan-card').first().getByRole('button', { name: /^Duplicate/ }).click()
-  await expect(page.getByLabel('Name of world 5')).toHaveValue(`${first} II`)
+  await expect(page.getByLabel('Name of world 5')).toHaveValue(
+    new RegExp(`^${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} (?:II|III|IV|V)$`),
+  )
 
   await page.getByRole('button', { name: 'Orbit view' }).click()
   await page.waitForTimeout(3000)
@@ -175,12 +209,12 @@ test('adding a world never edits a read-only system in place', async ({ page }) 
   await page.getByRole('button', { name: 'Duplicate & edit' }).click()
   await expect(page.getByText(/The Solar System \(copy\)/).first()).toBeVisible()
   await page.getByRole('button', { name: 'Meadow', exact: true }).click()
-  await expect(page.getByLabel('Name of world 9')).toBeVisible()
+  await expect(page.getByLabel('Name of world 10')).toBeVisible()
 
-  // The original is still there, still measured, still eight planets.
+  // The original is still there, still measured, still nine bodies.
   await page.getByRole('button', { name: 'The Solar System', exact: true }).click()
   await expect(page.getByText(/every number measured/)).toBeVisible()
-  await expect(page.getByRole('button', { name: /Visit/ })).toHaveCount(8)
+  await expect(page.getByRole('button', { name: /Visit/ })).toHaveCount(9)
 })
 
 test('an imagined system is never presented as a measured one', async ({ page }) => {
@@ -205,7 +239,7 @@ test('a heavier star is drawn as a bigger one', async ({ page }) => {
   const widths = await page.locator('.chip', { hasText: /dwarf|star/ }).evaluateAll((els) =>
     els.map((e) => e.querySelector('.dot')!.getBoundingClientRect().width),
   )
-  expect(widths.length).toBe(5)
+  expect(widths.length).toBe(6)
   for (let i = 1; i < widths.length; i++) expect(widths[i]).toBeGreaterThan(widths[i - 1])
 
   // And the renderer agrees with the swatch rather than drawing one fixed sun.
@@ -234,4 +268,357 @@ test('the gallery degrades gracefully when the API is unavailable', async ({ pag
   await expect(page.getByText(/Could not reach the gallery|Nothing here yet/)).toBeVisible({
     timeout: 10_000,
   })
+})
+
+/**
+ * The gallery is scoped server-side by this header, so if the browser ever stops
+ * sending one — or two browsers send the same one — every visitor is back to
+ * sharing a single gallery. This asserts the client half of that; the server
+ * filters on the same key.
+ */
+test('each browser asks for its own gallery', async ({ browser }) => {
+  async function keyFor() {
+    const context = await browser.newContext()
+    const page = await context.newPage()
+
+    let key: string | null = null
+    await page.route('**/api/worlds*', async (route) => {
+      key ??= route.request().headers()['x-owner-key'] ?? null
+      await route.fulfill({ status: 200, json: { worlds: [] } })
+    })
+
+    await page.goto('/')
+    await page.getByRole('tab', { name: 'Worlds' }).click()
+    await expect(page.getByText(/Nothing here yet/)).toBeVisible({ timeout: 10_000 })
+
+    await context.close()
+    return key
+  }
+
+  const [first, second] = [await keyFor(), await keyFor()]
+
+  expect(first).toMatch(/^[A-Za-z0-9_-]{16,64}$/)
+  expect(second).toMatch(/^[A-Za-z0-9_-]{16,64}$/)
+  expect(first).not.toBe(second)
+})
+
+/** The engine publishes draw counts on the canvas; orbit paths render as lines. */
+function datum(page: Page, key: 'lines' | 'triangles' | 'points'): Promise<number> {
+  return page.evaluate((k) => Number(document.querySelector('canvas')?.dataset[k] ?? -1), key)
+}
+
+/**
+ * Sweep the pointer across the canvas until it crosses a planet, or give up.
+ * Planet positions depend on when the orbits were frozen, so this searches
+ * rather than aiming — the ecliptic band covers the middle of the view. The
+ * coarse pass misses every disc perhaps once in a dozen runs, so a staggered
+ * finer pass covers the gaps between its sample points before giving up.
+ */
+async function sweepForHover(page: Page): Promise<number> {
+  const box = (await page.locator('canvas').boundingBox())!
+  const passes: Array<{ y0: number; dy: number; x0: number; dx: number }> = [
+    { y0: 0.3, dy: 0.08, x0: 0.08, dx: 0.06 },
+    { y0: 0.26, dy: 0.04, x0: 0.05, dx: 0.03 },
+  ]
+  for (const s of passes) {
+    for (let ty = s.y0; ty <= 0.74; ty += s.dy) {
+      for (let tx = s.x0; tx <= 0.95; tx += s.dx) {
+        await page.mouse.move(box.x + box.width * tx, box.y + box.height * ty)
+        await page.waitForTimeout(25)
+        const n = await datum(page, 'lines')
+        if (n > 0) return n
+      }
+    }
+  }
+  return 0
+}
+
+test('hidden orbit paths come back one at a time on hover', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Systems' }).click()
+  await page.getByRole('button', { name: 'Orbit view' }).click()
+  await page.waitForTimeout(2500)
+  expect(await datum(page, 'lines')).toBeGreaterThan(0)
+
+  await page.getByRole('button', { name: 'Orbit paths' }).click()
+  await expect.poll(() => datum(page, 'lines')).toBe(0)
+
+  // Freeze the planets, then find one with the pointer; only its own path
+  // fades back in while every other one stays hidden.
+  await page.getByRole('button', { name: 'Pause' }).click()
+  expect(await sweepForHover(page)).toBeGreaterThan(0)
+})
+
+/**
+ * The freshly opened orbit view keeps adding geometry for a moment — baked
+ * maps land, late meshes appear — and how long that takes depends on machine
+ * load. Wait for the triangle count to hold still rather than trusting a
+ * fixed sleep, or a busy CI runner captures a stale baseline.
+ */
+async function settledTriangles(page: Page): Promise<number> {
+  let last = -1
+  let streak = 0
+  await expect
+    .poll(async () => {
+      const now = await datum(page, 'triangles')
+      streak = now > 0 && now === last ? streak + 1 : 0
+      last = now
+      return streak
+    }, { intervals: Array(30).fill(700) as number[], timeout: 25_000 })
+    .toBeGreaterThanOrEqual(2)
+  return last
+}
+
+test('labels are opt-in and add geometry only while they are on', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Systems' }).click()
+  await page.getByRole('button', { name: 'Orbit view' }).click()
+  const before = await settledTriangles(page)
+
+  // Labels draw as sprites, so the triangle count is a truthful signal.
+  await page.getByRole('button', { name: 'Labels' }).click()
+  await expect.poll(() => datum(page, 'triangles')).toBeGreaterThan(before)
+
+  await page.getByRole('button', { name: 'Labels' }).click()
+  await expect.poll(() => datum(page, 'triangles')).toBe(before)
+})
+
+test('turning moons off skips their geometry and their paths', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Systems' }).click()
+  await page.getByRole('button', { name: /Saturn/ }).click()
+  await expect(page.getByRole('heading', { name: 'Saturn' })).toBeVisible()
+  await page.waitForTimeout(2500)
+  const withMoons = await datum(page, 'triangles')
+  expect(withMoons).toBeGreaterThan(0)
+  // Six moons, six coloured paths.
+  expect(await datum(page, 'lines')).toBeGreaterThan(0)
+
+  await page.getByRole('tab', { name: 'Systems' }).click()
+  await page.getByRole('button', { name: 'Moons' }).click()
+  await expect.poll(() => datum(page, 'triangles')).toBeLessThan(withMoons)
+  await expect.poll(() => datum(page, 'lines')).toBe(0)
+})
+
+test('Pluto is there, odd orbit and all, and scans as itself', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Systems' }).click()
+
+  // Far and slow: the body list states the measured distance and period.
+  await expect(page.getByText('39.5 AU · 248 year orbit')).toBeVisible()
+
+  await page.getByRole('button', { name: /Pluto/ }).click()
+  await expect(page.getByRole('heading', { name: 'Pluto' })).toBeVisible()
+
+  // No photographic map exists for it, so the procedural renderer carries it —
+  // and its measured identity survives that, all the way into the spectrometer.
+  await page.getByRole('tab', { name: 'Scan' }).click()
+  await page.getByRole('button', { name: /Run spectrometer on Pluto/ }).click()
+  await expect(page.getByText('Thin nitrogen, seasonally alive')).toBeVisible({ timeout: 15_000 })
+
+  // The heart lives in the surface reading, and the panel opens on Atmosphere.
+  await page.getByRole('button', { name: 'Surface & water' }).click()
+  await expect(page.getByText('Sputnik Planitia', { exact: false }).first()).toBeVisible()
+})
+
+test('the Worlds tab aims Add at any saved system, and warns before a duplicate', async ({ page }) => {
+  // Fixtures via route interception, so the flow is deterministic and needs
+  // no database: one saved world, and one saved system already holding it.
+  const params = {
+    seed: 12321, preset: 'temperate', mountains: 0.5, water: 0.55, roughness: 0.5,
+    clouds: 0.5, glow: 0.5, ice: 0.25, lightAz: 0.107, lightEl: 0.639, spinDir: 1,
+    spinSpeed: 0.5, rings: false, ringN: 2, ringInner: 0.24, ringTilt: 0.5,
+    ringWidth: 0.5, ringGap: 0.35, ringOpacity: 0.7, ringColor: null, moons: 0,
+    atmoColor: null, texture: null, cloudTexture: null,
+  }
+  const world = {
+    slug: 'wtest', name: 'Testball', params, dot: '#7fae62',
+    sub: 'meadow world · seed 12321', createdAt: '2026-07-28T00:00:00Z',
+  }
+  const fixture = {
+    slug: 'stest', name: 'Fixture System', dot: '#ffb478', sub: '1 world',
+    createdAt: '2026-07-28T00:00:00Z',
+    def: {
+      id: 'fixture', name: 'Fixture System', sub: 'a system of your own', origin: 'custom',
+      star: { name: 'Halcyon', color: 0xffb478, mass: 1 },
+      bodies: [{
+        name: 'Testball', a: 1, period: 1, e: 0, inc: 0, node: 0, peri: 0,
+        radius: 1, tilt: 0, flattening: 0.003, day: 24, params, texture: null, ring: null,
+      }],
+    },
+  }
+  await page.route('**/api/worlds*', (r) => r.fulfill({ json: { worlds: [world] } }))
+  await page.route('**/api/systems*', (r) => r.fulfill({ json: { systems: [fixture] } }))
+
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Worlds' }).click()
+
+  // The default destination is whatever the Systems tab is showing — the
+  // read-only Solar System, so Add promises an editable copy and delivers one.
+  await expect(page.getByText(/read-only, so you will get an editable copy/)).toBeVisible()
+  const addToCurrent = page.getByRole('button', { name: 'Add Testball to The Solar System' })
+  await addToCurrent.click()
+  await expect(addToCurrent).toHaveText('Added')
+  await page.getByRole('tab', { name: 'Systems' }).click()
+  await expect(page.getByText(/The Solar System \(copy\)/).first()).toBeVisible()
+
+  // Aim at the saved system instead. Testball already orbits there, so Add
+  // warns; Cancel stands down.
+  await page.getByRole('tab', { name: 'Worlds' }).click()
+  await page.getByLabel('System to add worlds to').selectOption('stest')
+  await page.getByRole('button', { name: 'Add Testball to Fixture System' }).click()
+  await expect(page.getByText(/already orbiting in Fixture System/)).toBeVisible()
+  await page.getByRole('button', { name: 'Cancel' }).click()
+  await expect(page.getByText(/already orbiting/)).toHaveCount(0)
+
+  // Asked again and confirmed, the duplicate goes through — allowed, not silent.
+  await page.getByRole('button', { name: 'Add Testball to Fixture System' }).click()
+  await page.getByRole('button', { name: 'Add anyway' }).click()
+  await page.getByRole('tab', { name: 'Systems' }).click()
+  await expect(page.getByRole('button', { name: /Fixture System/, pressed: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Visit/ })).toHaveCount(2)
+})
+
+test('TRAPPIST-1 wears measured orbits on imagined worlds', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Systems' }).click()
+  await page.getByRole('button', { name: 'TRAPPIST-1' }).click()
+
+  // The honest split is stated up front, and all seven planets are here.
+  await expect(page.getByText(/nobody has seen these surfaces/)).toBeVisible()
+  await expect(page.getByRole('button', { name: /Visit/ })).toHaveCount(7)
+  // TRAPPIST-1 b's 1.5-day year is quoted, not rounded into fiction.
+  await expect(page.getByText('1.5 day year', { exact: false })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Orbit view' }).click()
+  await page.waitForTimeout(2500)
+  expect(await hasDrawnGeometry(page)).toBe(true)
+
+  await page.getByRole('button', { name: 'Body list' }).click()
+  await page.getByRole('button', { name: /TRAPPIST-1 e/ }).click()
+  await expect(page.getByRole('heading', { name: 'TRAPPIST-1 e' })).toBeVisible()
+})
+
+test('an ancient world loads whole and scans as a reconstruction', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Archean Earth' }).click()
+  await expect(page.getByRole('heading', { name: 'Archean Earth' })).toBeVisible()
+  await expect(page.getByText(/archean world/)).toBeVisible()
+
+  // The reconstruction says it is one, in its first breath.
+  await page.getByRole('tab', { name: 'Scan' }).click()
+  await page.getByRole('button', { name: /Run spectrometer on Archean Earth/ }).click()
+  await expect(page.getByText('Reconstructed: anoxic, and orange')).toBeVisible({ timeout: 15_000 })
+
+  // The biosignature verdict renders in the surface section, not the default.
+  await page.getByRole('button', { name: 'Surface & water' }).click()
+  await expect(page.getByText('Alive, but not advertising')).toBeVisible()
+})
+
+test('the Outer Rim gathers its fictions under one invented sun', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Systems' }).click()
+  await page.getByRole('button', { name: 'Outer Rim' }).click()
+
+  // Labelled invented like Andromeda, with all three worlds present.
+  await expect(page.getByText(/Every number in it was invented/)).toBeVisible()
+  await expect(page.getByRole('button', { name: /Visit/ })).toHaveCount(3)
+
+  await page.getByRole('button', { name: /Tatooine/ }).click()
+  await expect(page.getByRole('heading', { name: 'Tatooine' })).toBeVisible()
+
+  // The scan opens with the word Fiction, and the closing note owes the
+  // missing second sun out loud — the single-star scope, stated in-app.
+  await page.getByRole('tab', { name: 'Scan' }).click()
+  await page.getByRole('button', { name: /Run spectrometer on Tatooine/ }).click()
+  await expect(page.getByText('Fiction: dry nitrogen, farmed for its dew')).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByText(/owes it the other/)).toBeVisible()
+})
+
+test('Pandora rides beside the planet it cannot orbit', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Systems' }).click()
+  await page.getByRole('button', { name: 'Alpha Centauri A' }).click()
+
+  // Moons only render in the single-world view, so Pandora gets its own
+  // orbit — and the caption says so rather than pretending otherwise.
+  await expect(page.getByText(/Pandora is Polyphemus’s moon/)).toBeVisible()
+  await expect(page.getByRole('button', { name: /Visit/ })).toHaveCount(2)
+
+  await page.getByRole('button', { name: /Pandora/ }).click()
+  await expect(page.getByRole('heading', { name: 'Pandora' })).toBeVisible()
+
+  await page.getByRole('tab', { name: 'Scan' }).click()
+  await page.getByRole('button', { name: /Run spectrometer on Pandora/ }).click()
+  await expect(page.getByText('Fiction: rich air, wrong for us')).toBeVisible({ timeout: 15_000 })
+
+  // The biosignature verdict renders in the surface section, not the default.
+  await page.getByRole('button', { name: 'Surface & water' }).click()
+  await expect(page.getByText('Strong — and networked')).toBeVisible()
+})
+
+test('the rendering tiers trade shells for a baked map, and back', async ({ page }) => {
+  await page.goto('/')
+  // The default Meadow world is detailed: displaced rock plus water and
+  // cloud shells. Flat swaps all of that for one baked map on one sphere.
+  const detailed = await settledTriangles(page)
+
+  await page.getByRole('button', { name: 'Flat', exact: true }).click()
+  await expect.poll(() => datum(page, 'triangles')).toBeLessThan(detailed)
+
+  // The choice is a render control: coming back rebuilds the exact geometry.
+  await page.getByRole('button', { name: 'Detailed', exact: true }).click()
+  await expect.poll(() => datum(page, 'triangles')).toBe(detailed)
+})
+
+test('a gas giant takes the animated flat tier by default', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Amber giant' }).click()
+  // Auto sends gas worlds to the flat pipeline — the gas shader's smooth
+  // sphere — which draws fewer triangles than the sculptor's displaced mesh.
+  const flat = await settledTriangles(page)
+  await page.getByRole('button', { name: 'Detailed', exact: true }).click()
+  await expect.poll(() => datum(page, 'triangles')).toBeGreaterThan(flat)
+})
+
+test('the universe is yours to tune, and the sky survives a reload', async ({ page }) => {
+  await page.goto('/')
+  // The classic sky is exactly half the pool — the default draws the same
+  // 1400 stars the app has always drawn.
+  await expect.poll(() => datum(page, 'points')).toBe(1400)
+
+  await page.getByRole('tab', { name: 'Systems' }).click()
+  await page.getByLabel('Star density').focus()
+  await page.keyboard.press('End')
+  await expect.poll(() => datum(page, 'points')).toBe(2800)
+
+  // The nebula is CSS behind the transparent canvas — free to the GPU.
+  await page.getByRole('button', { name: 'Violet' }).click()
+  await expect(page.locator('[data-nebula="on"]')).toBeVisible()
+
+  // A viewer preference, so it persists per browser.
+  await page.reload()
+  await expect.poll(() => datum(page, 'points')).toBe(2800)
+  await expect(page.locator('[data-nebula="on"]')).toBeVisible()
+})
+
+test('display choices survive a reload', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Systems' }).click()
+  await page.getByRole('button', { name: 'Orbit paths' }).click()
+  await expect(page.getByRole('button', { name: 'Orbit paths' })).toHaveAttribute(
+    'aria-pressed', 'false',
+  )
+
+  await page.reload()
+  await page.getByRole('tab', { name: 'Systems' }).click()
+  await expect(page.getByRole('button', { name: 'Orbit paths' })).toHaveAttribute(
+    'aria-pressed', 'false',
+  )
+
+  // The renderer honours the remembered choice, not just the chip.
+  await page.getByRole('button', { name: 'Orbit view' }).click()
+  await page.waitForTimeout(2000)
+  expect(await hasDrawnGeometry(page)).toBe(true)
+  expect(await datum(page, 'lines')).toBe(0)
 })
