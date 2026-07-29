@@ -59,6 +59,13 @@ check against the pull request base remains the tight guard on CI — the CI
 overrides exist so the absolute check reports real regressions instead of
 failing on hardware it was never calibrated for.
 
+The regression check also carries per-metric noise floors
+(`regression.noiseFloor`): a regression only counts when it exceeds the
+percentage limit *and* the metric's measured run-to-run wobble in absolute
+terms. Ten percent of a ~350 ms long-task total is 35 ms — below what a shared
+runner reproduces between two runs of identical code. Rows over the percentage
+but under the floor report "within noise floor" and pass.
+
 For performance-sensitive changes, include before/after measurements from the
 same machine and browser. A regression greater than 10% requires a fix or an
 explicit, documented product tradeoff. Do not loosen a budget merely to make CI

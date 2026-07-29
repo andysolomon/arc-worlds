@@ -61,6 +61,14 @@
   },
   "regression": {
     "maxPercent": 10,
+    "noiseFloor": {
+      "firstSystemFrameMs": 150,
+      "interactionDurationMs": 80,
+      "longTaskMaxMs": 150,
+      "longTaskTotalMs": 150,
+      "taskDurationMs": 600,
+      "activeRendererFps": 3
+    },
     "lowerIsBetter": [
       "firstSystemFrameMs",
       "interactionDurationMs",

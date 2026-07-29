@@ -488,6 +488,14 @@ DONE
   documents the profile rule and why this is calibration, not
   loosening: the absolute check should report real regressions, not
   fail on hardware it was never calibrated for.
+- Second CI truth, from the first run with the profiles: the absolute
+  budgets passed, and the failure moved to the relative check —
+  longTaskTotalMs 349 -> 436 ms read as "24.9% regressed" on a PR that
+  changes no runtime code. Ten percent of a small metric is below the
+  runner's own wobble, so the regression check gained per-metric noise
+  floors (regression.noiseFloor): a regression must clear the
+  percentage AND the metric's measured absolute wobble. Rows over the
+  percentage but under the floor report "within noise floor" and pass.
 
 NEXT
 - CI browser budgets have never fit GitHub's shared runners: the

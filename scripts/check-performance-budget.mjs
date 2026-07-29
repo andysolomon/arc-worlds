@@ -50,27 +50,39 @@ if (baselineOption) {
   const baselinePath = resolve(root, baselineOption)
   const baseline = JSON.parse(await readFile(baselinePath, 'utf8')).summary
   const maxPercent = budget.regression.maxPercent
+  // A percentage alone punishes small metrics: 10% of a ~350 ms long-task
+  // total is 35 ms, well under a shared runner's run-to-run wobble. A
+  // regression must clear the percentage AND the metric's measured noise
+  // floor in absolute terms before it counts.
+  const floors = budget.regression.noiseFloor ?? {}
+
+  const judge = (metric, previous, current, percent) => {
+    const overLimit = percent > maxPercent
+    const overFloor = Math.abs(current - previous) > (floors[metric] ?? 0)
+    regressionRows.push({
+      metric,
+      baseline: previous,
+      current,
+      change: `${percent.toFixed(1)}%`,
+      verdict: overLimit ? (overFloor ? 'REGRESSED' : 'within noise floor') : 'ok',
+    })
+    if (overLimit && overFloor) {
+      failures.push(`${metric} regressed ${percent.toFixed(1)}% (limit ${maxPercent}%)`)
+    }
+  }
 
   for (const metric of budget.regression.lowerIsBetter) {
     const current = summary[metric]
     const previous = baseline[metric]
     if (!Number.isFinite(current) || !Number.isFinite(previous) || previous <= 0) continue
-    const percent = ((current - previous) / previous) * 100
-    regressionRows.push({ metric, baseline: previous, current, change: `${percent.toFixed(1)}%` })
-    if (percent > maxPercent) {
-      failures.push(`${metric} regressed ${percent.toFixed(1)}% (limit ${maxPercent}%)`)
-    }
+    judge(metric, previous, current, ((current - previous) / previous) * 100)
   }
 
   for (const metric of budget.regression.higherIsBetter) {
     const current = summary[metric]
     const previous = baseline[metric]
     if (!Number.isFinite(current) || !Number.isFinite(previous) || previous <= 0) continue
-    const percent = ((previous - current) / previous) * 100
-    regressionRows.push({ metric, baseline: previous, current, change: `${(-percent).toFixed(1)}%` })
-    if (percent > maxPercent) {
-      failures.push(`${metric} regressed ${percent.toFixed(1)}% (limit ${maxPercent}%)`)
-    }
+    judge(metric, previous, current, ((previous - current) / previous) * 100)
   }
 }
 
