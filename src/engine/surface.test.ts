@@ -1,7 +1,8 @@
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_PARAMS } from '../lib/params'
-import { makeSurface, noiseFor } from './surface'
+import { AMP, makeSurface, noiseFor } from './surface'
+import { isGas, PALETTES } from './palettes'
 import { SURFACE_GOLDENS } from './surface.goldens'
 import type { PlanetParams, PresetKey } from './types'
 
@@ -18,19 +19,56 @@ describe('makeSurface', () => {
     if (!byCase.has(key)) byCase.set(key, buildParams(g.preset as PresetKey, g.seed))
   }
 
-  it('reproduces every captured sample', () => {
+  /**
+   * The amplitude the goldens were captured at. Relief was reduced on
+   * 2026-07-29 because every world was arriving with a visibly lumpy horizon
+   * — Earth's tallest mountain is 0.14% of its radius, and 0.12 is some
+   * eighty-five times the hundredfold exaggeration that was already generous.
+   *
+   * The goldens are deliberately not re-captured: their own header forbids
+   * it, and rightly, since regenerating them from the current code would
+   * assert nothing. Instead the relationship to them is asserted exactly.
+   * That is a stronger claim than the original equality, because it says
+   * precisely what changed and proves nothing else did.
+   */
+  const GOLDEN_AMP = 0.12
+
+  it('reproduces every captured colour exactly', () => {
+    // Colour is read from the elevation field, and the amplitude is applied
+    // only to the radius that field returns. So a change in relief height
+    // cannot move a coastline, and every world already saved keeps the
+    // geography it was saved with. This is the assertion that guarantees it.
     const col = new THREE.Color()
     for (const g of SURFACE_GOLDENS) {
       const P = byCase.get(`${g.preset}:${g.seed}`)!
       const { n1, n2 } = noiseFor(P.seed)
-      const surface = makeSurface(P, n1, n2)
-      const r = surface.sample(g.dir[0], g.dir[1], g.dir[2], col)
+      makeSurface(P, n1, n2).sample(g.dir[0], g.dir[1], g.dir[2], col)
 
       const where = `${g.preset}/${g.seed} at [${g.dir}]`
-      expect(r, `radius for ${where}`).toBeCloseTo(g.r, 10)
       expect(col.r, `red for ${where}`).toBeCloseTo(g.c[0], 10)
       expect(col.g, `green for ${where}`).toBeCloseTo(g.c[1], 10)
       expect(col.b, `blue for ${where}`).toBeCloseTo(g.c[2], 10)
+    }
+  })
+
+  it('reproduces every captured elevation, scaled only by the amplitude', () => {
+    // Rocky displacement is 1 + e·AMP, so recovering e from a golden and from
+    // the current sampler compares the elevation fields themselves. Equal
+    // fields mean the only thing that moved is how tall the relief is drawn.
+    // Gas giants never used AMP — their banding carries its own small, far
+    // gentler displacement — so for them the radius is unchanged outright.
+    const col = new THREE.Color()
+    for (const g of SURFACE_GOLDENS) {
+      const P = byCase.get(`${g.preset}:${g.seed}`)!
+      const { n1, n2 } = noiseFor(P.seed)
+      const r = makeSurface(P, n1, n2).sample(g.dir[0], g.dir[1], g.dir[2], col)
+
+      const where = `${g.preset}/${g.seed} at [${g.dir}]`
+      if (isGas(PALETTES[P.preset])) {
+        expect(r, `gas radius for ${where}`).toBeCloseTo(g.r, 10)
+      } else {
+        expect((r - 1) / AMP, `elevation for ${where}`).toBeCloseTo((g.r - 1) / GOLDEN_AMP, 10)
+      }
     }
   })
 

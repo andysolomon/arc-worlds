@@ -12,8 +12,24 @@ import { fbm, makeNoise, type Noise3 } from './noise'
 import { isGas, PALETTES } from './palettes'
 import type { PlanetParams } from './types'
 
-/** Displacement applied to the unit sphere, in sphere radii. */
-const AMP = 0.12
+/**
+ * Displacement applied to the unit sphere, in sphere radii.
+ *
+ * Earth's tallest mountain is 0.14% of its radius, so any relief you can see
+ * on a silhouette is already exaggerated a hundredfold. The old 0.12 was
+ * nearer eighty-five times that again, which is why every world arrived
+ * looking like an asteroid: the horizon itself was visibly lumpy. This keeps
+ * enough for a sculpted world to feel handmade and hold a shadow, while
+ * leaving the outline reading as a planet.
+ *
+ * Deliberately the only thing changed here. The elevation field itself is
+ * untouched, and the colour ramp reads that field rather than this number —
+ * so every world already saved keeps its exact coastlines, continents and
+ * colours, and only the height of its relief comes down. Changing the noise
+ * frequency would have smoothed things too, and would have moved every
+ * coastline in the gallery.
+ */
+const AMP = 0.042
 
 export interface Surface {
   /**

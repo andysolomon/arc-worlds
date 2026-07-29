@@ -12,6 +12,7 @@ import {
 } from './scale'
 import { ATMO_FRAG, ATMO_VERT, GAS_FRAG, GAS_VERT, SUN_FRAG, SUN_VERT } from './shaders'
 import { effectiveTier } from './tiers'
+import { heightAt, heightFieldFrom, type HeightField } from './heightfield'
 import type { Moon, PlanetParams, PresetKey, RingConfig, SystemBody, SystemDef } from './types'
 
 interface MoonInstance {
@@ -219,6 +220,10 @@ export class PlanetViewport {
    */
   private fluidTime = { value: 0 }
   private fluidStyle = { value: 0 }
+  /** Relief taken from a photographed world's own map, cached per texture. */
+  private heightFields = new Map<string, HeightField | null>()
+  private heightKey = ''
+
   /** The flat tier's baked map for the current single world. */
   private flatKey = ''
   private flatBakeId = 0
@@ -1430,6 +1435,12 @@ export class PlanetViewport {
     // a procedural world on the flat tier renders its baked orbit-view map.
     const tier = effectiveTier(P)
     if (P.texture && tier === 'flat') return this.regenTextured(P, R)
+    // A photographed world asked to show detail kept none of its photograph:
+    // it fell through to the procedural path, which invents a surface from
+    // the seed. That is why a detailed Earth had continents nobody
+    // recognised. It now keeps its map and gains the relief and shells that
+    // make the tier worth choosing.
+    if (P.texture) return this.regenPhotoDetailed(P, R)
     if (tier === 'flat') return this.regenFlat(P)
     this.regenProcedural(P)
   }
@@ -1572,6 +1583,111 @@ export class PlanetViewport {
     this.stars.visible = P.stars !== false
   }
 
+  /** Relief amplitude for a photographed world: subtle, and honestly derived. */
+  private static readonly PHOTO_AMP = 0.02
+
+  /**
+   * A real planet, in detail: its own photograph on displaced geometry.
+   *
+   * The map supplies both the colour and — through its luminance — the
+   * relief, so the mountains sit where the picture says land is rather than
+   * where a noise field happened to put them. Clouds move onto their own
+   * shell here instead of being baked flat into the map, which is most of
+   * what makes this read as a world rather than a decal on a ball.
+   */
+  private regenPhotoDetailed(P: PlanetParams, R: (typeof REAL)[string] | null) {
+    const pal = PALETTES[P.preset] ?? PALETTES.temperate
+    const url = P.texture!
+
+    this.texMesh.visible = false
+    this.gasMesh.visible = false
+    this.water.visible = false
+    if (!this.planet.visible) this.compileNeeded = true
+    this.planet.visible = true
+
+    const mat = this.planet.material as THREE.MeshStandardMaterial
+    const tex = this.loadTex(url)
+    if (mat.map !== tex || mat.vertexColors) {
+      mat.map = tex
+      // Colour now comes from the map, so the per-vertex colours must stop
+      // multiplying it — that switches shader variant, hence the warm.
+      mat.vertexColors = false
+      mat.color.set(0xffffff)
+      mat.needsUpdate = true
+      this.compileNeeded = true
+    }
+
+    // A gas giant's bands are weather, not landscape: embossing them would
+    // invent mountains out of cloud. Those stay perfectly smooth.
+    const gas = isGas(pal)
+
+    // The height field needs the decoded image, which may not have arrived.
+    // Until it does the world is drawn as a smooth sphere wearing its map,
+    // which is correct in every respect except relief.
+    let field = gas ? null : this.heightFields.get(url)
+    if (!gas && field === undefined) {
+      const img = tex.image as (TexImageSource & { width: number; height: number }) | undefined
+      if (img?.width) {
+        field = heightFieldFrom(img)
+        this.heightFields.set(url, field)
+      } else {
+        field = null
+        this.heightKey = ''
+        // Re-run once it lands; loadTex caches, so this costs one decode.
+        this.texLoader.load(url, () => this.invalidate())
+      }
+    }
+
+    const key = `${url}:${this.detail}:${field ? 1 : 0}:${gas ? 'g' : 'r'}`
+    if (key !== this.heightKey) {
+      this.heightKey = key
+      const pa = this.geo!.attributes.position.array as Float32Array
+      const uv = this.geo!.attributes.uv.array as Float32Array
+      const dirs = this.dirs!
+      for (let i = 0, k = 0; i < dirs.length; i += 3, k += 2) {
+        const r = field
+          ? 1 + heightAt(field, uv[k], uv[k + 1]) * PlanetViewport.PHOTO_AMP
+          : 1
+        pa[i] = dirs[i] * r
+        pa[i + 1] = dirs[i + 1] * r
+        pa[i + 2] = dirs[i + 2] * r
+      }
+      this.geo!.attributes.position.needsUpdate = true
+      this.geo!.computeVertexNormals()
+      this.surfaceKey = '' // the procedural path must rebuild if we go back
+    }
+
+    // Clouds get their own shell, which is the visible gain over the flat
+    // tier: they sit above the ground and drift at their own rate.
+    const cmat = this.clouds.material as THREE.MeshLambertMaterial
+    const ct = P.cloudTexture || null
+    if (ct !== this.cloudTexUrl) {
+      if (!this.cloudTexUrl && cmat.map) cmat.map.dispose()
+      this.cloudTexUrl = ct
+      cmat.map = ct ? this.loadTex(ct) : solidTexture(0xffffff, 0)
+      cmat.alphaMap = null
+      this.cloudKey = ''
+    }
+    const showClouds = !!ct && (P.clouds || 0) > 0.04
+    if (showClouds && !this.clouds.visible) this.compileNeeded = true
+    this.clouds.visible = showClouds
+    this.clouds.scale.setScalar(1.012)
+    cmat.color.set(0xffffff)
+    cmat.opacity = Math.min(1, (P.clouds || 0) * 1.8)
+    this.cloudsPending = false
+
+    this.setRing(R?.ring ?? (P.rings ? customRing(P, pal) : null))
+    this.ringG.rotation.z = R?.ring ? 0 : ((P.ringTilt ?? 0.5) - 0.5) * 1.5708
+
+    const amat = this.atmo.material as THREE.ShaderMaterial
+    amat.uniforms.uC.value.set(P.atmoColor ?? pal.atmo)
+    amat.uniforms.uI.value = 0.25 + (P.glow ?? 0.5) * 1.1
+    const showAtmo = (P.glow ?? 0.5) > 0.02
+    if (showAtmo && !this.atmo.visible) this.compileNeeded = true
+    this.atmo.visible = showAtmo
+    this.stars.visible = P.stars !== false
+  }
+
   /** A sculpted world: displace and colour the sphere from noise. */
   private regenProcedural(P: PlanetParams) {
     const pal = PALETTES[P.preset] ?? PALETTES.temperate
@@ -1579,6 +1695,19 @@ export class PlanetViewport {
     this.gasMesh.visible = false
     if (!this.planet.visible) this.compileNeeded = true
     this.planet.visible = true
+
+    // A photographed world may have left its map on this mesh; a sculpted one
+    // is coloured per vertex and must take it back.
+    const pmat = this.planet.material as THREE.MeshStandardMaterial
+    if (!pmat.vertexColors) {
+      pmat.map = null
+      pmat.vertexColors = true
+      pmat.color.set(0xffffff)
+      pmat.needsUpdate = true
+      this.heightKey = ''
+      this.surfaceKey = ''
+      this.compileNeeded = true
+    }
     this.clouds.scale.setScalar(1)
 
     const cmat = this.clouds.material as THREE.MeshLambertMaterial
