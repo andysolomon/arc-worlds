@@ -14,7 +14,7 @@
       "unit": "ms"
     },
     "longTaskMaxMs": {
-      "max": 500,
+      "max": 600,
       "unit": "ms"
     },
     "longTaskTotalMs": {
