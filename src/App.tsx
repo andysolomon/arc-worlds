@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { AppLink } from './components/AppLink'
 import { ScanPanel } from './components/ScanPanel'
 import { SculptPanel } from './components/SculptPanel'
 import { SystemsPanel } from './components/SystemsPanel'
@@ -6,6 +7,7 @@ import { Viewport } from './components/Viewport'
 import { WorldsPanel } from './components/WorldsPanel'
 import { MOONS, PRESETS, typeOf, type AncientWorld } from './data/presets'
 import { MILKY_WAY } from './data/systems'
+import { realFor } from './engine/planets'
 import {
   loadDisplay, nebulaCss, saveDisplay, type DisplayOptions, type TierChoice,
 } from './lib/display'
@@ -18,6 +20,7 @@ import {
   getSystem, getWorld, listSystems, listWorlds, saveSystem, saveWorld,
   type SavedSystem, type SavedWorld,
 } from './lib/api'
+import { navigate, useAppRoute, type AppRoute } from './lib/navigation'
 import type { PlanetParams, PresetKey, SystemDef } from './engine/types'
 import './styles.css'
 
@@ -38,13 +41,21 @@ const SPEEDS: Array<[number, string]> = [
   [20, '20×'],
 ]
 
-/** Read a share link out of the address bar: /w/:slug for a world, /s/:slug for a system. */
-function routeFromLocation(): { kind: 'w' | 's'; slug: string } | null {
-  const m = /^\/([ws])\/([A-Za-z0-9_-]{3,64})$/.exec(window.location.pathname)
-  return m ? { kind: m[1] as 'w' | 's', slug: m[2] } : null
-}
+const VenusPage = lazy(() => import('./planet-pages/VenusPage'))
 
 export default function App() {
+  const route = useAppRoute()
+  if (route.kind === 'planet') {
+    return (
+      <Suspense fallback={<div className="route-loading">Charting a course to Venus…</div>}>
+        <VenusPage />
+      </Suspense>
+    )
+  }
+  return <SculptorApp route={route} />
+}
+
+function SculptorApp({ route }: { route: Exclude<AppRoute, { kind: 'planet' }> }) {
   const [tab, setTab] = useState<Tab>('sculpt')
   const [name, setName] = useState('Peachmoss')
   const [params, setParams] = useState<PlanetParams>(DEFAULT_PARAMS)
@@ -117,23 +128,27 @@ export default function App() {
   /* --- share links ------------------------------------------------------ */
 
   useEffect(() => {
-    const route = routeFromLocation()
-    if (!route) return
+    if (route.kind !== 'world' && route.kind !== 'system') return
+    let cancelled = false
     // A dead link should still leave a usable app, so every failure falls back
     // to the plain sculptor rather than an error page.
-    const clear = () => window.history.replaceState(null, '', '/')
+    const clear = () => {
+      if (!cancelled) navigate('/', { replace: true })
+    }
 
-    if (route.kind === 'w') {
+    if (route.kind === 'world') {
       getWorld(route.slug)
         .then((w) => {
+          if (cancelled) return
           setParams(sanitize(w.params))
           setName(w.name)
           setSavedSlug(w.slug)
         })
         .catch(clear)
-    } else {
+    } else if (route.kind === 'system') {
       getSystem(route.slug)
         .then((s) => {
+          if (cancelled) return
           setSystem(sanitizeSystem(s.def))
           setSavedSystemSlug(s.slug)
           setTab('solar')
@@ -141,7 +156,10 @@ export default function App() {
         })
         .catch(clear)
     }
-  }, [])
+    return () => {
+      cancelled = true
+    }
+  }, [route])
 
   /* --- galleries -------------------------------------------------------- */
 
@@ -230,8 +248,8 @@ export default function App() {
   const chooseSystem = useCallback((def: SystemDef) => {
     setSystem(def)
     setSavedSystemSlug(null)
-    if (window.location.pathname.startsWith('/s/')) window.history.replaceState(null, '', '/')
-  }, [])
+    if (route.kind === 'system') navigate('/', { replace: true })
+  }, [route.kind])
 
   /** Visit one of the bodies in the current system. */
   const visitBody = useCallback(
@@ -280,14 +298,14 @@ export default function App() {
   const addSavedWorld = useCallback((w: SavedWorld, target?: SavedSystem | null) => {
     if (target) {
       setSystem(addWorld(sanitizeSystem(target.def), w.name, sanitize(w.params)))
-      if (window.location.pathname.startsWith('/s/')) window.history.replaceState(null, '', '/')
+      if (route.kind === 'system') navigate('/', { replace: true })
     } else {
       setSystem((s) => addWorld(s, w.name, sanitize(w.params)))
     }
     setSavedSystemSlug(null)
     setAddedSlug(w.slug)
     window.setTimeout(() => setAddedSlug(null), 1600)
-  }, [])
+  }, [route.kind])
 
   /** Another world like the one already in orbit, further out. */
   /** Roll a moon into orbit around one of the system's own worlds. */
@@ -307,7 +325,7 @@ export default function App() {
     try {
       const s = await saveSystem(system)
       setSavedSystemSlug(s.slug)
-      window.history.replaceState(null, '', `/s/${s.slug}`)
+      navigate(`/s/${s.slug}`, { replace: true })
       try {
         await navigator.clipboard?.writeText(`${window.location.origin}/s/${s.slug}`)
       } catch {
@@ -325,7 +343,7 @@ export default function App() {
     setSystem(sanitizeSystem(s.def))
     setSavedSystemSlug(s.slug)
     setView('system')
-    window.history.replaceState(null, '', `/s/${s.slug}`)
+    navigate(`/s/${s.slug}`, { replace: true })
   }, [])
 
   /* --- scan ------------------------------------------------------------- */
@@ -360,7 +378,7 @@ export default function App() {
     try {
       const w = await saveWorld(name.trim() || 'Untitled world', params)
       setSavedSlug(w.slug)
-      window.history.replaceState(null, '', `/w/${w.slug}`)
+      navigate(`/w/${w.slug}`, { replace: true })
       try {
         await navigator.clipboard?.writeText(`${window.location.origin}/w/${w.slug}`)
       } catch {
@@ -381,7 +399,7 @@ export default function App() {
     setSavedSlug(w.slug)
     setView('single')
     setTab('sculpt')
-    window.history.replaceState(null, '', `/w/${w.slug}`)
+    navigate(`/w/${w.slug}`, { replace: true })
   }, [])
 
   const copyLink = useCallback((w: SavedWorld) => {
@@ -397,6 +415,10 @@ export default function App() {
   /* --- render ----------------------------------------------------------- */
 
   const preset = typeOf(params.preset)
+  const isMeasuredVenus = params.preset === 'venus' && !!realFor(params)
+  const systemHasMeasuredVenus = system.bodies.some(
+    (body) => body.params.preset === 'venus' && !!realFor(body.params),
+  )
   const subtitle =
     view === 'system'
       ? `${system.sub} · click a planet to visit it`
@@ -453,6 +475,16 @@ export default function App() {
             <button className="btn-ghost" type="button" onClick={() => setResetNonce((n) => n + 1)}>
               Reset view
             </button>
+            {view === 'system' && systemHasMeasuredVenus && (
+              <AppLink className="btn-field-trip" href="/venus">
+                Explore Venus
+              </AppLink>
+            )}
+            {view === 'single' && isMeasuredVenus && (
+              <AppLink className="btn-field-trip" href="/venus">
+                Open the Venus field trip
+              </AppLink>
+            )}
             <span className="hint">drag to travel · scroll to zoom</span>
           </div>
         </div>

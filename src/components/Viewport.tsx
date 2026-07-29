@@ -16,6 +16,10 @@ interface Props {
   onPickMoon?: (world: { preset: PresetKey; seed: number }) => void
   /** Nebula tint: plain CSS behind the transparent canvas, free to the GPU. */
   background?: string
+  /** Accessible name for this otherwise visual, interactive region. */
+  ariaLabel?: string
+  /** WebGL creation or context loss leaves the caller free to reveal a poster. */
+  onError?: (error: Error) => void
 }
 
 /**
@@ -27,6 +31,7 @@ interface Props {
  */
 export function Viewport({
   params, system, scanNonce = 0, resetNonce = 0, onPick, onPickMoon, background,
+  ariaLabel, onError,
 }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const engine = useRef<PlanetViewport | null>(null)
@@ -34,14 +39,33 @@ export function Viewport({
   pickRef.current = onPick
   const moonRef = useRef(onPickMoon)
   moonRef.current = onPickMoon
+  const errorRef = useRef(onError)
+  errorRef.current = onError
 
   useEffect(() => {
     if (!host.current) return
-    const v = new PlanetViewport(host.current)
+    let v: PlanetViewport
+    try {
+      v = new PlanetViewport(host.current)
+    } catch (error) {
+      errorRef.current?.(error instanceof Error ? error : new Error('WebGL could not start'))
+      return
+    }
     v.onPick = (i) => pickRef.current?.(i)
     v.onPickMoon = (w) => moonRef.current?.(w)
     engine.current = v
+    const canvas = host.current.querySelector('canvas')
+    if (canvas) {
+      canvas.setAttribute('aria-hidden', 'true')
+      canvas.tabIndex = -1
+    }
+    const contextLost = (event: Event) => {
+      event.preventDefault()
+      errorRef.current?.(new Error('The WebGL context was lost'))
+    }
+    canvas?.addEventListener('webglcontextlost', contextLost)
     return () => {
+      canvas?.removeEventListener('webglcontextlost', contextLost)
       v.dispose()
       engine.current = null
     }
@@ -66,6 +90,9 @@ export function Viewport({
   return (
     <div
       ref={host}
+      role={ariaLabel ? 'img' : undefined}
+      aria-label={ariaLabel}
+      data-viewport="planet"
       data-nebula={background ? 'on' : 'off'}
       style={{ width: '100%', height: '100%', background: background || undefined }}
     />
