@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ANCIENT, FICTION, SOLAR } from '../data/presets'
+import { ANCIENT, FICTION, MOONS, SOLAR } from '../data/presets'
 import type { PlanetParams } from '../engine/types'
 import { DEFAULT_PARAMS } from './params'
 import { computeScan } from './scan'
@@ -80,6 +80,50 @@ describe('story worlds', () => {
     for (const f of FICTION) {
       const scan = await computeScan(paramsFor({ ...f.params, preset: f.key, seed: f.params.seed! + 1 }))
       expect(scan.atmoTitle, f.name).not.toMatch(/^Fiction:/)
+    }
+  })
+})
+
+describe('moons that are worlds', () => {
+  it('scans every promoted moon as itself, from measured prose', async () => {
+    for (const m of MOONS) {
+      const itself = await computeScan(paramsFor({ ...m.params, preset: m.key }))
+      // Measured prose, not a reading derived from the sliders — which is
+      // exactly what the same world reseeded off its canonical identity gets.
+      const derived = await computeScan(
+        paramsFor({ ...m.params, preset: m.key, seed: m.params.seed! + 1 }),
+      )
+      expect(itself.atmoTitle, m.name).not.toBe(derived.atmoTitle)
+      expect(itself.compounds.length, m.name).toBeGreaterThan(0)
+    }
+  })
+
+  it('gives Titan an atmosphere thicker than Earth’s, as measured', async () => {
+    const t = MOONS.find((m) => m.key === 'titan')!
+    const scan = await computeScan(paramsFor({ ...t.params, preset: t.key }))
+    expect(scan.pressure).toBe('1.47 bar')
+    expect(scan.gases[0].n).toBe('Nitrogen')
+  })
+
+  it('finds Europa’s ocean and Io’s complete lack of one', async () => {
+    const eu = MOONS.find((m) => m.key === 'europa')!
+    const io = MOONS.find((m) => m.key === 'io')!
+    expect((await computeScan(paramsFor({ ...eu.params, preset: eu.key }))).water.state)
+      .toMatch(/ocean/)
+    expect((await computeScan(paramsFor({ ...io.params, preset: io.key }))).water.state)
+      .toMatch(/none/)
+  })
+
+  it('detaches on reseed into an ordinary world of its family', async () => {
+    for (const m of MOONS) {
+      const scan = await computeScan(
+        paramsFor({ ...m.params, preset: m.key, seed: m.params.seed! + 1 }),
+      )
+      expect(scan.note, m.name).toBeTruthy()
+      // The measured note is unique to the body; a derived one comes from the
+      // shared oddity list, so the two can never coincide.
+      const asItself = await computeScan(paramsFor({ ...m.params, preset: m.key }))
+      expect(scan.note, m.name).not.toBe(asItself.note)
     }
   })
 })

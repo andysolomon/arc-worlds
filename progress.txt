@@ -393,7 +393,7 @@ DONE
 - Fluid motion, all on rotation's clock (this.t): water shimmer via a
   time-driven normal perturbation injected into the shell material
   (onBeforeCompile, customProgramCacheKey — exactly one program
-  variant, startup-warmed); lava (emissive palettes) ripples slow and
+  variant, warmed before display); lava (emissive palettes) ripples slow and
   heavy and pulses emissiveIntensity; sculpted gas giants reach the
   GAS_FRAG animation (differential band drift + storm vortex, swirl by
   roughness) through the flat tier. Paused/hidden/offscreen freeze all
@@ -417,7 +417,7 @@ VERIFIED (full suite delegated to the same Opus 5 agent)
   everywhere, db:push "No changes detected".
 - The two silent-failure risks probed directly: the shader anchor
   really matched (compiled GLSL contains the perturb block exactly
-  once across 18 startup shaders), and paused really is frozen
+  once across 18 compiled programs), and paused really is frozen
   (canvas pixels byte-identical 1.6 s apart; pixels differ while
   running). Texture ownership across photo->flat->photo restores
   Jupiter's exact 19,156 triangles with zero console errors; slider-
@@ -456,10 +456,10 @@ DONE
   accessible name alone; two buttons must never share one.
 - longTaskMaxMs budget 500 -> 600: Opus's interleaved A/B showed the
   hot-machine ceiling (469 -> 486 -> 470 -> 533/516 across phases)
-  crossing 500 in BOTH phase-7 and phase-8 builds — accumulated
-  startup-compile weight, no single regression. The budget now
-  encodes measured reality; shaving the startup compile long task is
-  the recorded follow-up.
+  crossing 500 in BOTH phase-7 and phase-8 builds — accumulated Orbit
+  transition cost, then still unattributed, with no single regression.
+  The budget encoded measured reality; phase attribution and reducing
+  transition shader topology became the recorded follow-up.
 
 VERIFIED (full suite delegated to the same Opus 5 agent)
 - typecheck, lint, 114 unit, build, size:check (entry 238,048 gzip
@@ -506,8 +506,199 @@ NEXT
   calibrated on local Apple Silicon. Fix is a runner-calibrated budget
   profile (or a CI multiplier), not code — the eight phases moved the
   needle ~7% on one row and improved the other.
-- Shave the startup shader-compile long task (the real fix behind the
-  budget raise).
+- Repeat the phase-attributed Orbit transition benchmark in Safari on
+  the original hardware to validate the Metal/ANGLE driver hypothesis.
 - e2e suite wall time (~1.2 m) still worth a fixed-sleep-to-poll pass.
 - Google Fonts on the first-load critical path remains open.
 - Safari hardware re-profiling remains the one unchecked perf item.
+
+2026-07-29 performance follow-up: shave the Orbit transition shader work
+
+DONE
+- Corrected the misleading "startup" label. The benchmark opens its
+  long-task window on Orbit view pointerdown, so every judged task is
+  part of the view transition.
+- Added permanent arc:orbit phase measures around regeneration, body
+  construction, label creation, shader kickoff/readiness and rendering,
+  plus transition shader-program counts and a per-run attribution
+  timeline in the benchmark artifact.
+- Scoped compileAsync to the active system subtree. Three.js compile()
+  traverses hidden objects when handed the whole scene; the old call
+  compiled single-world materials that could not render in Orbit view.
+- Made labels genuinely opt-in: the default transition creates no label
+  canvases, CanvasTextures, sprites or sprite shader. Enabling Labels
+  creates them once; later hide/show, rename, scaling and disposal keep
+  their existing behavior.
+- Added absolute guards: Orbit may add at most four shader programs and
+  the synchronous compileAsync kickoff must stay under 50 ms.
+
+MEASURED (same Apple Silicon machine, headless Chromium, three-run medians)
+- Instrumented before: 12 programs added, buildBodies 2.4 ms, hidden
+  labels 1.4 ms, shader kickoff 3.7 ms, shader ready 18.5 ms,
+  longTaskMax 207 ms.
+- After: 4 programs added, buildBodies 0.8 ms, labels 0 ms, shader
+  kickoff 1.7 ms, shader ready 13.5 ms, longTaskMax 186 ms.
+- The strongest deterministic win is program topology: 67% fewer
+  transition programs. A later hot-machine verification still produced
+  a 436 ms median, so the initial 10% long-task change is not treated as
+  proven. In all three later samples the long task began within 0.2 ms
+  of first render, after shader readiness; renderer.render itself
+  measured 26-41 ms inside a 256-437 ms enclosing browser task. That
+  points at first-presentation browser/driver work. Safari/Metal remains
+  the required environment for confirming the driver-side hypothesis.
+
+2026-07-29 satellite orbits: moons orbit their planets, and are worlds
+
+DONE
+- SystemBody.orbits names a parent. The satellite's plane is parented to
+  that body's node in the scene graph, so it inherits the planet's
+  position every frame — orbit path included — with no ordering code.
+- Drawn distance measured, not guessed: a band from 1.3x the parent's
+  drawn radius out to whatever room exists before the nearest other
+  orbit. Scale mode is generous (Jupiter 5.4 units of clearance);
+  same-size mode has none — planets are drawn 0.24 wide with 0.29
+  between orbits and already overlap at conjunction — so the band
+  collapses to its floor. Unit tests pin both extremes and the ordering.
+- The seven promoted moons orbit their planets in the Solar System;
+  Pandora orbits Polyphemus. Satellites keep their true a (AU) and
+  period (years) measured from the parent; the drawn year borrows the
+  single-view moon easing so the Moon is watchable rather than a blur.
+- Satellites are moons, so the moons toggle drops them entirely and the
+  geometry genuinely leaves the scene (e2e asserts the triangle count).
+- Library made satellite-aware: MAX_BODIES 12 -> 24 (the Solar System
+  alone is now 16 and a copy of it must survive), sortByDistance files
+  a satellite directly after its planet rather than by its own distance
+  — which would put the Moon in front of Mercury — and sanitisation
+  keeps a satellite's own period instead of deriving a Kepler year from
+  the star it does not orbit.
+- Two bugs found by looking at it rather than at numbers: Alpha
+  Centauri A framed itself inside its own star (scale mode parks the
+  camera at the outermost orbit, which fails when the only planet is
+  close in — the star is now held to 40% of the frame), and the first
+  screenshot showed the moons were being baked at full resolution for
+  a six-pixel dot.
+
+VERIFIED
+- typecheck, lint, 123 unit (4 new), 28 e2e (2 new), all bundle budgets,
+  perf median green.
+- Same-machine A/B against the pre-satellite build: firstSystemFrame
+  +5.6%, longTaskMax +77 ms (inside its 150 ms noise floor),
+  build-bodies -57% and first-render -21% — faster than before the
+  satellites existed, because satellites skip the bake and use a
+  coarser path. Later median settled at 326 ms, under the 452 baseline.
+
+NEXT
+- The satellite band is tuned for the built-in systems; a custom system
+  with a satellite has no UI to create one yet.
+- Same-size mode's overlapping planets at conjunction remain a
+  pre-existing oddity now shared by satellites.
+
+2026-07-29 building your own moons
+
+DONE
+- A ☾ button on any body in a system you own rolls a moon into orbit
+  around it, and an Orbits selector moves any world between the star
+  and any planet. A moon's distance is measured from its planet and
+  quoted in that planet's radii, which is how moons are actually
+  quoted.
+- satPeriodFor: a moon's year from its planet's size. Mass goes as the
+  cube of radius at a given density, and splitting gas giants from rock
+  at their real density ratio reproduces the Moon within 0.4% and
+  Jupiter's moons within 3%. Saturn's come out a third quick because
+  Saturn is half Jupiter's density — a fair trade for one constant, on
+  systems that were invented anyway. Measured satellites keep their
+  measured years and never go through it.
+- Note for anyone reusing periodFor: it floors mass at 0.02 solar
+  masses because it was written for stars, so it returns nonsense for
+  planets. satPeriodFor does the arithmetic directly.
+- Guards, all unit-tested: moons of moons refused at both ends (you
+  cannot add a moon to a moon, and a planet carrying moons cannot
+  become one — the selector disables itself and says why); removing a
+  planet returns its moons to the star with a real distance; changing
+  what a world orbits re-derives its distance, since the old number was
+  measured from somewhere else.
+- Drawn band corrected: the floor was clearing the planet's radius but
+  not the moon's own, so a user-built moon sat slightly inside its
+  planet. Floor raised to 1.55x and the unit test now asserts surface
+  clearance rather than centre distance. A second test pins that the
+  band never collapses to zero width — stacked moons are worse than
+  crossing an orbit line, which same-size mode does anyway.
+
+VERIFIED
+- typecheck, lint, 130 unit (7 new), 29 e2e (1 new), all bundle
+  budgets, perf median green.
+
+NEXT
+- (done, same day — see below)
+
+2026-07-29 the e2e suite stops flaking
+
+DONE
+- Fourteen fixed sleeps replaced by polls on the signal each one was
+  really waiting for: geometry on the GPU (awaitGeometry), orbit-path
+  line counts, texture requests, settled triangle counts. Only three
+  sleeps remain and all three are correct — two measure that frames do
+  NOT advance while paused, one is a hover settle.
+- A real bug this surfaced, and the most useful thing in the pass: the
+  star-size spec began failing 4 runs in 6 once I polled it. Not
+  contention — my poll returned at the FIRST change of the published
+  star radius, and choosing a star kind publishes it twice, because
+  re-timing the orbits blanks the size mode and resizes the star again.
+  The old 1200 ms sleep had been hiding a genuine two-step update.
+  Fixed with settledValue(), which waits for three equal samples;
+  settledTriangles is now built on it too.
+- Local worker count halved (capped at 4). Every spec drives a live
+  WebGL context, so one worker per core oversubscribes the GPU rather
+  than the CPU — at six workers `page.goto` itself timed out, which is
+  starvation, not test design. Per-test timeout raised to 60 s for a
+  cold context on a loaded machine. CI stays serial with retries.
+
+VERIFIED
+- 8 consecutive full-suite runs, 29/29 every time, ~1.1 m each. Before
+  the pass: 5 failures across 8 runs, a different spec almost every
+  time.
+- typecheck, lint, 130 unit, bundle budgets green.
+
+NEXT
+- Safari re-profiling on the original Metal hardware is the one perf
+  item left, and it is now a specific question rather than a vague one:
+  the shader shave above already cut transition programs 12 -> 4 and
+  found that the remaining long task is not ours. In every sample it
+  began within 0.2 ms of first render with renderer.render measuring
+  26-41 ms inside a 256-437 ms browser task, which points at
+  first-presentation driver work. The supporting oddity: longTaskMax is
+  consistently WORSE on this Apple Silicon machine (337-663 ms) than on
+  a two-core CI runner (176-304 ms). A CPU-bound cost would run the
+  other way; real Metal/ANGLE compilation against CI's software
+  renderer explains it. Safari on the target hardware is what settles
+  it.
+
+2026-07-29 note: what commit 53c8af3 actually contains
+
+The commit titled "feat: drop the Star Wars collection" also carries the
+Orbit-transition shader work logged above (the 2026-07-29 performance
+follow-up entry). That work was sitting uncommitted in the working tree
+and was swept in by a `git add -A` while staging an unrelated change, so
+its message describes none of it.
+
+Files in 53c8af3 that belong to the shader work, not to the Star Wars
+removal:
+- PERFORMANCE_RESULTS.md      (new: the attribution write-up)
+- AGENTS.md                   (transition-budget guidance)
+- performance-budget.json     (orbitShaderKickoffMs, orbitShaderProgramsAdded,
+                               and their regression entries)
+- scripts/performance-benchmark.mjs  (arc:orbit phase measures, program
+                               counts, per-run attribution timeline)
+- src/engine/viewport.ts      (compileAsync scoped to the active system
+                               subtree; labels genuinely opt-in;
+                               recordOrbitMeasure instrumentation)
+
+The Star Wars removal itself touched only the data and test files:
+types, palettes, presets, params, scan, fiction, systems and their specs.
+
+Left as-is rather than rewritten: the branch history is shared and the
+commits after it build on that tree, so a reword would rewrite four
+commits to fix a message. This note is the cheaper honest fix. Lesson
+worth keeping: `git add -A` is not safe when the working tree holds work
+you did not put there — stage by path, or read the file list before
+committing.

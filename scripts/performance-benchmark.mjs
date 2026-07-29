@@ -153,6 +153,26 @@ async function sample(browser, iteration) {
       performance.getEntriesByType('resource').some((entry) =>
         entry.name.includes('bake.worker')),
     )
+    const orbitEntries = await page.evaluate(() =>
+      performance
+        .getEntriesByType('measure')
+        .filter((entry) => entry.name.startsWith('arc:orbit:'))
+        .map((entry) => ({
+          name: entry.name.slice('arc:orbit:'.length),
+          startTime: entry.startTime,
+          duration: entry.duration,
+        })),
+    )
+    const orbitMeasures = Object.fromEntries(
+      orbitEntries.map((entry) => [entry.name, entry.duration]),
+    )
+    const compilePrograms = await page.evaluate(() => {
+      const canvas = document.querySelector('canvas')
+      return {
+        before: Number(canvas?.dataset.compileProgramsBefore ?? 0),
+        after: Number(canvas?.dataset.compileProgramsAfter ?? 0),
+      }
+    })
 
     return {
       iteration,
@@ -168,6 +188,16 @@ async function sample(browser, iteration) {
         Math.round(longTasks.reduce((sum, entry) => sum + entry.duration, 0) * 10) / 10,
       taskDurationMs: delta(after, before, 'TaskDuration'),
       scriptDurationMs: delta(after, before, 'ScriptDuration'),
+      orbitRegenSystemMs: Math.round((orbitMeasures['regen-system'] ?? 0) * 10) / 10,
+      orbitBuildBodiesMs: Math.round((orbitMeasures['build-bodies'] ?? 0) * 10) / 10,
+      orbitLabelCreationMs: Math.round((orbitMeasures['label-creation'] ?? 0) * 10) / 10,
+      orbitShaderKickoffMs: Math.round((orbitMeasures['shader-kickoff'] ?? 0) * 10) / 10,
+      orbitShaderReadyMs: Math.round((orbitMeasures['shader-ready'] ?? 0) * 10) / 10,
+      orbitShaderProgramsAdded: compilePrograms.after - compilePrograms.before,
+      orbitFirstRenderMs: Math.round((orbitMeasures['first-render'] ?? 0) * 10) / 10,
+      orbitMaxRenderMs: await page.evaluate(() =>
+        Math.round(Number(document.querySelector('canvas')?.dataset.orbitMaxRenderMs ?? 0) * 10) / 10,
+      ),
       activeRendererFps: Math.round(((activeEnd - activeStart) / 3) * 10) / 10,
       pausedFramesIn3s: pausedFramesEnd - pausedFramesStart,
       pausedTaskDurationMs: delta(pausedAfter, pausedBefore, 'TaskDuration'),
@@ -177,6 +207,17 @@ async function sample(browser, iteration) {
       eventTimingSupported: state.eventTimingSupported,
       errorCount: errors.length,
       errors,
+      orbitAttribution: {
+        longTasks: longTasks.map((entry) => ({
+          startAfterClickMs: Math.round((entry.startTime - state.clickStart) * 10) / 10,
+          durationMs: Math.round(entry.duration * 10) / 10,
+        })),
+        measures: orbitEntries.map((entry) => ({
+          name: entry.name,
+          startAfterClickMs: Math.round((entry.startTime - state.clickStart) * 10) / 10,
+          durationMs: Math.round(entry.duration * 10) / 10,
+        })),
+      },
     }
   } finally {
     await context.close()
@@ -210,6 +251,14 @@ const numericFields = [
   'longTaskTotalMs',
   'taskDurationMs',
   'scriptDurationMs',
+  'orbitRegenSystemMs',
+  'orbitBuildBodiesMs',
+  'orbitLabelCreationMs',
+  'orbitShaderKickoffMs',
+  'orbitShaderReadyMs',
+  'orbitShaderProgramsAdded',
+  'orbitFirstRenderMs',
+  'orbitMaxRenderMs',
   'activeRendererFps',
   'pausedFramesIn3s',
   'pausedTaskDurationMs',

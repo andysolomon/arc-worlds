@@ -7,11 +7,12 @@ import { REAL, realFor } from './planets'
 import { isGas, PALETTES } from './palettes'
 import {
   D2R, DAY_SEC, kepler, moonDist, moonPeriodSec, moonRad, sameDist,
-  SIZE_MAX, sizeMap, starSize, systemStretch, tempoFor, visDist, YEAR_SEC,
+  satMult, satRadii, satRank, SIZE_MAX, sizeMap, starSize, systemStretch,
+  tempoFor, visDist, YEAR_SEC,
 } from './scale'
 import { ATMO_FRAG, ATMO_VERT, GAS_FRAG, GAS_VERT, SUN_FRAG, SUN_VERT } from './shaders'
 import { effectiveTier } from './tiers'
-import type { Moon, PlanetParams, RingConfig, SystemBody, SystemDef } from './types'
+import type { Moon, PlanetParams, PresetKey, RingConfig, SystemBody, SystemDef } from './types'
 
 interface MoonInstance {
   orbit: THREE.Group
@@ -21,13 +22,26 @@ interface MoonInstance {
   e: number
   P: number
   phase: number
+  /** Set for moons that are worlds, which makes them clickable. */
+  world?: { preset: PresetKey; seed: number }
 }
 
 /** Orbit-path opacity when shown. Hidden paths fade to 0 and back on hover. */
 const PATH_OPACITY = 0.55
 
+/** The most of the frame's height a star may fill before the camera backs off. */
+const STAR_FRAME_SHARE = 0.4
+
 /** Starfield pool size; density 0.5 draws exactly the classic 1400. */
 const STAR_POOL = 2800
+
+const ORBIT_PERF_PREFIX = 'arc:orbit:'
+
+function recordOrbitMeasure(name: string, start: number) {
+  const measureName = `${ORBIT_PERF_PREFIX}${name}`
+  performance.clearMeasures(measureName)
+  performance.measure(measureName, { start, end: performance.now() })
+}
 
 interface SysNode {
   index: number
@@ -56,8 +70,11 @@ interface SysNode {
   lineScale: THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>
   /** Where this body's orbit-line opacity is headed; the loop eases toward it. */
   lineTarget: number
-  label: THREE.Sprite
+  /** Created only after labels are requested; labels are off by default. */
+  label: THREE.Sprite | null
   labelName: string
+  /** Index of the body this one orbits, or -1 for the ones orbiting the star. */
+  parent: number
 }
 
 /**
@@ -155,6 +172,8 @@ export class PlanetViewport {
   private sysGeo?: THREE.SphereGeometry
   private sysPlanets: THREE.Mesh[] = []
   private sysNodes: SysNode[] = []
+  /** The bodies actually built, which is every body unless moons are off. */
+  private sysBodies: SystemBody[] = []
   private sysDef: SystemDef | null = null
   private sysId = ''
   private sysShape = ''
@@ -190,6 +209,8 @@ export class PlanetViewport {
   private lastPublishedSunScale = Number.NaN
   private lastPublishedLines = -1
   private lastPublishedPoints = -1
+  private orbitFirstRenderPending = false
+  private orbitMaxRenderMs = 0
 
   /**
    * Fluid motion: one clock for every moving surface, driven from `this.t` so
@@ -268,6 +289,8 @@ export class PlanetViewport {
 
   /** Fired when a planet is clicked in the orbit view. */
   onPick: ((index: number) => void) | null = null
+  /** Fired when a moon that is a world is clicked in the single-world view. */
+  onPickMoon: ((world: { preset: PresetKey; seed: number }) => void) | null = null
 
   constructor(container: HTMLElement) {
     this.container = container
@@ -316,7 +339,7 @@ export class PlanetViewport {
     // Visible fluid motion: perturb the shell's normal over time, the way a
     // normal map would, so specular light moves across water and lava. The
     // injection is part of the material from construction, so there is exactly
-    // one program variant and the startup warm covers it.
+    // one program variant and the pre-presentation warmup covers it.
     wmat.onBeforeCompile = (sh) => {
       sh.uniforms.uFluidT = this.fluidTime
       sh.uniforms.uFluidS = this.fluidStyle
@@ -568,6 +591,9 @@ export class PlanetViewport {
         // orbit view is hiding its paths and one can be glimpsed.
         if (this.sys?.visible && !this.showPaths && !this.dragging) {
           this.setHover(this.planetAt(e))
+        } else if (!this.sys?.visible && !this.dragging) {
+          // A moon you can visit should say so before you click it.
+          cv.style.cursor = this.moonAt(e) ? 'pointer' : 'grab'
         }
         return
       }
@@ -595,7 +621,13 @@ export class PlanetViewport {
       if (this.ptrs.size === 0) {
         this.dragging = false
         cv.style.cursor = 'grab'
-        if (this.sys?.visible && this.moved < 6) this.pick(e)
+        if (this.moved < 6) {
+          if (this.sys?.visible) this.pick(e)
+          else {
+            const m = this.moonAt(e)
+            if (m?.world) this.onPickMoon?.(m.world)
+          }
+        }
       }
       this.invalidate()
     }
@@ -630,6 +662,20 @@ export class PlanetViewport {
     this.ray.setFromCamera(this.v2, this.camera)
     const hits = this.ray.intersectObjects(this.sysPlanets, false)
     return hits.length ? (hits[0].object.userData as SysNode).index : -1
+  }
+
+  /** The world-moon under the pointer in the single-world view, if any. */
+  private moonAt(e: PointerEvent): MoonInstance | null {
+    if (!this.moons.length || this.sys?.visible) return null
+    const r = this.renderer.domElement.getBoundingClientRect()
+    this.v2.set(
+      ((e.clientX - r.left) / Math.max(1, r.width)) * 2 - 1,
+      -((e.clientY - r.top) / Math.max(1, r.height)) * 2 + 1,
+    )
+    this.ray.setFromCamera(this.v2, this.camera)
+    const hits = this.ray.intersectObjects(this.moons.map((m) => m.mesh), false)
+    if (!hits.length) return null
+    return this.moons.find((m) => m.mesh === hits[0].object && m.world) ?? null
   }
 
   private pick(e: PointerEvent) {
@@ -772,7 +818,9 @@ export class PlanetViewport {
       orbit.add(line)
 
       this.moonRoot.add(orbit)
-      this.moons.push({ orbit, mesh, line, d: dist, e: ecc, P: d.P, phase: (i * 2.1) % 6.283 })
+      this.moons.push({
+        orbit, mesh, line, d: dist, e: ecc, P: d.P, phase: (i * 2.1) % 6.283, world: d.world,
+      })
     }
     if (list.length) this.compileNeeded = true
     return maxD
@@ -824,8 +872,8 @@ export class PlanetViewport {
         l.geometry.dispose()
         l.material.dispose()
       }
-      u.label.material.map?.dispose()
-      u.label.material.dispose()
+      u.label?.material.map?.dispose()
+      u.label?.material.dispose()
       u.plane.removeFromParent()
     }
     this.sysNodes = []
@@ -906,11 +954,25 @@ export class PlanetViewport {
    * view uses, so a world looks like itself wherever you meet it.
    */
   private buildBodies(def: SystemDef) {
+    const buildStart = performance.now()
+    let labelDuration = 0
     this.clearBodies()
+    this.orbitFirstRenderPending = true
+    this.orbitMaxRenderMs = 0
 
-    def.bodies.forEach((b, i) => {
+    // Satellites are moons, and the moons toggle is what turns moons off.
+    const shown = def.bodies.filter((b) => this.showMoons || !b.orbits)
+    this.sysBodies = shown
+    const indexOf = new Map(shown.map((b, i) => [b.name, i]))
+
+    shown.forEach((b, i) => {
+      const parent = b.orbits ? indexOf.get(b.orbits) ?? -1 : -1
       const plane = new THREE.Group()
-      this.sysRoot!.add(plane)
+      // A satellite's plane hangs off its planet's node rather than the star's
+      // root, so it inherits the planet's position every frame — orbit line
+      // included — and nothing has to be ordered by hand.
+      if (parent >= 0) this.sysNodes[parent].node.add(plane)
+      else this.sysRoot!.add(plane)
 
       const node = new THREE.Group()
       plane.add(node)
@@ -951,9 +1013,10 @@ export class PlanetViewport {
       plane.add(lineSame)
       plane.add(lineScale)
 
-      const label = this.makeLabel(b.name)
-      label.visible = this.showLabels
-      node.add(label)
+      const labelStart = performance.now()
+      const label = this.showLabels ? this.makeLabel(b.name) : null
+      labelDuration += performance.now() - labelStart
+      if (label) node.add(label)
 
       const ring = b.ring ?? (b.params.rings ? customRing(b.params, pal) : null)
       let ringMesh: SysNode['ringMesh'] = null
@@ -986,55 +1049,103 @@ export class PlanetViewport {
         index: i, plane, node, tilt, spin, mesh: m, ringMesh, baked: null,
         ownsMap: !b.texture,
         a: 0, e: b.e, period: b.period, aSame: 0, aScale: 0,
-        rSame: 0.24, rScale: sizeMap(b.radius * 6371) * 0.85,
+        // Same-size mode draws every planet alike so the small ones stay
+        // findable; a moon drawn the size of its planet would undo that, so
+        // satellites get their own smaller flat size.
+        rSame: parent >= 0 ? 0.092 : 0.24, rScale: sizeMap(b.radius * 6371) * 0.85,
         peri: 0, angle: (i * 2.3994) % 6.2832, day: b.day, f: b.flattening,
         lineSame, lineScale, lineTarget: lineOpacity, label, labelName: b.name,
+        parent,
       }
       m.userData = ud
 
-      if (!b.texture) this.queueWorldBake(ud, b.params)
+      // A satellite is a handful of pixels wide at system scale, where the
+      // palette tone it already wears is indistinguishable from a baked map.
+      // It gets the real surface in the single-world view, where it is big
+      // enough to deserve one.
+      if (!b.texture && parent < 0) this.queueWorldBake(ud, b.params)
 
       this.sysPlanets.push(m)
       this.sysNodes.push(ud)
     })
     this.compileNeeded = true
+    recordOrbitMeasure('label-creation', performance.now() - labelDuration)
+    recordOrbitMeasure('build-bodies', buildStart)
   }
 
   /** Apply the orbital elements, which can change without a rebuild. */
-  private applyOrbits(def: SystemDef) {
+  private applyOrbits() {
     this.fitSame = 0
     this.fitScale = 0
+    const bodies = this.sysBodies
 
     // Compact systems are stretched and slowed as a whole — one factor each,
     // so internal geometry and relative pacing survive exactly.
-    const aMax = def.bodies.reduce((m, b) => Math.max(m, b.a), 0)
-    const pMin = def.bodies.reduce((m, b) => Math.min(m, b.period), Infinity)
+    // Satellites sit inside their planet's neighbourhood and orbit in days,
+    // so they must not drive the whole system's stretch or its tempo.
+    const orbiting = bodies.filter((b) => !b.orbits)
+    const aMax = orbiting.reduce((m, b) => Math.max(m, b.a), 0)
+    const pMin = orbiting.reduce((m, b) => Math.min(m, b.period), Infinity)
     const stretch = systemStretch(aMax)
     const tempo = tempoFor(pMin)
 
-    def.bodies.forEach((b, i) => {
+    // Parents first: a satellite's drawn orbit is measured against its
+    // planet's, so the planet's has to exist by the time the moon asks.
+    const order = bodies
+      .map((_, i) => i)
+      .sort((x, y) => (bodies[x].orbits ? 1 : 0) - (bodies[y].orbits ? 1 : 0))
+
+    order.forEach((i) => {
+      const b = bodies[i]
       const u = this.sysNodes[i]
       if (!u) return
 
       u.plane.rotation.y = b.node * D2R // longitude of ascending node
       u.plane.rotation.x = b.inc * D2R // inclination to the reference plane
       u.e = b.e
-      // The drawn period; the body list keeps quoting the measured one.
-      u.period = b.period * tempo
+      // The drawn period; the body list keeps quoting the measured one. A
+      // satellite's real year is days, which at the system's pace would be a
+      // blur, so it borrows the easing the single-world view already applies
+      // to moons — inner moons quick, outer ones slower, all of them watchable.
+      u.period = b.orbits
+        ? moonPeriodSec(b.period * 365.25) / YEAR_SEC
+        : b.period * tempo
       u.peri = (b.peri - b.node) * D2R
-      u.aSame = sameDist(b.a * stretch)
-      u.aScale = visDist(b.a * stretch)
+      if (u.parent >= 0) {
+        // A satellite's true distance is unusable at system scale — the Moon
+        // would sit a fraction of a pixel from Earth — so it is mapped into a
+        // band starting clear of the planet's drawn disc. The band's outer
+        // edge is whatever room there actually is before the nearest other
+        // orbit, which is generous to scale and nothing at all to same size.
+        const p = this.sysNodes[u.parent]
+        const siblings = bodies.filter((x) => x.orbits === b.orbits)
+        const radii = siblings.map((x) => satRadii(x.a, bodies[u.parent].radius))
+        const t = satRank(
+          satRadii(b.a, bodies[u.parent].radius),
+          Math.min(...radii), Math.max(...radii),
+        )
+        u.aSame = p.rSame * satMult(t, p.rSame, this.roomAt(bodies, u.parent, 'same'))
+        u.aScale = p.rScale * satMult(t, p.rScale, this.roomAt(bodies, u.parent, 'scale'))
+      } else {
+        u.aSame = sameDist(b.a * stretch)
+        u.aScale = visDist(b.a * stretch)
+      }
 
       const cp = Math.cos(u.peri)
       const sp = Math.sin(u.peri)
       const apo = 1 + b.e
-      this.fitSame = Math.max(this.fitSame, u.aSame * apo)
-      this.fitScale = Math.max(this.fitScale, u.aScale * apo)
+      // Satellites live inside their planet's neighbourhood, so they must not
+      // pull the camera back — the frame is set by what orbits the star.
+      if (u.parent < 0) {
+        this.fitSame = Math.max(this.fitSame, u.aSame * apo)
+        this.fitScale = Math.max(this.fitScale, u.aScale * apo)
+      }
 
+      const steps = u.parent >= 0 ? 64 : 200
       const shape = (line: THREE.Line<THREE.BufferGeometry>, AA: number) => {
         const pts: THREE.Vector3[] = []
-        for (let k = 0; k <= 200; k++) {
-          const E = (k / 200) * 6.2832
+        for (let k = 0; k <= steps; k++) {
+          const E = (k / steps) * 6.2832
           const x = AA * (Math.cos(E) - b.e)
           const z = AA * Math.sqrt(1 - b.e * b.e) * Math.sin(E)
           pts.push(new THREE.Vector3(x * cp - z * sp, 0, x * sp + z * cp))
@@ -1047,9 +1158,30 @@ export class PlanetViewport {
     })
   }
 
+  /**
+   * How much space a planet has around it before the nearest other orbit:
+   * half the distance to it, less the planet's own drawn radius. Negative
+   * means the planet is already wider than its share of the gap, which is
+   * ordinary in same-size mode — adjacent planets there overlap at
+   * conjunction — and the satellite band falls back to its floor.
+   */
+  private roomAt(bodies: SystemBody[], index: number, mode: 'same' | 'scale'): number {
+    const u = this.sysNodes[index]
+    const mine = mode === 'same' ? u.aSame : u.aScale
+    let gap = Infinity
+    for (let k = 0; k < this.sysNodes.length; k++) {
+      const o = this.sysNodes[k]
+      if (k === index || !o || o.parent >= 0 || bodies[k]?.orbits) continue
+      const d = Math.abs((mode === 'same' ? o.aSame : o.aScale) - mine)
+      if (d > 1e-6) gap = Math.min(gap, d)
+    }
+    if (!Number.isFinite(gap)) return (mode === 'same' ? u.rSame : u.rScale) * 3
+    return gap / 2 - (mode === 'same' ? u.rSame : u.rScale)
+  }
+
   /** Apply cheap body properties without rebuilding materials or baked maps. */
-  private applyBodyProperties(def: SystemDef) {
-    def.bodies.forEach((body, i) => {
+  private applyBodyProperties() {
+    this.sysBodies.forEach((body, i) => {
       const node = this.sysNodes[i]
       if (!node) return
       node.tilt.rotation.z = body.tilt * D2R
@@ -1139,6 +1271,23 @@ export class PlanetViewport {
     return sprite
   }
 
+  /** Materialise label canvases only when the opt-in display layer is used. */
+  private syncLabels() {
+    let created = false
+    for (const u of this.sysNodes) {
+      if (this.showLabels && !u.label) {
+        u.label = this.makeLabel(u.labelName)
+        u.label.position.y = this.sizeMode === 'scale' ? u.rScale : u.rSame
+        u.node.add(u.label)
+        created = true
+      }
+      if (u.label) u.label.visible = this.showLabels
+    }
+    // The first visible sprite introduces one shared sprite program. Warm it
+    // when labels are explicitly enabled, never on the default Orbit path.
+    if (created) this.compileNeeded = true
+  }
+
   /** Where each orbit line is headed: shown, hidden, or revealed by hover. */
   private syncPathTargets() {
     for (const u of this.sysNodes) {
@@ -1163,12 +1312,23 @@ export class PlanetViewport {
       u.lineScale.visible = scaled && o > 0.01
       // The label floats off the pole; its screen offset comes from the sprite's
       // own anchor, so this world-space lift only needs to clear the body.
-      u.label.position.y = scaled ? u.rScale : u.rSame
+      if (u.label) u.label.position.y = scaled ? u.rScale : u.rSame
     }
     this.sunBase = scaled ? SIZE_MAX : 1.15
     this.sizeSun()
 
-    const fit = scaled ? this.fitScale * 0.97 : this.frameFor(this.fitSame)
+    // Scale mode parks the camera at the outermost orbit, which works while
+    // the star is a speck against it — the Sun is 3% of Pluto's orbit. It
+    // stops working when a system's only planet is close in: Alpha Centauri A
+    // has one at 1.25 AU now that Pandora orbits it rather than the star, and
+    // the frame ended up inside the star itself. So the star is also held to
+    // a share of the frame, which costs the Solar System nothing.
+    const sun = this.sunBase * starSize(this.sysDef?.star.mass ?? 1)
+    const halfV = Math.tan((this.camera.fov * D2R) / 2)
+    const byStar = sun / (STAR_FRAME_SHARE * halfV)
+    const fit = scaled
+      ? Math.max(this.fitScale * 0.97, byStar)
+      : this.frameFor(this.fitSame)
     this.fitZ = Math.max(4, fit)
     if (reframe) this.camZ = this.fitZ
   }
@@ -1496,6 +1656,8 @@ export class PlanetViewport {
     // Nothing to draw until a system has been handed to us. Falling back to a
     // built-in here would make the engine depend on the app's data.
     if (!def) return
+    const regenStart = performance.now()
+    let rebuilt = false
     this.ensureSystem()
     if (this.mode !== 'system') {
       this.mode = 'system'
@@ -1519,7 +1681,7 @@ export class PlanetViewport {
       this.needFrame = true
     }
 
-    const shape = def.bodies.map(bodyKey).join('~')
+    const shape = `${this.showMoons ? 'm' : ''}|${def.bodies.map(bodyKey).join('~')}`
     if (shape !== this.sysShape) {
       // A system gaining or losing a world should come back into frame; nudging
       // an existing one's distance should not yank the camera about.
@@ -1527,6 +1689,7 @@ export class PlanetViewport {
       this.sysCount = def.bodies.length
       this.sysShape = shape
       this.buildBodies(def)
+      rebuilt = true
       this.sysOrbitKey = ''
       this.sysPropertyKey = ''
     }
@@ -1535,14 +1698,14 @@ export class PlanetViewport {
       .join('~')
     if (properties !== this.sysPropertyKey) {
       this.sysPropertyKey = properties
-      this.applyBodyProperties(def)
+      this.applyBodyProperties()
     }
     const orbits = def.bodies
       .map((b) => `${b.a}:${b.e}:${b.inc}:${b.node}:${b.peri}:${b.period}`)
       .join('~')
     if (orbits !== this.sysOrbitKey) {
       this.sysOrbitKey = orbits
-      this.applyOrbits(def)
+      this.applyOrbits()
       this.sizeMode = '' // distances moved, so the size mode has to be reapplied
     }
     this.amb.intensity = 0.16
@@ -1569,25 +1732,28 @@ export class PlanetViewport {
 
     // Names are deliberately not in the bake key, so a rename reaches its
     // label here: a small canvas redraw, never a material or texture rebuild.
-    const names = def.bodies.map((b) => b.name).join('~')
+    const names = this.sysBodies.map((b) => b.name).join('~')
     if (names !== this.sysLabelKey) {
       this.sysLabelKey = names
-      def.bodies.forEach((b, i) => {
+      this.sysBodies.forEach((b, i) => {
         const u = this.sysNodes[i]
         if (!u || u.labelName === b.name) return
         u.labelName = b.name
-        u.label.material.map?.dispose()
-        u.label.material.map = this.labelTexture(b.name)
-        this.scaleLabel(u.label)
+        if (u.label) {
+          u.label.material.map?.dispose()
+          u.label.material.map = this.labelTexture(b.name)
+          this.scaleLabel(u.label)
+        }
       })
     }
-    for (const u of this.sysNodes) u.label.visible = this.showLabels
+    this.syncLabels()
 
     // With paths shown there is nothing for hover to reveal.
     if (this.showPaths) this.hoverIndex = -1
     this.syncPathTargets()
 
     this.stars.visible = P.stars !== false
+    if (rebuilt) recordOrbitMeasure('regen-system', regenStart)
   }
 
   private makeClouds() {
@@ -1678,12 +1844,24 @@ export class PlanetViewport {
   private warmShaders(): boolean {
     if (!this.compileNeeded || this.compiling) return !!this.compiling
     this.compileNeeded = false
-    const job: Promise<void> = this.renderer
-      .compileAsync(this.scene, this.camera)
-      .then(() => undefined, () => undefined)
+    const compileStart = performance.now()
+    const programsBefore = this.renderer.info.programs?.length ?? 0
+    // WebGLRenderer.compileAsync traverses hidden objects too. Restrict Orbit
+    // warmup to the system subtree so the transition does not compile every
+    // hidden single-world material and shader variant.
+    const job: Promise<void> = (
+      this.mode === 'system' && this.sys
+        ? this.renderer.compileAsync(this.sys, this.camera, this.scene)
+        : this.renderer.compileAsync(this.scene, this.camera)
+    ).then(() => undefined, () => undefined)
+    recordOrbitMeasure('shader-kickoff', compileStart)
     this.compiling = job
     job.finally(() => {
       if (this.compiling === job) this.compiling = null
+      recordOrbitMeasure('shader-ready', compileStart)
+      const canvas = this.renderer.domElement
+      canvas.dataset.compileProgramsBefore = String(programsBefore)
+      canvas.dataset.compileProgramsAfter = String(this.renderer.info.programs?.length ?? 0)
       this.invalidate()
     })
     return true
@@ -1880,7 +2058,19 @@ export class PlanetViewport {
       for (const u of this.sysNodes) if (u.ringMesh) this.ringLight(u.ringMesh)
     }
 
+    const renderStart = performance.now()
     this.renderer.render(this.scene, this.camera)
+    if (this.sys?.visible) {
+      const renderDuration = performance.now() - renderStart
+      if (this.orbitFirstRenderPending) {
+        this.orbitFirstRenderPending = false
+        recordOrbitMeasure('first-render', renderStart)
+      }
+      if (renderDuration > this.orbitMaxRenderMs) {
+        this.orbitMaxRenderMs = renderDuration
+        this.renderer.domElement.dataset.orbitMaxRenderMs = String(renderDuration)
+      }
+    }
 
     // Observability hook: WebGL does not preserve its drawing buffer, so the
     // canvas cannot be read back after the frame. Publishing the frame count

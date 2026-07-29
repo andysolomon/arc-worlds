@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { PlanetViewport } from '../engine/viewport'
-import type { PlanetParams, SystemDef } from '../engine/types'
+import type { PlanetParams, PresetKey, SystemDef } from '../engine/types'
 
 interface Props {
   params: PlanetParams
@@ -12,6 +12,8 @@ interface Props {
   /** Bumping this number re-frames the camera. */
   resetNonce?: number
   onPick?: (index: number) => void
+  /** A moon that is a world was clicked in the single-world view. */
+  onPickMoon?: (world: { preset: PresetKey; seed: number }) => void
   /** Nebula tint: plain CSS behind the transparent canvas, free to the GPU. */
   background?: string
 }
@@ -24,17 +26,20 @@ interface Props {
  * rebuild the scene.
  */
 export function Viewport({
-  params, system, scanNonce = 0, resetNonce = 0, onPick, background,
+  params, system, scanNonce = 0, resetNonce = 0, onPick, onPickMoon, background,
 }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const engine = useRef<PlanetViewport | null>(null)
   const pickRef = useRef(onPick)
   pickRef.current = onPick
+  const moonRef = useRef(onPickMoon)
+  moonRef.current = onPickMoon
 
   useEffect(() => {
     if (!host.current) return
     const v = new PlanetViewport(host.current)
     v.onPick = (i) => pickRef.current?.(i)
+    v.onPickMoon = (w) => moonRef.current?.(w)
     engine.current = v
     return () => {
       v.dispose()

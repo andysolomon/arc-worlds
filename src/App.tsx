@@ -4,14 +4,14 @@ import { SculptPanel } from './components/SculptPanel'
 import { SystemsPanel } from './components/SystemsPanel'
 import { Viewport } from './components/Viewport'
 import { WorldsPanel } from './components/WorldsPanel'
-import { PRESETS, typeOf, type AncientWorld } from './data/presets'
+import { MOONS, PRESETS, typeOf, type AncientWorld } from './data/presets'
 import { MILKY_WAY } from './data/systems'
 import {
   loadDisplay, nebulaCss, saveDisplay, type DisplayOptions, type TierChoice,
 } from './lib/display'
 import { DEFAULT_PARAMS, sanitize, surprise } from './lib/params'
 import {
-  addRolledWorld, addWorld, duplicateBody, sanitizeSystem,
+  addMoon, addRolledWorld, addWorld, duplicateBody, sanitizeSystem,
 } from './lib/systems'
 import { computeScan, type ScanResult } from './lib/scan'
 import {
@@ -197,6 +197,18 @@ export default function App() {
     setSavedSlug(null)
   }, [])
 
+  /** Clicking a moon that is a world visits it, the way a planet card does. */
+  const visitMoon = useCallback((w: { preset: PresetKey; seed: number }) => {
+    const m = MOONS.find((x) => x.key === w.preset && x.params.seed === w.seed)
+    if (!m) return
+    setParams({ ...DEFAULT_PARAMS, ...m.params, preset: m.key, texture: null, cloudTexture: null })
+    setName(m.name)
+    setScan(null)
+    setSavedSlug(null)
+    setView('single')
+    setTab('sculpt')
+  }, [])
+
   const reshape = useCallback(() => {
     setParams((s) => ({ ...s, texture: null, cloudTexture: null }))
     setScan(null)
@@ -278,6 +290,12 @@ export default function App() {
   }, [])
 
   /** Another world like the one already in orbit, further out. */
+  /** Roll a moon into orbit around one of the system's own worlds. */
+  const addMoonTo = useCallback((index: number) => {
+    setSystem((s) => addMoon(s, index))
+    setSavedSystemSlug(null)
+  }, [])
+
   const duplicateWorld = useCallback((i: number) => {
     setSystem((s) => duplicateBody(s, i))
     setSavedSystemSlug(null)
@@ -422,6 +440,7 @@ export default function App() {
             scanNonce={scanNonce}
             resetNonce={resetNonce}
             onPick={visitBody}
+            onPickMoon={visitMoon}
             background={nebulaCss(display.nebula)}
           />
 
@@ -464,6 +483,7 @@ export default function App() {
                 name={name}
                 tier={display.tier}
                 onTier={setTier}
+                onVisitMoon={visitMoon}
                 onName={setName}
                 onParam={setParam}
                 onPreset={applyPreset}
@@ -494,6 +514,7 @@ export default function App() {
                 onAddCurrent={addCurrentWorld}
                 onAddRolled={addRolled}
                 onAddSaved={addSavedWorld}
+                onAddMoon={addMoonTo}
                 onDuplicate={duplicateWorld}
                 currentWorld={name}
                 worlds={worlds}

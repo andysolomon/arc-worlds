@@ -1,14 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
   ALPHA_CENTAURI, ANDROMEDA, ERIDANI_40, KEPLER_452, MILKY_WAY,
-  OUTER_RIM, PEGASI_51, PROXIMA, TAU_CETI, TRAPPIST,
+  PEGASI_51, PROXIMA, TAU_CETI, TRAPPIST,
 } from '../data/systems'
 import { ORBITS } from '../engine/planets'
-import { periodFor, sameDist, starRadius, starSize } from '../engine/scale'
+import { periodFor, starRadius, starSize } from '../engine/scale'
 import {
-  A_MAX, MASS_MAX, MASS_MIN, MAX_BODIES, STAR_KINDS,
-  addRolledWorld, addWorld, bodyFromWorld, dayFor, duplicateBody, duplicateSystem,
-  emptySystem, hasRoom, nextDistance, retime, rollSystem, sanitizeSystem, sortByDistance,
+  A_MAX, A_MIN, MASS_MAX, MASS_MIN, MAX_BODIES, STAR_KINDS,
+  addMoon, addRolledWorld, addWorld, bodyFromWorld, dayFor, duplicateBody,
+  duplicateSystem, emptySystem, hasRoom, nextDistance, removeBodyAt, retime,
+  rollSystem, sanitizeSystem, satPeriodFor, setParent, sortByDistance,
   worldInSystem,
 } from './systems'
 import { DEFAULT_PARAMS } from './params'
@@ -79,8 +80,10 @@ describe('starSize', () => {
 describe('the built-in systems', () => {
   it('carries the measured orbits straight through to the Solar System', () => {
     expect(MILKY_WAY.origin).toBe('measured')
-    expect(MILKY_WAY.bodies).toHaveLength(9)
-    MILKY_WAY.bodies.forEach((b, i) => {
+    // Nine planets orbit the Sun; the rest of the list is their moons.
+    const planets = MILKY_WAY.bodies.filter((b) => !b.orbits)
+    expect(planets).toHaveLength(9)
+    planets.forEach((b, i) => {
       expect(b.a).toBe(ORBITS[i][1])
       expect(b.period).toBe(ORBITS[i][2])
       // Pluto has no CC BY photographic map, so it renders procedurally and
@@ -139,7 +142,7 @@ describe('the built-in systems', () => {
   })
 
   it('marks every homage system as imagined, with no photographic maps', () => {
-    for (const s of [OUTER_RIM, ERIDANI_40, TAU_CETI, ALPHA_CENTAURI]) {
+    for (const s of [ERIDANI_40, TAU_CETI, ALPHA_CENTAURI]) {
       expect(s.origin, s.name).toBe('imagined')
       expect(s.sub, s.name).toMatch(/imagined/)
       for (const b of s.bodies) expect(b.texture, b.name).toBeNull()
@@ -149,8 +152,10 @@ describe('the built-in systems', () => {
   it('derives every homage year from its own star, like everything else', () => {
     // The fictions are invented but the physics is not negotiable: a saved
     // copy re-derives periods on sanitisation, so they must already agree.
-    for (const s of [OUTER_RIM, ERIDANI_40, TAU_CETI, ALPHA_CENTAURI]) {
-      for (const b of s.bodies) {
+    for (const s of [ERIDANI_40, TAU_CETI, ALPHA_CENTAURI]) {
+      // Satellites orbit their planet, not the star, so Kepler-from-the-star
+      // has nothing to say about them.
+      for (const b of s.bodies.filter((x) => !x.orbits)) {
         const derived = periodFor(b.a, s.star.mass)
         expect(Math.abs(derived - b.period) / b.period, b.name).toBeLessThan(0.001)
       }
@@ -159,29 +164,49 @@ describe('the built-in systems', () => {
 
   it('gives every story world its canonical seed, so its scan is the fiction', () => {
     const seeds: Record<string, number | undefined> = {
-      Mustafar: 2005, Tatooine: 1977, Hoth: 1980, Erid: 2021, Adrian: 1021, Pandora: 2009,
+      Erid: 2021, Adrian: 1021, Pandora: 2009,
     }
-    for (const s of [OUTER_RIM, ERIDANI_40, TAU_CETI, ALPHA_CENTAURI]) {
+    for (const s of [ERIDANI_40, TAU_CETI, ALPHA_CENTAURI]) {
       for (const b of s.bodies) {
         if (seeds[b.name] !== undefined) expect(b.params.seed, b.name).toBe(seeds[b.name])
       }
     }
   })
 
-  it('keeps Pandora outside Polyphemus, since it cannot ride it as a moon', () => {
+  it('puts Pandora in orbit around Polyphemus, as the fiction has it', () => {
     const [polyphemus, pandora] = ALPHA_CENTAURI.bodies
     expect(polyphemus.name).toBe('Polyphemus')
     expect(pandora.name).toBe('Pandora')
-    expect(pandora.a).toBeGreaterThan(polyphemus.a)
-    expect(ALPHA_CENTAURI.sub).toMatch(/moon/)
+    expect(pandora.orbits).toBe('Polyphemus')
+    // Its distance and year are its own, measured from the planet.
+    expect(pandora.a).toBeLessThan(polyphemus.a)
+    expect(pandora.period).toBeLessThan(0.05)
   })
 
-  it('draws Pandora clear of Polyphemus even at conjunction', () => {
-    // In same-size mode every planet is a 0.24-radius disc, so these two
-    // drawn orbits need at least 0.48 of separation or a conjunction pushes
-    // the moon through its own planet's surface, once a minute, on screen.
-    const [polyphemus, pandora] = ALPHA_CENTAURI.bodies
-    expect(sameDist(pandora.a) - sameDist(polyphemus.a)).toBeGreaterThan(0.48)
+  it('keeps every satellite listed directly after the planet it orbits', () => {
+    // A satellite's distance is measured from its planet, so sorting the list
+    // by distance alone would file the Moon in front of Mercury.
+    const sorted = sortByDistance(MILKY_WAY.bodies)
+    for (let i = 0; i < sorted.length; i++) {
+      const b = sorted[i]
+      if (!b.orbits) continue
+      const parent = sorted.findIndex((x) => x.name === b.orbits)
+      expect(parent, b.name).toBeGreaterThanOrEqual(0)
+      expect(parent, b.name).toBeLessThan(i)
+      // Nothing orbiting the star may come between a planet and its moons.
+      for (let k = parent + 1; k < i; k++) expect(sorted[k].orbits, b.name).toBeTruthy()
+    }
+  })
+
+  it('lets a duplicated Solar System keep its moons through sanitisation', () => {
+    const out = sanitizeSystem(duplicateSystem(MILKY_WAY))
+    expect(out.bodies).toHaveLength(MILKY_WAY.bodies.length)
+    const moon = out.bodies.find((b) => b.name === 'Moon')!
+    expect(moon.orbits).toBe('Earth')
+    // Its year is its own — a Kepler year at 0.00257 AU from the Sun would be
+    // about a day and a half, which is not what the Moon does.
+    expect(moon.period).toBeCloseTo(27.322 / 365.25, 4)
+    expect(moon.a).toBeCloseTo(0.002569, 5)
   })
 
   it('marks Andromeda as imagined and gives it no photographic maps', () => {
@@ -362,8 +387,9 @@ describe('adding a world', () => {
     expect(out.bodies.at(-1)?.name).toBe('Peachmoss')
     expect(out.bodies.at(-1)!.a).toBeGreaterThan(MILKY_WAY.bodies.at(-1)!.a)
 
+    // The original is untouched: nine planets and their moons, as before.
     expect(MILKY_WAY.origin).toBe('measured')
-    expect(MILKY_WAY.bodies).toHaveLength(9)
+    expect(MILKY_WAY.bodies.filter((b) => !b.orbits)).toHaveLength(9)
   })
 
   it('never leaves a world nameless', () => {
@@ -461,5 +487,66 @@ describe('worldInSystem', () => {
 
   it('is empty-system safe', () => {
     expect(worldInSystem(emptySystem(1), params)).toBe(false)
+  })
+})
+
+describe('building your own moons', () => {
+  const twoWorlds = () => {
+    let d = addRolledWorld(emptySystem(11), 'temperate', 5)
+    d = addRolledWorld(d, 'gasAmber', 6)
+    return d
+  }
+
+  it('rolls a moon into orbit around the body you asked for', () => {
+    const d = addMoon(twoWorlds(), 0)
+    const moon = d.bodies.find((b) => b.orbits)!
+    expect(moon.orbits).toBe(d.bodies[0].name)
+    // Its distance is measured from the planet, so it is far inside the
+    // floor an ordinary orbit has to clear.
+    expect(moon.a).toBeLessThan(A_MIN)
+    expect(moon.period).toBeGreaterThan(0)
+  })
+
+  it('derives a moon’s year from the planet, close to the real ones', () => {
+    // The Moon at its true distance from an Earth-sized planet.
+    expect(satPeriodFor(0.002569, 1, false) * 365.25).toBeCloseTo(27.3, 0)
+    // A bigger planet pulls harder, so the same orbit comes round sooner.
+    expect(satPeriodFor(0.002569, 4, false)).toBeLessThan(satPeriodFor(0.002569, 1, false))
+  })
+
+  it('refuses moons of moons, in both directions', () => {
+    const d = addMoon(twoWorlds(), 0)
+    const moonIndex = d.bodies.findIndex((b) => b.orbits)
+    // Neither by asking for a moon of a moon...
+    expect(addMoon(d, moonIndex)).toBe(d)
+    // ...nor by making a planet that already has one into a moon itself.
+    const planetIndex = d.bodies.findIndex((b) => !b.orbits)
+    const other = d.bodies.find((b, k) => !b.orbits && k !== planetIndex)!
+    expect(setParent(d, planetIndex, other.name)).toBe(d)
+  })
+
+  it('returns a world to the star, with a distance that means something', () => {
+    const d = addMoon(twoWorlds(), 0)
+    const i = d.bodies.findIndex((b) => b.orbits)
+    const back = setParent(d, i, '')
+    const world = back.bodies.find((b) => b.name === d.bodies[i].name)!
+    expect(world.orbits).toBeUndefined()
+    // Its old distance was measured from a planet and would be nonsense here.
+    expect(world.a).toBeGreaterThanOrEqual(A_MIN)
+  })
+
+  it('does not leave a moon orbiting a planet that has been removed', () => {
+    const d = addMoon(twoWorlds(), 0)
+    const parent = d.bodies.find((b) => !b.orbits)!
+    const out = removeBodyAt(d, d.bodies.indexOf(parent))
+    expect(out.bodies.some((b) => b.name === parent.name)).toBe(false)
+    for (const b of out.bodies) expect(b.orbits).toBeUndefined()
+  })
+
+  it('survives the round trip through storage', () => {
+    const out = sanitizeSystem(addMoon(twoWorlds(), 0))
+    const moon = out.bodies.find((b) => b.orbits)!
+    expect(moon.orbits).toBeTruthy()
+    expect(out.bodies.some((b) => b.name === moon.orbits)).toBe(true)
   })
 })

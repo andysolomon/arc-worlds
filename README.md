@@ -45,6 +45,8 @@ serve the repo over HTTP and open `prototype/Little Worlds.dc.html`.
 
 Fluids visibly move: light shimmers across open water, lava creeps and breathes its glow, gas-giant bands drift at different speeds by latitude while a storm vortex slowly turns. All of it rides the same clock as rotation, so pausing the world — or hiding the tab, or scrolling the canvas away — freezes every fluid with it, and the renderer goes back to sleep. A **Rendering** row picks the tier: **flat** is the world's baked map on a smooth sphere — exactly what the orbit view draws, and the cheap choice; **detailed** is displaced terrain with water, cloud and sky shells — what the sculptor draws. **Auto** lets each world pick: photographs and gas giants go flat (the gas shader is where the drifting bands live), sculpted rock goes detailed. It is a quality choice, never part of the world: the same `engine/surface.ts` colours both tiers, and a photographed planet forced detailed simply renders the procedural interpretation its own params already encode.
 
+Seven moons are worlds in their own right, on exactly the terms Pluto is: measured, unmapped by any CC BY photograph, rendered procedurally, and scanning as themselves from hand-written measured profiles. **The Moon**, **Io**, **Europa**, **Ganymede**, **Titan**, **Enceladus** and **Triton** each carry a canonical seed — reseed one and it detaches into an ordinary world of its family. Visit a planet that has them and they orbit it exactly as before; now you can click one where it orbits, or pick it from the **Moons you can visit** row, and go stand on it.
+
 **Scan** — a spectrometer readout for whatever world is currently on screen, split across Atmosphere, Surface & water, and Light. It reports composition by volume with a per-gas explanation, surface mineralogy, the state of any water, a biosignature assessment, and the specific absorption lines that would give each result away. The chemistry responds to the sliders: push sea level and cloud cover up on a Meadow world and you get a nitrogen–oxygen atmosphere flagged as out of equilibrium; drop them and the same seed reads as anoxic nitrogen–CO₂.
 
 **Systems** — a star and the worlds that orbit it, in two views. A **Universe** section tunes the sky itself: star density and brightness, overall exposure, and a nebula wash behind everything (plain CSS behind the transparent canvas, so it costs the GPU nothing). All of it is a per-browser viewer preference — never part of a world, a system, or a shared link — and every default reproduces exactly the look the app always had.
@@ -63,14 +65,11 @@ Five kinds of system sit side by side, and the tab is careful about which is whi
   internal ratio stays exact and TRAPPIST-1 h still orbits 12.4× slower than b.
 - **Andromeda** — an invented system around an orange dwarf, labelled as invented wherever it appears.
 - **Homage systems** — original interpretations of famous fictions, labelled invented like
-  Andromeda: the Outer Rim (Tatooine, Hoth and Mustafar under one sun — the engine draws single
-  stars, and Tatooine's scan owes the fiction its second one out loud), 40 Eridani and Tau Ceti
-  (Erid and Adrian from *Project Hail Mary*, on real star masses), and Alpha Centauri A
-  (Polyphemus with Pandora from *Avatar* — Pandora is really its moon, so it rides its own orbit
-  just outside and the caption says so). Each scans with chemistry from its fiction, opening with
-  the word **Fiction**; reseed one and it detaches into an ordinary world of its family, exactly
-  like Pluto and the ancient reconstructions.
-- **Yours** — duplicate an existing system, roll a whole one from a seed, or start empty. Set each world's distance, size and orbital stretch, pick a star, and save it for a permanent `/s/:slug` link.
+  Andromeda: 40 Eridani and Tau Ceti (Erid and Adrian from *Project Hail Mary*, on real star
+  masses), and Alpha Centauri A (Polyphemus and Pandora from *Avatar*). Each scans with chemistry
+  from its fiction, opening with the word **Fiction**; reseed one and it detaches into an ordinary
+  world of its family, exactly like Pluto and the ancient reconstructions.
+- **Yours** — duplicate an existing system, roll a whole one from a seed, or start empty. Any world can be given a moon (☾), or told to orbit another world instead of the star: a moon's distance is then measured in its planet's radii and its year follows from that planet's size, the same way a planet's year follows from its star. Moons of moons are refused, and removing a planet hands its moons back to the star rather than leaving them orbiting nothing. Set each world's distance, size and orbital stretch, pick a star, and save it for a permanent `/s/:slug` link.
 
 Worlds go into a system four ways, and none of them needs a trip through the sculptor first: pick
 one of the eight world types and a new world of that type is rolled straight into orbit; add the

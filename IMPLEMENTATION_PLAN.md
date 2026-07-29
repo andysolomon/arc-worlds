@@ -111,18 +111,22 @@ provenance — these need a labelling nuance the current origins lack:
 
 ### 6. Pop-culture worlds
 
-Homage systems from film and TV — Star Wars (Tatooine, Hoth, Mustafar),
-Project Hail Mary (Erid at 40 Eridani, Adrian at Tau Ceti) and Avatar
-(Pandora at Alpha Centauri A) — labelled invented, like Andromeda.
+Homage systems from film and TV — Project Hail Mary (Erid at 40 Eridani,
+Adrian at Tau Ceti) and Avatar (Pandora at Alpha Centauri A) — labelled
+invented, like Andromeda.
 
 - [x] Original procedural interpretations only: no copyrighted imagery or
       textures; short fictional names used referentially.
-- [x] Decided: scoped to single-star systems. Tatooine's star is named
-      Tatoo I and its scan note owes the fiction its second sun out loud;
-      binary rendering stays a possible future engine task, not a blocker.
-- [x] Avatar's Pandora is a moon of the gas giant Polyphemus, and moons only
-      render in the single-world view — so Pandora gets its own orbit just
-      outside its planet, and the system caption says exactly that.
+- [x] Scoped to single-star systems; binary rendering stays a possible future
+      engine task, not a blocker.
+- [x] The Star Wars collection (Outer Rim: Tatooine, Hoth, Mustafar) was
+      built, then dropped at Andrew's request on 2026-07-29. Removed whole —
+      presets, palettes, profiles, system and specs — rather than left
+      unreferenced.
+- [ ] Avatar's Pandora is a moon of the gas giant Polyphemus. It first shipped
+      on its own orbit because moons only render in the single-world view;
+      superseded by the satellite-orbit work below, so it truly orbits its
+      planet while staying a visitable, scannable, sculptable world.
 - [x] Each world gets Scan-tab chemistry consistent with its fiction where the
       fiction says (Erid's thick atmosphere, Adrian's Astrophage-warmed orbit,
       Pandora's xenon-heavy unbreathable air). Profiles open with "Fiction:"
@@ -133,7 +137,7 @@ Project Hail Mary (Erid at 40 Eridani, Adrian at Tau Ceti) and Avatar
 ### 7. Sculpting — animated fluids and two rendering tiers
 
 - [x] Visible motion for liquids and gas: the water shell's normal is
-      perturbed over time (one injected program variant, warmed at startup),
+      perturbed over time (one injected program variant, warmed before display),
       so light shimmers across water; lava ripples slower and heavier and
       pulses its glow; sculpted gas giants reach the animated gas shader —
       band drift and storm vortex — through the flat tier. Everything rides
@@ -164,6 +168,76 @@ Project Hail Mary (Erid at 40 Eridani, Adrian at Tau Ceti) and Avatar
       if sharing a look ever matters. One naming lesson recorded: the warm
       tint could not be called Ember — the Sculpt tab already answers to
       that name, and the perf benchmark clicks chips by exact name.
+
+### 9. Moons that are worlds
+
+The app already carries 22 moons across seven planets with measured radii,
+distances, periods and inclinations — but they are decorative geometry: no
+params, so they cannot be visited, scanned or sculpted. The popular ones
+deserve to be worlds, on exactly the terms Pluto already is: measured body, no
+photographic map in the CC BY set, procedural surface, canonical seed, and a
+hand-written measured profile.
+
+Promoted set — the ones with real character: **the Moon**, **Io**, **Europa**,
+**Ganymede**, **Titan**, **Enceladus**, **Triton**.
+
+- [x] A moon becomes a world by naming one: `Moon.world = { preset, seed }`.
+      The orbital elements it already carries stay the single source of where
+      it is; the new field only says which world is standing there. Keeps
+      `engine/planets.ts` data-only — no params import, no cycle.
+- [x] A `MOONS` collection beside `SOLAR`/`ANCIENT`/`FICTION`, seven new
+      palettes, seven `REAL` entries (tidally locked, so the sidereal day is
+      the orbital period), and seven measured `REAL_PROFILES`. The existing
+      planet profiles already gesture at these worlds — Jupiter's says the
+      interest is in the moons, Saturn's names the Enceladus plume — so the
+      prose has somewhere to arrive.
+- [x] Reachable two ways: click a moon where it already orbits, and a
+      "Moons you can visit" row on the Sculpt tab. The canvas click alone
+      was a few pixels of moving sprite — not discoverable, not keyboard
+      reachable, and not testable without hunting for it.
+- [x] Reseed detaches into an ordinary world of its family, same rule as
+      Pluto and the reconstructions (FAMILY: ice for the icy ones, lava for
+      Io, desert for the Moon).
+
+### 10. Satellite orbits in the orbit view
+
+- [x] `SystemBody.orbits` names a parent, and the satellite's plane hangs off
+      that body's node in the scene graph — so it inherits the planet's
+      position every frame, orbit line included, with no hand-written
+      ordering. Pandora circles Polyphemus; the seven promoted moons circle
+      their planets.
+- [x] The drawn-distance problem, measured rather than guessed: satellites map
+      into a band starting at 1.3× the parent's drawn radius, whose outer edge
+      is the room actually available — half the distance to the nearest other
+      orbit, less the planet's own radius. Generous to scale (Jupiter has 5.4
+      units); nothing at all to same size, where planets are drawn 0.24 wide
+      with 0.29 between orbits and already overlap at conjunction, so the band
+      collapses to its floor. Unit-tested at both extremes.
+- [x] Satellites are moons, so the moons toggle drops them entirely — the
+      performance lever now does more work, and an e2e spec proves the
+      geometry leaves the scene.
+- [x] Framing bug this surfaced: scale mode parked the camera at the outermost
+      orbit, which fails when a system's only planet is close in — Alpha
+      Centauri A framed itself inside its own star. The star is now held to a
+      share of the frame, which costs the Solar System nothing.
+- [x] Satellites carry no baked map and a coarser path: a few pixels wide at
+      system scale, they are indistinguishable from the palette tone they
+      already wear, and they get the real surface in the single-world view.
+      Build-bodies and first-render both came out faster than before the
+      satellites existed.
+
+### 11. Building your own moons
+
+- [x] Any body in a system you own can be given a moon, or told to orbit
+      another body instead of the star. A moon's distance is measured from
+      its planet and quoted in that planet's radii; its year follows from the
+      planet's size, since mass goes as the cube of radius at a given density
+      — which reproduces the Moon within half a percent and Jupiter's moons
+      within three.
+- [x] Guards: moons of moons are refused at both ends, removing a planet
+      returns its moons to the star with a distance that means something
+      there, and a distance measured from a planet is re-derived rather than
+      carried over when a world changes what it orbits.
 
 ## Performance plan (delivered 2026-07-28)
 
@@ -223,3 +297,22 @@ systems, particularly in Safari on high-density displays.
 - [x] New local performance smoke and three-run median pass browser and idle-work budgets.
 - [x] Typecheck, lint, unit, build, and end-to-end suites pass with the guardrails.
 - [ ] Re-profile production on the original Safari hardware and record INP/p95 frame time.
+
+### Orbit transition shader warmup follow-up (delivered 2026-07-29)
+
+- [x] Correct the benchmark interpretation: long-task observation begins at
+      Orbit view `pointerdown`, so this is a view-transition metric rather than
+      page-startup work.
+- [x] Add phase attribution for system regeneration, body construction, label
+      rasterization, shader kickoff/readiness, first render, maximum render
+      duration, and shader-program count.
+- [x] Restrict `compileAsync` to the visible system subtree. Three.js compiles
+      hidden descendants when handed the whole scene; the scoped warmup reduced
+      transition-added programs from 12 to 4 in the controlled Chromium run.
+- [x] Defer planet label canvases, textures, sprites, and their shared program
+      until the Labels toggle is enabled; preserve rename, scale-mode, disposal,
+      and toggle behavior.
+- [x] Enforce ≤4 transition-added shader programs and ≤50 ms synchronous shader
+      kickoff in `performance-budget.json`.
+- [ ] Repeat the phase-attributed benchmark in Safari on the original hardware
+      to validate the Metal/ANGLE driver hypothesis.

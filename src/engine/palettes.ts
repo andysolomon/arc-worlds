@@ -42,18 +42,29 @@ export const PALETTES: Record<PresetKey, Palette> = {
   noachian: { water: 0x4a7a9f, deep: 0x27455f, sand: 0xc98858, low: 0xb06a40, mid: 0x8f5030, high: 0x6f4028, snow: 0xe8d8c8, atmo: 0xc9d8e8, waterOpacity: 0.76, cloudO: 0.7 },
 
   // Homage worlds: original interpretations of famous fictions, never their
-  // imagery. Dune tans farmed for dew, with only the rarest standing water.
-  tatooine: { water: 0x8fb5a8, deep: 0x5f8578, sand: 0xecd8a4, low: 0xe0c088, mid: 0xc09858, high: 0x8f6a45, snow: 0xf4e8cc, atmo: 0xffe0a8, waterOpacity: 0.7, cloudO: 0.35 },
-  // White-out planes under blue shadow; nothing here has ever thawed.
-  hoth: { water: 0x5a8fc4, deep: 0x2f5578, sand: 0xe8f0f6, low: 0xdfe8f2, mid: 0xc4d4e4, high: 0xa4b8cc, snow: 0xffffff, atmo: 0xcfe4ff, waterOpacity: 0.8, cloudO: 0.85 },
-  // Blacker than Ember and brighter where it splits: ash crust over open fire.
-  mustafar: { water: 0xff4a14, deep: 0x7a1400, sand: 0x3a2f2c, low: 0x453733, mid: 0x2c2320, high: 0x1a1412, snow: 0xff9e3f, atmo: 0xff7a45, waterOpacity: 0.97, emissive: 0xe03500, cloudO: 0.25 },
-  // Erid's surface is never seen — this ramp is the top of its haze.
+  // imagery. Erid's surface is never seen — this ramp is the top of its haze.
   erid: { water: 0x6f6a5f, deep: 0x4a463f, sand: 0xcabb9c, low: 0xb0a488, mid: 0x8f846c, high: 0x6f6654, snow: 0xd8ccb0, atmo: 0xd8c9a4, waterOpacity: 0.7, cloudO: 1, cloudTint: 0xcfc0a0 },
   // A hothouse the Astrophage farm: dun rock under a heavy amber sky.
   adrian: { water: 0xc97a3f, deep: 0x8a4a20, sand: 0xe0b078, low: 0xd89a5f, mid: 0xb07440, high: 0x8a5530, snow: 0xecc998, atmo: 0xffc98a, waterOpacity: 0.8, cloudO: 0.95, cloudTint: 0xe8cfa0 },
   // Jungle deeper than Meadow ever goes, over seas a shade too blue.
   pandora: { water: 0x2f7fae, deep: 0x14344f, sand: 0xd8cfa0, low: 0x4a9e5f, mid: 0x2f7a44, high: 0x6f8568, snow: 0xeef2ea, atmo: 0xa8d4ff, waterOpacity: 0.72, cloudO: 0.95 },
+
+  // Moons that are worlds. No CC BY photographic maps exist for these in our
+  // set, so each is a procedural ramp built to its own measured colours.
+  // Dark basalt maria against bright anorthosite highlands.
+  luna: { water: 0x4a4744, deep: 0x35322f, sand: 0x8a8580, low: 0x6f6a64, mid: 0x565049, high: 0x9a948c, snow: 0xc4bdb4, atmo: 0x8a8890, waterOpacity: 0.7, cloudO: 0.15 },
+  // Sulphur allotropes over silicate: the most volcanic surface there is.
+  io: { water: 0xff7a1f, deep: 0x8f3400, sand: 0xf0d878, low: 0xd9c162, mid: 0xb08a3a, high: 0x6f5a30, snow: 0xfff0b4, atmo: 0xffc46a, waterOpacity: 0.95, emissive: 0xc43a00, cloudO: 0.2 },
+  // Ice as smooth as a cue ball, cracked by rust-brown salt lineae.
+  europa: { water: 0xd9c9b4, deep: 0x9a7f5f, sand: 0xe8dfd0, low: 0xf0ece4, mid: 0xdcd4c8, high: 0xc9bfae, snow: 0xfbf8f2, atmo: 0xdfe8f0, waterOpacity: 0.8, cloudO: 0.1 },
+  // Grooved terrain, bright and pale, over ancient dark crust.
+  ganymede: { water: 0x5f574e, deep: 0x40392f, sand: 0xa89e90, low: 0x8f8579, mid: 0x6f665c, high: 0xb4aca0, snow: 0xd8d2c8, atmo: 0xc9cfd4, waterOpacity: 0.75, cloudO: 0.15 },
+  // Orange photochemical haze over dark dunes and methane lakes.
+  titan: { water: 0x2f2a24, deep: 0x1a1712, sand: 0xd9a054, low: 0xc08a44, mid: 0x9a6d34, high: 0x7a5628, snow: 0xecc98f, atmo: 0xffa844, waterOpacity: 0.88, cloudO: 0.9, cloudTint: 0xe8b46a },
+  // The most reflective surface in the solar system, and almost nothing else.
+  enceladus: { water: 0xdfe8ee, deep: 0xb4c4cf, sand: 0xf4f2ec, low: 0xf8f7f3, mid: 0xeceae4, high: 0xfafaf8, snow: 0xffffff, atmo: 0xdff0fa, waterOpacity: 0.8, cloudO: 0.2 },
+  // Cantaloupe terrain under pink nitrogen frost, with dark plume streaks.
+  triton: { water: 0xc9a898, deep: 0x8f7264, sand: 0xe8d8cc, low: 0xd8c4b4, mid: 0xb89a88, high: 0xa08574, snow: 0xf4ece4, atmo: 0xd0c4e0, waterOpacity: 0.78, cloudO: 0.2 },
 
   mercury: { water: 0x555055, deep: 0x3a3538, sand: 0x8f8788, low: 0x7a7274, mid: 0x655d60, high: 0x9a9294, snow: 0xb8b0b2, atmo: 0x8a8090, waterOpacity: 0.7, cloudO: 0.2 },
   venus: { water: 0xc98f4f, deep: 0x8a5f2f, sand: 0xe8c088, low: 0xd0a060, mid: 0xb08048, high: 0x8f6538, snow: 0xf0d8a8, atmo: 0xffd98f, waterOpacity: 0.8, cloudO: 1, cloudTint: 0xf0dca8 },

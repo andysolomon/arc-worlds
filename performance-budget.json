@@ -25,6 +25,14 @@
       "max": 2500,
       "unit": "ms"
     },
+    "orbitShaderKickoffMs": {
+      "max": 50,
+      "unit": "ms"
+    },
+    "orbitShaderProgramsAdded": {
+      "max": 4,
+      "unit": "programs"
+    },
     "activeRendererFps": {
       "min": 20,
       "max": 32,
@@ -67,6 +75,8 @@
       "longTaskMaxMs": 150,
       "longTaskTotalMs": 150,
       "taskDurationMs": 600,
+      "orbitShaderKickoffMs": 10,
+      "orbitShaderProgramsAdded": 1,
       "activeRendererFps": 3
     },
     "lowerIsBetter": [
@@ -75,6 +85,8 @@
       "longTaskMaxMs",
       "longTaskTotalMs",
       "taskDurationMs",
+      "orbitShaderKickoffMs",
+      "orbitShaderProgramsAdded",
       "pausedFramesIn3s",
       "pausedTaskDurationMs",
       "errorCount"

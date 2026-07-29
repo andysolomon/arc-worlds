@@ -13,12 +13,19 @@ import type {
 import { PRESETS } from '../data/presets.js'
 import { genName, safeTexture, sanitize, serialize, surprise } from './params.js'
 
-/** Enough for a generous system without letting one payload get silly. */
-export const MAX_BODIES = 12
+/**
+ * Enough for a generous system without letting one payload get silly. Raised
+ * from 12 when moons became worlds: the Solar System alone carries nine
+ * planets and seven satellites, and a copy of it has to survive intact.
+ */
+export const MAX_BODIES = 24
 
 // Low enough for real compact systems: TRAPPIST-1 b orbits at 0.0115 AU, and
 // a duplicated copy of it must survive sanitisation with its orbits intact.
 export const A_MIN = 0.01
+// A satellite's distance is measured from its planet: the Moon is 0.00257 AU
+// from Earth, and Pandora closer still to Polyphemus.
+export const A_SAT_MIN = 0.0001
 export const A_MAX = 90
 export const MASS_MIN = 0.08
 export const MASS_MAX = 3
@@ -77,15 +84,21 @@ function safeRing(v: unknown): RingConfig | null {
 function sanitizeBody(input: unknown, index: number, mass: number): SystemBody {
   const b = (input ?? {}) as Record<string, unknown>
   const params = sanitize(b.params)
-  const a = num(b.a, A_MIN, A_MAX, 0.4 + index * 0.9)
+  // A satellite's distance is measured from its planet, not the star, so it
+  // sits far below the floor an ordinary orbit has to clear.
+  const orbits = typeof b.orbits === 'string' ? text(b.orbits, '', 40) : ''
+  const a = num(b.a, orbits ? A_SAT_MIN : A_MIN, A_MAX, 0.4 + index * 0.9)
 
   return {
     name: text(b.name, `Body ${index + 1}`, 40),
     a,
+    ...(orbits ? { orbits } : null),
     // The period is never taken from the client: it is a consequence of the
     // distance and the star, and deriving it stops a saved system from
-    // orbiting at a speed its own geometry cannot justify.
-    period: periodFor(a, mass),
+    // orbiting at a speed its own geometry cannot justify. A satellite orbits
+    // its planet instead, whose mass we do not carry, so its own period is
+    // kept — clamped to something a year could actually be.
+    period: orbits ? num(b.period, 1e-5, 1e4, 0.1) : periodFor(a, mass),
     e: num(b.e, 0, 0.7, 0),
     inc: num(b.inc, -40, 40, 0),
     node: num(b.node, 0, 360, 0),
@@ -131,9 +144,23 @@ export function sanitizeSystem(input: unknown): SystemDef {
 
 /* --- editing ------------------------------------------------------------- */
 
-/** Bodies always read outward from the star, however they were added. */
+/**
+ * Bodies always read outward from the star, however they were added — and a
+ * satellite reads directly after the planet it orbits rather than by its own
+ * distance, which is measured from that planet and would otherwise sort it in
+ * front of Mercury.
+ */
 export function sortByDistance(bodies: SystemBody[]): SystemBody[] {
-  return [...bodies].sort((x, y) => x.a - y.a)
+  const planets = bodies.filter((b) => !b.orbits).sort((x, y) => x.a - y.a)
+  const out: SystemBody[] = []
+  for (const p of planets) {
+    out.push(p)
+    out.push(...bodies.filter((b) => b.orbits === p.name).sort((x, y) => x.a - y.a))
+  }
+  // Anything naming a parent that is not here keeps its place rather than
+  // vanishing; it simply orbits the star like everything else.
+  const orphans = bodies.filter((b) => !out.includes(b)).sort((x, y) => x.a - y.a)
+  return [...out, ...orphans]
 }
 
 /** Re-derive every period. Call after the star's mass changes. */
@@ -202,6 +229,37 @@ export function dayFor(params: PlanetParams): number {
   return params.spinDir === -1 ? -hours : hours
 }
 
+/** Earth's mass in solar masses, for deriving a planet's pull on its moons. */
+const EARTH_MASS = 3.003e-6
+/** Gas giants are about a quarter of Earth's density; rocky worlds match it. */
+const GAS_DENSITY = 0.24
+/** A satellite orbit narrower than this would be inside its planet. */
+export const A_SAT_MAX = 0.06
+
+/**
+ * A moon's year, from the size of the planet it orbits.
+ *
+ * The same principle the planets follow — a year is a consequence of where you
+ * put a world — carried down one level. Mass is not stored anywhere, but a
+ * radius is, and mass goes as the cube of it for a given density. Splitting
+ * gas giants from rock at their real density ratio gets the Moon within half
+ * a percent and Jupiter's within three. Saturn is half Jupiter's density, so
+ * its moons come out about a third quick — which is a fair trade for one
+ * constant, on systems that were invented anyway. The measured satellites
+ * keep their measured years and never come through here.
+ */
+export function satPeriodFor(a: number, parentRadius: number, gas: boolean): number {
+  const mass = EARTH_MASS * Math.pow(Math.max(0.05, parentRadius), 3) * (gas ? GAS_DENSITY : 1)
+  // Not `periodFor`: that floors mass at 0.02 solar masses because it was
+  // written for stars, and every planet is millions of times lighter.
+  return Math.sqrt(Math.pow(Math.max(1e-6, a), 3) / Math.max(1e-12, mass))
+}
+
+/** True when a body's world is one of the gas-giant types. */
+export function isGasBody(b: SystemBody): boolean {
+  return PRESETS.find((p) => p.key === b.params.preset)?.gas === true
+}
+
 /** Where a newly added body should go: comfortably outside everything else. */
 export function nextDistance(def: SystemDef): number {
   const outer = def.bodies.reduce((m, b) => Math.max(m, b.a), 0)
@@ -267,6 +325,98 @@ export function addWorld(def: SystemDef, name: string, params: PlanetParams): Sy
  * This is the one that removes the round trip: a system can be populated
  * without a world ever passing through the sculptor.
  */
+/**
+ * Put a world in orbit around one of the system's own bodies.
+ *
+ * A moon is an ordinary world that happens to be somewhere else, so this is
+ * `addWorld` with a parent named and the distance measured from that parent
+ * instead of from the star. Moons of moons are refused: one level is what the
+ * renderer draws and what anybody expects.
+ */
+export function addMoon(
+  def: SystemDef,
+  parentIndex: number,
+  preset?: PresetKey,
+  seed?: number,
+): SystemDef {
+  const s = editableCopy(def)
+  const parent = s.bodies[parentIndex]
+  if (!parent || parent.orbits || !hasRoom(s)) return def
+
+  const { params, name } = surprise(seed, preset)
+  const taken = s.bodies.filter((b) => b.orbits === parent.name)
+  // Each moon lands outside the last, in the band a real satellite occupies.
+  const a = taken.length
+    ? Math.min(A_SAT_MAX, taken.reduce((m, b) => Math.max(m, b.a), 0) * 1.6)
+    : nextMoonDistance(parent)
+  const gas = isGasBody(parent)
+
+  const body: SystemBody = {
+    ...bodyFromWorld(name, params, a, s.star.mass),
+    period: satPeriodFor(a, parent.radius, gas),
+    radius: Math.max(0.15, parent.radius * 0.27),
+    orbits: parent.name,
+  }
+  return { ...s, bodies: sortByDistance([...s.bodies, body]) }
+}
+
+/** A first moon sits a few planet-radii out, where real ones tend to. */
+function nextMoonDistance(parent: SystemBody): number {
+  const km = parent.radius * 6371 * 8
+  return Math.min(A_SAT_MAX, Math.max(A_SAT_MIN, km / 149597870.7))
+}
+
+/**
+ * Change what a body orbits: the star, or one of the other bodies.
+ *
+ * Distances mean different things on either side of that line — from the star
+ * or from the planet — so the body is given a sensible one for wherever it has
+ * landed rather than keeping a number that no longer means anything. Anything
+ * orbiting the body being demoted is returned to the star, since moons of
+ * moons are not drawn.
+ */
+export function setParent(def: SystemDef, index: number, parentName: string): SystemDef {
+  const b = def.bodies[index]
+  if (!b) return def
+  const parent = parentName ? def.bodies.find((x) => x.name === parentName) : null
+  // Moons of moons are not drawn, so neither end of the relationship may
+  // already be one: the parent cannot be a moon, and a body that carries
+  // moons of its own cannot become one.
+  if (parentName) {
+    if (!parent || parent === b || parent.orbits) return def
+    if (def.bodies.some((x) => x.orbits === b.name)) return def
+  }
+
+  const bodies = def.bodies.map((x, k) => {
+    if (k !== index) return x
+    if (!parent) {
+      const { orbits: _drop, ...rest } = x
+      const a = nextDistance({ ...def, bodies: def.bodies.filter((y) => !y.orbits) })
+      return { ...rest, a, period: periodFor(a, def.star.mass) }
+    }
+    const a = nextMoonDistance(parent)
+    return { ...x, orbits: parent.name, a, period: satPeriodFor(a, parent.radius, isGasBody(parent)) }
+  })
+  return { ...def, bodies: sortByDistance(bodies) }
+}
+
+/**
+ * Remove a body, returning anything that orbited it to the star rather than
+ * leaving it pointing at a planet that is no longer there.
+ */
+export function removeBodyAt(def: SystemDef, index: number): SystemDef {
+  const gone = def.bodies[index]
+  if (!gone) return def
+  const rest = def.bodies.filter((_, k) => k !== index)
+  const bodies = rest.map((b) => {
+    if (b.orbits !== gone.name) return b
+    const { orbits: _drop, ...kept } = b
+    const a = nextDistance({ ...def, bodies: rest })
+    return { ...kept, a, period: periodFor(a, def.star.mass) }
+  })
+  return { ...def, bodies: sortByDistance(bodies) }
+}
+
 export function addRolledWorld(def: SystemDef, preset?: PresetKey, seed?: number): SystemDef {
   const { params, name } = surprise(seed, preset)
   return addWorld(def, name, params)

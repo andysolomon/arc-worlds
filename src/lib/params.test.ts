@@ -23,7 +23,7 @@ describe('sanitize', () => {
   })
 
   it('keeps the story-world presets, so a saved homage survives the trip', () => {
-    for (const key of ['tatooine', 'hoth', 'mustafar', 'erid', 'adrian', 'pandora']) {
+    for (const key of ['erid', 'adrian', 'pandora', 'luna', 'io', 'europa', 'titan', 'triton']) {
       expect(sanitize({ preset: key }).preset).toBe(key)
     }
   })

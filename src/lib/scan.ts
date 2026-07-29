@@ -11,7 +11,7 @@ import {
   MINERAL_SETS, ODDITIES, PIG, SPECIES,
   type BioReading, type Profile, type SpectralLine, type WaterReading,
 } from '../data/spectrometer'
-import { ANCIENT, FICTION, PRESETS, typeOf } from '../data/presets'
+import { ANCIENT, FICTION, MOONS, PRESETS, typeOf } from '../data/presets'
 import type { PlanetParams, PresetKey } from '../engine/types'
 
 /**
@@ -24,12 +24,16 @@ const FAMILY: Partial<Record<PresetKey, PresetKey>> = {
   archean: 'temperate',
   proterozoic: 'temperate',
   noachian: 'desert',
-  tatooine: 'desert',
-  hoth: 'ice',
-  mustafar: 'lava',
   erid: 'desert',
   adrian: 'lava',
   pandora: 'temperate',
+  luna: 'desert',
+  io: 'lava',
+  europa: 'ice',
+  ganymede: 'ice',
+  titan: 'ice',
+  enceladus: 'ice',
+  triton: 'ice',
 }
 
 export interface GasReading {
@@ -284,7 +288,12 @@ export async function computeScan(P: PlanetParams): Promise<ScanResult> {
   // so. Only a sculpted world gets a reading derived from the sliders — and
   // changing the seed is what turns any of the others into one. The fiction
   // prose rides its own chunk, fetched only when a story world is scanned.
-  const real = realFor(P) ? REAL_PROFILES[P.preset] ?? null : null
+  // A moon that is a world scans as itself from its own chunk — measured
+  // prose, same standing as a planet's, kept separate only because each lazy
+  // chunk carries its own size budget and the planet prose fills most of one.
+  const isMoon = MOONS.some((m) => m.key === P.preset && m.params.seed === P.seed)
+  const moon = isMoon ? (await import('../data/moon-profiles')).MOON_PROFILES[P.preset] ?? null : null
+  const real = moon ?? (realFor(P) ? REAL_PROFILES[P.preset] ?? null : null)
   const ancient = ANCIENT.some((a) => a.key === P.preset && a.params.seed === P.seed)
     ? ANCIENT_PROFILES[P.preset] ?? null
     : null
