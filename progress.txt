@@ -476,6 +476,14 @@ VERIFIED (full suite delegated to the same Opus 5 agent)
   all 14 runs); interactionDuration 88 ms sample did not reproduce.
 
 NEXT
+- CI browser budgets have never fit GitHub's shared runners: the
+  Performance workflow fails on interactionDurationMs (328 ms at the
+  original guardrails commit 612e35e, 352 ms at the branch tip) and
+  taskDurationMs (5504 -> 5268 ms, actually improved) on every run it
+  has ever had, before any feature phase existed. The budgets were
+  calibrated on local Apple Silicon. Fix is a runner-calibrated budget
+  profile (or a CI multiplier), not code — the eight phases moved the
+  needle ~7% on one row and improved the other.
 - Shave the startup shader-compile long task (the real fix behind the
   budget raise).
 - e2e suite wall time (~1.2 m) still worth a fixed-sleep-to-poll pass.
