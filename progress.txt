@@ -811,3 +811,28 @@ NEXT
 - An invented parent draws as a flat palette disc, since only the
   measured planets have photographic maps. Polyphemus would read better
   with its bands baked, which is the same worker the orbit view uses.
+
+2026-07-31 invented parents get their bands
+
+DONE
+- A moon's parent planet is painted by the same bake worker the orbit
+  view uses when it has no photograph. Polyphemus arrives with its
+  banding rather than as a flat disc of its own average colour, and so
+  will any planet somebody invents and hangs a moon on.
+- Cached by the parent's surface params, so leaving a moon and coming
+  back reuses the map instead of sending the worker off to paint it
+  again. The measured parents still use their photographs and never
+  reach this path.
+
+CHASED AND DISMISSED
+- Visiting a moon appeared to leave the previous world on screen. It
+  reproduced on main without this change, so it was not a regression —
+  and it was not a bug either. The canvas was scrolled out of view at
+  the small window sizes the screenshots used (at 820x620 its top sits
+  at -459), so rendering was suspended exactly as the performance work
+  intends. Scrolling it back triggers the observer, the pending regen
+  runs, and the right world appears. At 1440x900 it never happens at
+  all. Worth writing down because the symptom looks alarming and the
+  cause is a feature: screenshot tests of this app need a window big
+  enough to keep the canvas on screen, or they will capture a suspended
+  frame.
