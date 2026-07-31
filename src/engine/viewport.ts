@@ -186,6 +186,10 @@ export class PlanetViewport {
   private companion: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>
   private companionKey = ''
   private companionDist = 0
+  private companionBakeId = 0
+  private companionMap: THREE.DataTexture | null = null
+  /** Which world the cached companion bake belongs to. */
+  private companionMapKey = ''
   private water: THREE.Mesh
   private clouds: THREE.Mesh
   private atmo: THREE.Mesh
@@ -595,6 +599,7 @@ export class PlanetViewport {
     this.clearBodies()
     this.flatMap?.dispose()
     this.flatSolid?.dispose()
+    this.companionMap?.dispose()
     for (const t of Object.values(this.texCache)) t.dispose()
     for (const g of this.moonGeoCache.values()) g.dispose()
     for (const m of this.moonMatCache.values()) m.dispose()
@@ -951,6 +956,22 @@ export class PlanetViewport {
             this.texMesh.material.map = texture
             this.texMesh.material.color.set(0xffffff)
           }
+          this.invalidate()
+        }
+        return
+      }
+
+      if (response.id === this.companionBakeId) {
+        const texture = dataTexture(
+          new Uint8Array(response.pixels), response.width, response.height,
+        )
+        texture.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy())
+        this.companionMap?.dispose()
+        this.companionMap = texture
+        if (this.companion.visible) {
+          this.companion.material.map = texture
+          this.companion.material.color.set(0xffffff)
+          this.companion.material.needsUpdate = true
           this.invalidate()
         }
         return
@@ -1668,13 +1689,34 @@ export class PlanetViewport {
 
     const url = parent.texture ?? PARENT_MAP[parent.key]
     const mat = this.companion.material
+    const pal = PALETTES[parent.key as PlanetParams['preset']] ?? PALETTES.temperate
+    // The measured planets have photographs. An invented one has params, and
+    // those are enough: the same worker that paints a body for the orbit view
+    // paints this one, so Polyphemus arrives with its bands rather than as a
+    // flat disc of its own average colour.
     if (url) {
       mat.map = this.loadTex(url)
       mat.color.set(0xffffff)
     } else {
-      const pal = PALETTES[parent.key as PlanetParams['preset']] ?? PALETTES.temperate
       mat.map = null
       mat.color.set(isGas(pal) ? pal.bands[(pal.bands.length / 2) | 0][1] : pal.mid)
+      if (parent.params) {
+        const q = parent.params
+        const key = [q.seed, q.preset, q.mountains, q.water, q.roughness, q.ice, q.clouds].join(':')
+        if (key === this.companionMapKey && this.companionMap) {
+          // Already painted this world: leaving and coming back should not
+          // send the worker off to paint it again.
+          mat.map = this.companionMap
+          mat.color.set(0xffffff)
+        } else {
+          this.companionMapKey = key
+          this.companionBakeId = ++this.bakeId
+          const request: BakeWorkerRequest = {
+            id: this.companionBakeId, kind: 'world', params: { ...q },
+          }
+          this.ensureWorldWorker().postMessage(request)
+        }
+      }
     }
     mat.needsUpdate = true
     this.compileNeeded = true
@@ -1692,6 +1734,7 @@ export class PlanetViewport {
     radius: number
     distance: number
     texture?: string | null
+    params?: PlanetParams
   } | null {
     const def = this.sysDef
     if (!def) return null
@@ -1706,6 +1749,7 @@ export class PlanetViewport {
       radius: host.radius / me.radius,
       distance: satRadii(me.a, me.radius),
       texture: host.texture ?? host.params.texture ?? null,
+      params: host.params,
     }
   }
 

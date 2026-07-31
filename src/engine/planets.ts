@@ -136,7 +136,15 @@ export function realKeyFor(orbitName: string): string {
  */
 export function parentOf(
   p: Pick<PlanetParams, 'preset' | 'seed'>,
-): { key: string; radius: number; distance: number; period: number; texture?: string | null } | null {
+): {
+  key: string
+  radius: number
+  distance: number
+  period: number
+  texture?: string | null
+  /** Only invented parents carry params; the measured ones have photographs. */
+  params?: PlanetParams
+} | null {
   for (const key of Object.keys(REAL)) {
     for (const m of REAL[key].moons) {
       if (m.world?.preset !== p.preset || m.world.seed !== p.seed) continue
