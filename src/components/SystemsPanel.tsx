@@ -1,5 +1,6 @@
 import { BUILT_IN_SYSTEMS } from '../data/systems'
 import { ANCIENT, PRESETS, SOLAR } from '../data/presets'
+import { climateForBody, formatClimate, stellarLuminosity } from '../engine/climate'
 import { periodFor, satRadii, starRadius, starSize } from '../engine/scale'
 import {
   A_MAX, A_MIN, A_SAT_MAX, A_SAT_MIN, MASS_MAX, MASS_MIN, MAX_BODIES, STAR_KINDS,
@@ -303,6 +304,8 @@ export function SystemsPanel(props: Props) {
               <span className="title">{b.name}</span>
               <span className="sub">
                 {fmtAU(b.a)} · {fmtPeriod(b.period)}
+                <br />
+                {formatClimate(climateForBody(system, b))}
               </span>
             </span>
             <span className="go">Visit</span>
@@ -351,7 +354,15 @@ export function SystemsPanel(props: Props) {
                   title={`${k.label} — ${k.mass.toFixed(2)} solar masses, ${starRadius(k.mass).toFixed(2)} solar radii`}
                   aria-pressed={system.star.color === k.color}
                   onClick={() =>
-                    onSystem(retime({ ...system, star: { ...system.star, color: k.color, mass: k.mass } }))
+                    onSystem(retime({
+                      ...system,
+                      star: {
+                        ...system.star,
+                        color: k.color,
+                        mass: k.mass,
+                        luminosity: stellarLuminosity({ mass: k.mass }),
+                      },
+                    }))
                   }
                 >
                   <span className="dot" style={dotStyle(k.color, k.mass)} />
@@ -369,15 +380,19 @@ export function SystemsPanel(props: Props) {
               onSystem(
                 retime({
                   ...system,
-                  star: { ...system.star, mass: MASS_MIN + t * (MASS_MAX - MASS_MIN) },
+                  star: {
+                    ...system.star,
+                    mass: MASS_MIN + t * (MASS_MAX - MASS_MIN),
+                    luminosity: stellarLuminosity({ mass: MASS_MIN + t * (MASS_MAX - MASS_MIN) }),
+                  },
                 }),
               )
             }
           />
           <div className="note">
-            Mass sets how fast everything orbits — a year is a consequence of where a planet is, not
-            a number you pick. Move the star's mass and every orbit re-times itself, and the star
-            grows or shrinks with it: a heavier star is a bigger one.
+            Mass sets orbital years and the estimated main-sequence luminosity. Luminosity and
+            distance set each world's received energy, so changing this star can freeze or heat
+            every surface in the system. Climate labels are modeled estimates, not observations.
           </div>
 
           {/* --- adding worlds ------------------------------------------------
@@ -553,6 +568,12 @@ export function SystemsPanel(props: Props) {
                   }
                   onChange={(t) => setBody(i, { a: b.orbits ? SAT_DIST.from(t) : DIST.from(t) })}
                 />
+                <div className="note" style={{ marginBottom: 10 }}>
+                  {formatClimate(climateForBody(system, b))} ·{' '}
+                  {climateForBody(system, b).inHabitableZone ? 'inside' : 'outside'} habitable zone{' '}
+                  {climateForBody(system, b).habitableZoneInnerAU.toFixed(2)}–
+                  {climateForBody(system, b).habitableZoneOuterAU.toFixed(2)} AU
+                </div>
                 <Slider
                   name="Size"
                   value={SIZE.to(b.radius)}

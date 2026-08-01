@@ -5,6 +5,7 @@ import {
 } from '../data/systems'
 import { ORBITS } from '../engine/planets'
 import { periodFor, starRadius, starSize } from '../engine/scale'
+import { CURRENT_GENERATOR_VERSION, LEGACY_GENERATOR_VERSION } from '../engine/types'
 import {
   A_MAX, A_MIN, MASS_MAX, MASS_MIN, MAX_BODIES, STAR_KINDS,
   addMoon, addRolledWorld, addWorld, bodyFromWorld, dayFor, duplicateBody,
@@ -283,6 +284,20 @@ describe('sanitizeSystem', () => {
     })
     expect(out.bodies.map((b) => b.a)).toEqual([0.5, 1, 3, 9])
   })
+
+  it('preserves explicit generator versions while migrating unversioned bodies to v1', () => {
+    const out = sanitizeSystem({
+      star: { mass: 1 },
+      bodies: [
+        { name: 'Legacy', a: 1, params: { ...DEFAULT_PARAMS, generatorVersion: undefined } },
+        { name: 'New', a: 2, params: { ...DEFAULT_PARAMS, generatorVersion: CURRENT_GENERATOR_VERSION } },
+      ],
+    })
+    expect(out.bodies.find((b) => b.name === 'Legacy')?.params.generatorVersion)
+      .toBe(LEGACY_GENERATOR_VERSION)
+    expect(out.bodies.find((b) => b.name === 'New')?.params.generatorVersion)
+      .toBe(CURRENT_GENERATOR_VERSION)
+  })
 })
 
 describe('duplicateSystem', () => {
@@ -357,6 +372,7 @@ describe('adding a world', () => {
     const s = addRolledWorld(emptySystem(7), 'ice', 42)
     expect(s.bodies).toHaveLength(1)
     expect(s.bodies[0].params.preset).toBe('ice')
+    expect(s.bodies[0].params.generatorVersion).toBe(CURRENT_GENERATOR_VERSION)
   })
 
   it('is reproducible from its seed', () => {
@@ -464,6 +480,15 @@ describe('rollSystem', () => {
       }
     }
   })
+
+  it('uses the current generator for rolled and bundled seeded worlds', () => {
+    expect(rollSystem(1234).bodies.every(
+      (b) => b.params.generatorVersion === CURRENT_GENERATOR_VERSION,
+    )).toBe(true)
+    expect(MILKY_WAY.bodies.every(
+      (b) => b.params.generatorVersion === CURRENT_GENERATOR_VERSION,
+    )).toBe(true)
+  })
 })
 
 describe('worldInSystem', () => {
@@ -484,6 +509,9 @@ describe('worldInSystem', () => {
     const sys = addWorld(emptySystem(1), 'Original', params)
     expect(worldInSystem(sys, { ...params, seed: 778 })).toBe(false)
     expect(worldInSystem(sys, { ...params, water: params.water + 0.2 })).toBe(false)
+    // Generator version is geography, so the same seed/sliders interpreted by
+    // v2 cannot be mistaken for the v1 world already in orbit.
+    expect(worldInSystem(sys, { ...params, generatorVersion: CURRENT_GENERATOR_VERSION })).toBe(false)
   })
 
   it('ignores render controls, which are not part of a world', () => {

@@ -1,5 +1,15 @@
+/**
+ * A terrain algorithm is part of geography, not presentation.  Persist it so
+ * a shared seed keeps meaning the same thing after a newer generator ships.
+ */
+export const LEGACY_GENERATOR_VERSION = 1 as const
+export const CURRENT_GENERATOR_VERSION = 2 as const
+export type GeneratorVersion = typeof LEGACY_GENERATOR_VERSION | typeof CURRENT_GENERATOR_VERSION
+
 /** The complete description of a world. Everything else is derived from this. */
 export interface PlanetParams {
+  /** Which deterministic terrain generator interprets this world's seed. */
+  generatorVersion: GeneratorVersion
   seed: number
   preset: PresetKey
   mountains: number
@@ -49,17 +59,43 @@ export interface PlanetParams {
    * of the loaded system — a sculpted world is nowhere in particular.
    */
   sky?: boolean
-  /**
-   * Rendering tier for the single-world view. `flat` is the baked map on a
-   * smooth sphere; `detailed` is displaced geometry with fluid shells.
-   * Unset lets the world pick: photographs and gas giants render flat,
-   * sculpted rock renders detailed. A quality choice, never identity.
-   */
-  tier?: 'flat' | 'detailed'
   /** Universe appearance, 0..1 each with 0.5 the look the app always drew. */
   starDensity?: number
   starBright?: number
   exposure?: number
+  /**
+   * Derived from the world-system relationship at render/scan time. Never
+   * persisted as part of the seed: moving the same world changes its climate
+   * without changing its canonical geography.
+   */
+  climate?: OrbitalClimate
+}
+
+export type ClimateRegime = 'scorching' | 'hot' | 'temperate' | 'cold' | 'frozen' | 'gas'
+
+/** A deterministic energy-balance estimate, not an observed weather record. */
+export interface OrbitalClimate {
+  readonly schema: 'arc-worlds-orbital-climate-1'
+  readonly source: 'modeled'
+  /** Orbit-averaged incident energy, in present-day Earth solar constants. */
+  readonly stellarFlux: number
+  readonly equilibriumTemperatureK: number
+  readonly meanSurfaceTemperatureK: number
+  readonly perihelionTemperatureK: number
+  readonly aphelionTemperatureK: number
+  /** Fraction of the world's water inventory able to remain surface liquid. */
+  readonly liquidWater: number
+  /** Approximate fraction of the whole surface covered by persistent frost. */
+  readonly surfaceIce: number
+  /** Climate support for Earth-like photosynthetic land life, not a detection. */
+  readonly vegetationPotential: number
+  /** Latitude at which persistent polar frost begins; 0 is global, 90 none. */
+  readonly iceLineLatitudeDeg: number
+  readonly tidalHeatingK: number
+  readonly habitableZoneInnerAU: number
+  readonly habitableZoneOuterAU: number
+  readonly inHabitableZone: boolean
+  readonly regime: ClimateRegime
 }
 
 export type PresetKey =
@@ -246,6 +282,8 @@ export interface Star {
   color: number
   /** Mass in solar masses. Sets how fast everything else orbits. */
   mass: number
+  /** Bolometric luminosity in solar units; inferred from mass when omitted. */
+  luminosity?: number
 }
 
 /**

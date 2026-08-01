@@ -32,7 +32,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .orderBy(desc(systems.createdAt))
         .limit(limit)
 
-      return res.status(200).json({ systems: rows })
+      // As with saved worlds, normalise old nested body params on read so
+      // version identity is explicit everywhere the API exposes a system.
+      return res.status(200).json({ systems: rows.map((row) => ({ ...row, def: sanitizeSystem(row.def) })) })
     }
 
     if (req.method === 'POST') {

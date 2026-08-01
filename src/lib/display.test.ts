@@ -25,7 +25,7 @@ describe('loadDisplay', () => {
   it('starts from the defaults: the exact look the app always drew', () => {
     vi.stubGlobal('localStorage', fakeStorage())
     expect(loadDisplay()).toEqual({
-      paths: true, labels: false, moons: true, sky: false, tier: 'auto',
+      paths: true, labels: false, moons: true, sky: false,
       starDensity: 0.5, starBright: 0.5, nebula: 'none', exposure: 0.5,
       pauseOnHover: false,
     })
@@ -34,7 +34,7 @@ describe('loadDisplay', () => {
   it('round-trips what was saved', () => {
     vi.stubGlobal('localStorage', fakeStorage())
     const chosen = {
-      paths: false, labels: true, moons: false, sky: true, tier: 'flat',
+      paths: false, labels: true, moons: false, sky: true,
       starDensity: 0.9, starBright: 0.2, nebula: 'violet', exposure: 0.7,
       pauseOnHover: true,
     } as const
@@ -56,11 +56,12 @@ describe('loadDisplay', () => {
     expect(d.exposure).toBe(0.5)
   })
 
-  it('rejects a tier value it does not recognise', () => {
+  it('ignores the retired rendering-tier preference', () => {
     const store = fakeStorage()
-    store.map.set('little-worlds.display', JSON.stringify({ tier: 'ultra' }))
+    store.map.set('little-worlds.display', JSON.stringify({ tier: 'flat' }))
     vi.stubGlobal('localStorage', store)
-    expect(loadDisplay().tier).toBe('auto')
+    expect(loadDisplay()).toEqual(DEFAULT_DISPLAY)
+    expect('tier' in loadDisplay()).toBe(false)
   })
 
   it('falls back to defaults on a corrupt stored value', () => {
@@ -71,13 +72,12 @@ describe('loadDisplay', () => {
   })
 
   it('fills in fields missing from an older stored shape', () => {
-    // A phase-1 blob has neither tier nor universe; it must load with those
-    // defaulted, not fail.
+    // A phase-1 blob has no universe fields; it must load with those defaulted.
     const store = fakeStorage()
     store.map.set('little-worlds.display', JSON.stringify({ paths: false }))
     vi.stubGlobal('localStorage', store)
     expect(loadDisplay()).toEqual({
-      paths: false, labels: false, moons: true, sky: false, tier: 'auto',
+      paths: false, labels: false, moons: true, sky: false,
       starDensity: 0.5, starBright: 0.5, nebula: 'none', exposure: 0.5,
       pauseOnHover: false,
     })

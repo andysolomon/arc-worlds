@@ -9,7 +9,7 @@
 import { ORBITS, REAL, realKeyFor } from '../engine/planets'
 import { periodFor } from '../engine/scale'
 import type { PlanetParams, PresetKey, SystemBody, SystemDef } from '../engine/types'
-import { DEFAULT_PARAMS } from '../lib/params'
+import { CURRENT_PARAMS } from '../lib/params'
 import { FICTION, MOONS, PRESETS, SOLAR } from './presets'
 
 export const MILKY_WAY_ID = 'milky-way'
@@ -50,7 +50,7 @@ function satellitesOf(planet: string, planetRadius: number, key: string): System
       tilt: own?.ob ?? 0,
       flattening: own?.f ?? 0,
       day: m.P * 24,
-      params: { ...DEFAULT_PARAMS, ...w.params, preset: w.key } as PlanetParams,
+      params: { ...CURRENT_PARAMS, ...w.params, preset: w.key } as PlanetParams,
       texture: null,
       ring: null,
       orbits: planet,
@@ -63,7 +63,7 @@ export const MILKY_WAY: SystemDef = {
   name: 'The Solar System',
   sub: 'ours · every number measured',
   origin: 'measured',
-  star: { name: 'The Sun', color: 0xffffff, mass: 1 },
+  star: { name: 'The Sun', color: 0xffffff, mass: 1, luminosity: 1 },
   bodies: ORBITS.map((o, i): SystemBody => {
     const R = REAL[realKeyFor(o[0])]
     const s = SOLAR[i]
@@ -81,7 +81,7 @@ export const MILKY_WAY: SystemDef = {
       day: R.day,
       texture: s.params.texture ?? null,
       ring: R.ring ?? null,
-      params: { ...DEFAULT_PARAMS, ...s.params, preset: s.key } as PlanetParams,
+      params: { ...CURRENT_PARAMS, ...s.params, preset: s.key } as PlanetParams,
     } satisfies SystemBody
   }).concat(
     ORBITS.flatMap((o, i) => satellitesOf(SOLAR[i].name, o[7], realKeyFor(o[0]))),
@@ -91,7 +91,7 @@ export const MILKY_WAY: SystemDef = {
 /** A sculpted world, at the defaults for its type. */
 function world(preset: PresetKey, seed: number, over: Partial<PlanetParams> = {}): PlanetParams {
   const def = PRESETS.find((p) => p.key === preset)?.def ?? {}
-  return { ...DEFAULT_PARAMS, ...def, preset, seed, ...over }
+  return { ...CURRENT_PARAMS, ...def, preset, seed, ...over }
 }
 
 const HALCYON_MASS = 0.78
@@ -102,7 +102,7 @@ export const ANDROMEDA: SystemDef = {
   name: 'Andromeda',
   sub: 'imagined · not a measured system',
   origin: 'imagined',
-  star: { name: 'Halcyon', color: 0xffb478, mass: HALCYON_MASS },
+  star: { name: 'Halcyon', color: 0xffb478, mass: HALCYON_MASS, luminosity: 0.37 },
   bodies: [
     body('Cinderpip', 0.19, 0.62, world('lava', 8801, { glow: 0.85, clouds: 0.1 }), {
       e: 0.09, inc: 3.4, node: 22, peri: 118, tilt: 1.2, day: 620,
@@ -172,7 +172,7 @@ export const TRAPPIST: SystemDef = {
   name: 'TRAPPIST-1',
   sub: 'observed · seven measured orbits, every surface imagined',
   origin: 'observed',
-  star: { name: 'TRAPPIST-1', color: 0xff8659, mass: 0.0898 },
+  star: { name: 'TRAPPIST-1', color: 0xff8659, mass: 0.0898, luminosity: 0.000553 },
   bodies: [
     observed('TRAPPIST-1 b', 0.01154, 0.004136, 0.00622, 1.116, 36.26, world('lava', 701, { glow: 0.4, clouds: 0.05, ice: 0 })),
     observed('TRAPPIST-1 c', 0.0158, 0.00663, 0.00654, 1.097, 58.12, world('desert', 702, { water: 0.02, clouds: 0.1 })),
@@ -190,7 +190,7 @@ export const PROXIMA: SystemDef = {
   name: 'Proxima Centauri',
   sub: 'observed · the nearest exoplanet, surface imagined',
   origin: 'observed',
-  star: { name: 'Proxima Centauri', color: 0xff9d6f, mass: 0.1221 },
+  star: { name: 'Proxima Centauri', color: 0xff9d6f, mass: 0.1221, luminosity: 0.0017 },
   bodies: [
     observed('Proxima Centauri b', 0.04857, 0.030628, 0.02, 1.1, 268.5, world('ice', 711, { water: 0.5, ice: 0.6, clouds: 0.3 })),
   ],
@@ -202,7 +202,7 @@ export const PEGASI_51: SystemDef = {
   name: '51 Pegasi',
   sub: 'observed · the first exoplanet around a Sun-like star',
   origin: 'observed',
-  star: { name: '51 Pegasi', color: 0xfff4e4, mass: 1.06 },
+  star: { name: '51 Pegasi', color: 0xfff4e4, mass: 1.06, luminosity: 1.36 },
   bodies: [
     observed('51 Pegasi b', 0.0527, 0.011583, 0.008, 13.4, 101.5, world('gasAmber', 712, { rings: false, glow: 0.55 })),
   ],
@@ -214,7 +214,7 @@ export const KEPLER_452: SystemDef = {
   name: 'Kepler-452',
   sub: 'observed · an Earth-length year around a Sun-like star',
   origin: 'observed',
-  star: { name: 'Kepler-452', color: 0xfff8ec, mass: 1.037 },
+  star: { name: 'Kepler-452', color: 0xfff8ec, mass: 1.037, luminosity: 1.2 },
   bodies: [
     observed('Kepler-452 b', 1.046, 1.0537, 0.01, 1.63, 24, world('temperate', 713, { water: 0.6, clouds: 0.5, ice: 0.2 })),
   ],
@@ -223,7 +223,7 @@ export const KEPLER_452: SystemDef = {
 /** A homage world, loaded whole from its FICTION entry at its canonical seed. */
 function storyWorld(key: PresetKey): PlanetParams {
   const f = FICTION.find((x) => x.key === key)
-  return { ...DEFAULT_PARAMS, ...(f?.params ?? {}), preset: key } as PlanetParams
+  return { ...CURRENT_PARAMS, ...(f?.params ?? {}), preset: key } as PlanetParams
 }
 
 /**
@@ -236,7 +236,7 @@ export const ERIDANI_40: SystemDef = {
   name: '40 Eridani',
   sub: 'imagined · a real star wearing a story — Project Hail Mary',
   origin: 'imagined',
-  star: { name: '40 Eridani A', color: 0xffc98a, mass: 0.78 },
+  star: { name: '40 Eridani A', color: 0xffc98a, mass: 0.78, luminosity: 0.46 },
   bodies: [
     body('Erid', 0.218, 1.9, storyWorld('erid'), { e: 0.01, inc: 0.4, node: 68, peri: 300, tilt: 2.8, day: 122, flattening: 0.006 }, 0.78),
   ],
@@ -247,7 +247,7 @@ export const TAU_CETI: SystemDef = {
   name: 'Tau Ceti',
   sub: 'imagined · the Astrophage nursery from Project Hail Mary',
   origin: 'imagined',
-  star: { name: 'Tau Ceti', color: 0xfff0d8, mass: 0.783 },
+  star: { name: 'Tau Ceti', color: 0xfff0d8, mass: 0.783, luminosity: 0.52 },
   bodies: [
     body('Adrian', 0.25, 1.15, storyWorld('adrian'), { e: 0.02, inc: 1.1, node: 190, peri: 88, tilt: 3.4, day: 700 }, 0.783),
   ],
@@ -265,7 +265,7 @@ export const ALPHA_CENTAURI: SystemDef = {
   name: 'Alpha Centauri A',
   sub: 'imagined · Pandora and the giant it orbits',
   origin: 'imagined',
-  star: { name: 'Alpha Centauri A', color: 0xfff6e0, mass: ALPHA_CEN_MASS },
+  star: { name: 'Alpha Centauri A', color: 0xfff6e0, mass: ALPHA_CEN_MASS, luminosity: 1.52 },
   bodies: [
     body('Polyphemus', 1.25, 11.5, world('gasMist', 2154, { rings: false, glow: 0.5, roughness: 0.6 }), { e: 0.02, inc: 0.8, node: 150, peri: 30, tilt: 7.6, flattening: 0.06, day: 16 }, ALPHA_CEN_MASS),
     // Pandora orbits Polyphemus, as the fiction has it. The distance and the

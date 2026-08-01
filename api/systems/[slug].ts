@@ -3,6 +3,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { getDb } from '../../db/index.js'
 import { systems } from '../../db/schema.js'
 import { cacheImmutable, fail } from '../_lib.js'
+import { sanitizeSystem } from '../../src/lib/systems.js'
 
 const SLUG_RE = /^[A-Za-z0-9_-]{3,64}$/
 
@@ -33,7 +34,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // A system never changes once saved, so this can cache hard.
     cacheImmutable(res)
-    return res.status(200).json({ system: row })
+    return res.status(200).json({ system: { ...row, def: sanitizeSystem(row.def) } })
   } catch (e) {
     console.error('[api/systems/:slug]', e)
     return fail(res, 500, 'Could not load that system.')

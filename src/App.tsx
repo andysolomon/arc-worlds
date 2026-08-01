@@ -6,11 +6,10 @@ import { Viewport } from './components/Viewport'
 import { WorldsPanel } from './components/WorldsPanel'
 import { MOONS, PRESETS, SOLAR, typeOf, type AncientWorld } from './data/presets'
 import { MILKY_WAY } from './data/systems'
+import { climateForBody, standaloneClimate, withSystemClimates } from './engine/climate'
 import { parentOf } from './engine/planets'
-import {
-  loadDisplay, nebulaCss, saveDisplay, type DisplayOptions, type TierChoice,
-} from './lib/display'
-import { DEFAULT_PARAMS, sanitize, surprise } from './lib/params'
+import { loadDisplay, nebulaCss, saveDisplay, type DisplayOptions } from './lib/display'
+import { CURRENT_PARAMS, sanitize, surprise } from './lib/params'
 import {
   addMoon, addRolledWorld, addWorld, duplicateBody, editableCopy, hasRoom, sanitizeSystem,
 } from './lib/systems'
@@ -19,7 +18,7 @@ import {
   getSystem, getWorld, listSystems, listWorlds, saveSystem, saveWorld,
   type SavedSystem, type SavedWorld,
 } from './lib/api'
-import type { PlanetParams, PresetKey, SystemDef } from './engine/types'
+import { CURRENT_GENERATOR_VERSION, type PlanetParams, type PresetKey, type SystemDef } from './engine/types'
 import './styles.css'
 
 type Tab = 'sculpt' | 'scan' | 'solar' | 'worlds'
@@ -48,8 +47,9 @@ function routeFromLocation(): { kind: 'w' | 's'; slug: string } | null {
 export default function App() {
   const [tab, setTab] = useState<Tab>('sculpt')
   const [name, setName] = useState('Peachmoss')
-  const [params, setParams] = useState<PlanetParams>(DEFAULT_PARAMS)
+  const [params, setParams] = useState<PlanetParams>(CURRENT_PARAMS)
   const [system, setSystem] = useState<SystemDef>(MILKY_WAY)
+  const [selectedBodyIndex, setSelectedBodyIndex] = useState<number | null>(null)
   const [view, setView] = useState<'single' | 'system'>('single')
   const [sizeMode, setSizeMode] = useState<'same' | 'scale'>('same')
   const [timeScale, setTimeScale] = useState(1)
@@ -79,9 +79,25 @@ export default function App() {
   // Params handed to the engine. `view`, `timeScale` and the display toggles
   // are render concerns, not part of the world's identity, so they are merged
   // in only here.
+  const climateSystem = useMemo(() => withSystemClimates(system), [system])
+  const activeClimate = useMemo(() => {
+    const selected = selectedBodyIndex == null ? null : system.bodies[selectedBodyIndex]
+    const body = selected &&
+      selected.params.preset === params.preset &&
+      selected.params.seed === params.seed &&
+      selected.params.generatorVersion === params.generatorVersion
+      ? selected
+      : system.bodies.find((candidate) =>
+      candidate.params.preset === params.preset &&
+      candidate.params.seed === params.seed &&
+      candidate.params.generatorVersion === params.generatorVersion)
+    return body ? climateForBody(system, body) : standaloneClimate(params)
+  }, [params, selectedBodyIndex, system])
+
   const enginePar = useMemo<PlanetParams>(
     () => ({
       ...params,
+      climate: activeClimate,
       mode: view === 'system' ? 'system' : 'single',
       sizeMode,
       timeScale,
@@ -91,20 +107,15 @@ export default function App() {
       showMoons: display.moons,
       sky: display.sky,
       pauseOnHover: display.pauseOnHover,
-      tier: display.tier === 'auto' ? undefined : display.tier,
       starDensity: display.starDensity,
       starBright: display.starBright,
       exposure: display.exposure,
     }),
-    [params, view, sizeMode, timeScale, display],
+    [params, activeClimate, view, sizeMode, timeScale, display],
   )
 
   const toggleDisplay = useCallback((k: 'paths' | 'labels' | 'moons' | 'sky') => {
     setDisplay((d) => ({ ...d, [k]: !d[k] }))
-  }, [])
-
-  const setTier = useCallback((tier: TierChoice) => {
-    setDisplay((d) => ({ ...d, tier }))
   }, [])
 
   const setDisplayField = useCallback(
@@ -179,42 +190,68 @@ export default function App() {
 
   const setParam = useCallback(<K extends keyof PlanetParams>(k: K, v: PlanetParams[K]) => {
     // Changing the seed means this is no longer the real planet, so drop its
-    // photographic map and fall back to procedural terrain.
-    setParams((s) => ({ ...s, [k]: v, ...(k === 'seed' ? { texture: null, cloudTexture: null } : null) }))
+    // photographic map and fall back to procedural terrain. It also starts a
+    // fresh world, so it is an explicit opt-in to the current generator; an
+    // untouched v1 payload remains v1 when merely opened or edited.
+    setParams((s) => ({
+      ...s,
+      [k]: v,
+      ...(k === 'seed'
+        ? { generatorVersion: CURRENT_GENERATOR_VERSION, texture: null, cloudTexture: null }
+        : null),
+    }))
     setScan(null)
     setSavedSlug(null)
+    setSelectedBodyIndex(null)
   }, [])
 
   const applyPreset = useCallback((key: PresetKey) => {
     const p = PRESETS.find((x) => x.key === key)
-    setParams((s) => ({ ...s, ...(p?.def ?? {}), preset: key, texture: null, cloudTexture: null }))
+    setParams((s) => ({
+      ...s,
+      ...(p?.def ?? {}),
+      generatorVersion: CURRENT_GENERATOR_VERSION,
+      preset: key,
+      texture: null,
+      cloudTexture: null,
+    }))
     setScan(null)
     setSavedSlug(null)
+    setSelectedBodyIndex(null)
   }, [])
 
   /** Load an ancient world whole — canonical seed, sliders, name and all. */
   const applyAncient = useCallback((a: AncientWorld) => {
-    setParams({ ...DEFAULT_PARAMS, ...a.params, preset: a.key, texture: null, cloudTexture: null })
+    setParams({ ...CURRENT_PARAMS, ...a.params, generatorVersion: CURRENT_GENERATOR_VERSION, preset: a.key, texture: null, cloudTexture: null })
     setName(a.name)
     setScan(null)
     setSavedSlug(null)
+    setSelectedBodyIndex(null)
   }, [])
 
   /** Clicking a moon that is a world visits it, the way a planet card does. */
   const visitMoon = useCallback((w: { preset: PresetKey; seed: number }) => {
     const m = MOONS.find((x) => x.key === w.preset && x.params.seed === w.seed)
     if (!m) return
-    setParams({ ...DEFAULT_PARAMS, ...m.params, preset: m.key, texture: null, cloudTexture: null })
+    setParams({ ...CURRENT_PARAMS, ...m.params, generatorVersion: CURRENT_GENERATOR_VERSION, preset: m.key, texture: null, cloudTexture: null })
     setName(m.name)
     setScan(null)
     setSavedSlug(null)
+    setSelectedBodyIndex(system.bodies.findIndex((body) =>
+      body.params.preset === w.preset && body.params.seed === w.seed))
     setView('single')
     setTab('sculpt')
-  }, [])
+  }, [system])
 
   const reshape = useCallback(() => {
-    setParams((s) => ({ ...s, texture: null, cloudTexture: null }))
+    setParams((s) => ({
+      ...s,
+      generatorVersion: CURRENT_GENERATOR_VERSION,
+      texture: null,
+      cloudTexture: null,
+    }))
     setScan(null)
+    setSelectedBodyIndex(null)
   }, [])
 
   const onSurprise = useCallback(() => {
@@ -223,6 +260,7 @@ export default function App() {
     setName(nextName)
     setScan(null)
     setSavedSlug(null)
+    setSelectedBodyIndex(null)
     setView('single')
     setTab('sculpt')
   }, [])
@@ -232,6 +270,7 @@ export default function App() {
   /** Select or replace the system on screen. */
   const chooseSystem = useCallback((def: SystemDef) => {
     setSystem(def)
+    setSelectedBodyIndex(null)
     setSavedSystemSlug(null)
     // Choosing a system means wanting to look at it, not at whichever single
     // world happened to be on screen beforehand.
@@ -264,12 +303,17 @@ export default function App() {
       if (host) return { kind: 'planet' as const, label: host.name, host }
     }
     const mine = system.bodies.find(
-      (b) => b.orbits && b.params.preset === params.preset && b.params.seed === params.seed,
+      (b) => b.orbits &&
+        b.params.preset === params.preset &&
+        b.params.seed === params.seed &&
+        b.params.generatorVersion === params.generatorVersion,
     )
     const invented = mine && system.bodies.find((b) => b.name === mine.orbits)
     if (invented) return { kind: 'body' as const, label: invented.name, body: invented }
     const inSystem = system.bodies.some(
-      (b) => b.params.preset === params.preset && b.params.seed === params.seed,
+      (b) => b.params.preset === params.preset &&
+        b.params.seed === params.seed &&
+        b.params.generatorVersion === params.generatorVersion,
     )
     if (inSystem) return { kind: 'system' as const, label: system.name }
     // Only offer to join a system that will actually take the world. A full
@@ -282,7 +326,7 @@ export default function App() {
   const goBack = useCallback(() => {
     if (!back) return
     if (back.kind === 'planet') {
-      setParams({ ...DEFAULT_PARAMS, ...back.host.params, preset: back.host.key })
+      setParams({ ...CURRENT_PARAMS, ...back.host.params, generatorVersion: CURRENT_GENERATOR_VERSION, preset: back.host.key })
       setName(back.host.name)
       setScan(null)
       setSavedSlug(null)
@@ -290,6 +334,7 @@ export default function App() {
     }
     if (back.kind === 'body') {
       setParams(sanitize(back.body.params))
+      setSelectedBodyIndex(system.bodies.indexOf(back.body))
       setName(back.body.name)
       setScan(null)
       setSavedSlug(null)
@@ -305,7 +350,7 @@ export default function App() {
       setTab('solar')
     }
     setView('system')
-  }, [back, name, params])
+  }, [back, name, params, system])
 
   /**
    * Clicking the planet in a moon's sky travels to it.
@@ -321,16 +366,17 @@ export default function App() {
   /** Visit one of the bodies in the current system. */
   const visitBody = useCallback(
     (i: number) => {
-      const b = system.bodies[i]
+      const b = climateSystem.bodies[i]
       if (!b) return
       setParams(sanitize(b.params))
+      setSelectedBodyIndex(i)
       setName(b.name)
       setScan(null)
       setSavedSlug(null)
       setView('single')
       setTab('sculpt')
     },
-    [system],
+    [climateSystem],
   )
 
   /*
@@ -424,12 +470,12 @@ export default function App() {
     scanTimer.current = window.setTimeout(() => {
       // The sweep animation has been masking the wait, so the profile chunk
       // has had 2.1 s of runway; a failed fetch just yields no reading.
-      computeScan(params)
+      computeScan(enginePar)
         .then(setScan)
         .catch(() => setScan(null))
         .finally(() => setScanning(false))
     }, 2100)
-  }, [scanning, params])
+  }, [scanning, enginePar])
 
   useEffect(
     () => () => {
@@ -462,6 +508,7 @@ export default function App() {
 
   const openWorld = useCallback((w: SavedWorld) => {
     setParams(sanitize(w.params))
+    setSelectedBodyIndex(null)
     setName(w.name)
     setSavedSlug(w.slug)
     setView('single')
@@ -538,7 +585,7 @@ export default function App() {
 
           <Viewport
             params={enginePar}
-            system={system}
+            system={climateSystem}
             scanNonce={scanNonce}
             resetNonce={resetNonce}
             onPick={visitBody}
@@ -589,8 +636,6 @@ export default function App() {
               <SculptPanel
                 params={params}
                 name={name}
-                tier={display.tier}
-                onTier={setTier}
                 onVisitMoon={visitMoon}
                 onName={setName}
                 onParam={setParam}

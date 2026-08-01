@@ -144,7 +144,7 @@ export function realKeyFor(orbitName: string): string {
  * the unit sphere there, and everything else is measured against it.
  */
 export function parentOf(
-  p: Pick<PlanetParams, 'preset' | 'seed'>,
+  p: Pick<PlanetParams, 'preset' | 'seed'> & { generatorVersion?: PlanetParams['generatorVersion'] },
 ): {
   key: string
   radius: number
@@ -168,9 +168,12 @@ export function parentOf(
 }
 
 export function realFor(
-  p: Pick<PlanetParams, 'preset' | 'texture' | 'seed'>,
+  p: Pick<PlanetParams, 'preset' | 'texture' | 'seed'> & { generatorVersion?: PlanetParams['generatorVersion'] },
 ): RealBody | null {
   const R = REAL[p.preset]
   if (!R) return null
+  // A photograph remains a photograph whatever terrain version is selected.
+  // Seed-only measured bodies now use the current procedural mechanism too;
+  // their canonical preset+seed retains the measured orbit/rotation identity.
   return p.texture || R.seed === p.seed ? R : null
 }

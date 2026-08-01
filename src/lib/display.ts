@@ -9,14 +9,6 @@
 
 const STORAGE_KEY = 'little-worlds.display'
 
-/**
- * The rendering tier: `flat` is a baked map on a smooth sphere — what real
- * planets and the orbit view already use — and `detailed` is displaced
- * geometry with water, cloud and atmosphere shells — what the sculptor uses.
- * `auto` lets each world pick its natural tier.
- */
-export type TierChoice = 'auto' | 'flat' | 'detailed'
-
 /** Background nebula tints — a wash of colour behind the starfield. */
 export type NebulaKey = 'none' | 'ember' | 'teal' | 'violet' | 'rose'
 
@@ -68,8 +60,6 @@ export interface DisplayOptions {
    * other addition — the app should open looking exactly as it always has.
    */
   sky: boolean
-  /** Rendering tier for the single-world view; a quality choice, not identity. */
-  tier: TierChoice
   /** Starfield density, 0..1; 0.5 is the count the app always drew. */
   starDensity: number
   /** Starfield brightness, 0..1; 0.5 is the look the app always drew. */
@@ -89,7 +79,7 @@ export interface DisplayOptions {
 
 /** Every default reproduces what the app always drew; labels are opt-in. */
 export const DEFAULT_DISPLAY: DisplayOptions = {
-  paths: true, labels: false, moons: true, sky: false, tier: 'auto',
+  paths: true, labels: false, moons: true, sky: false,
   starDensity: 0.5, starBright: 0.5, nebula: 'none', exposure: 0.5,
   pauseOnHover: false,
 }
@@ -111,7 +101,6 @@ export function loadDisplay(): DisplayOptions {
       labels: typeof p.labels === 'boolean' ? p.labels : DEFAULT_DISPLAY.labels,
       moons: typeof p.moons === 'boolean' ? p.moons : DEFAULT_DISPLAY.moons,
       sky: typeof p.sky === 'boolean' ? p.sky : DEFAULT_DISPLAY.sky,
-      tier: p.tier === 'flat' || p.tier === 'detailed' ? p.tier : DEFAULT_DISPLAY.tier,
       starDensity: unit(p.starDensity, DEFAULT_DISPLAY.starDensity),
       starBright: unit(p.starBright, DEFAULT_DISPLAY.starBright),
       nebula: NEBULA_KEYS.has(p.nebula as NebulaKey) ? (p.nebula as NebulaKey) : DEFAULT_DISPLAY.nebula,

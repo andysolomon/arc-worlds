@@ -302,6 +302,145 @@ Promoted set — the ones with real character: **the Moon**, **Io**, **Europa**,
       toggle, a slider — slammed the single-world camera back to 3.15 whenever
       the world had moons, so a moon system framed itself once and lost it at
       the next keystroke.
+### 14. Planet terrain generation v2 prototype (delivered 2026-08-01)
+
+Implements the hybrid direction in
+`docs/planet-terrain-generation-research/research.md`: Arc Worlds remains the
+runtime foundation, v1 remains immutable, and richer geography compiles into
+the existing flat and detailed rendering tiers rather than replacing them.
+
+- [x] Version world geography explicitly. Missing or malformed
+      `generatorVersion` is v1; saved/API/system identity and cache keys carry
+      the version; newly rolled/reseeded worlds opt into v2. Canonical built-in
+      worlds remain v1.
+- [x] Pin complete v1 output with SHA-256 fixtures for the full 256x128 flat
+      RGBA map and the standard detailed position, color, and normal buffers.
+      `engine/surface.ts` remains unchanged.
+- [x] Add one cached 642-cell geodesic graph with typed CSR adjacency and
+      deterministic phases for continent-scale elevation, ridge-distance
+      mountains, priority-flood drainage, accumulated flow, prevailing-wind
+      moisture, temperature, and biomes.
+- [x] Resample that single canonical model into both cloud-composited flat RGBA
+      and Three-compatible detailed position/color/normal buffers. Coastlines,
+      drainage, and biomes are never regenerated at render resolution.
+- [x] Put v2 behind its own lazy module worker. Focused work preempts previews;
+      compilation yields between bounded phases; latest-wins slots reject
+      obsolete uploads; canonical arrays remain worker-owned; only final
+      artifacts transfer.
+- [x] Preserve the previous complete artifact during recompilation, use a
+      palette placeholder only on first generation, keep Orbit on shared smooth
+      geometry, and upload detailed normals without a main-thread
+      `computeVertexNormals()` call or a new shader topology.
+- [x] Suspend/cancel v2 work while paused, hidden, or offscreen, resume only missing
+      artifacts, and explicitly dispose the worker, transferred textures, and
+      Three.js resources.
+- [x] Cover topology, seams, poles, hydrology invariants, determinism,
+      flat/detail identity, cloud artifact identity, async cancellation,
+      stale-result suppression, suspension/resume, disposal, and full v1
+      compatibility.
+- [x] Before increasing canonical resolution or adding a custom normal shader,
+      add a dedicated 24-body v2 throughput/cancellation/memory browser scenario
+      and keep it within the research prototype's 3 s / 64 MB gates. The first
+      implementation deliberately stays on `MeshStandardMaterial` and the
+      modest graph until measured visual value justifies more cost.
+
+### 15. V2 Meadow visual direction (delivered 2026-08-01)
+
+Bring generator-v2 Meadow worlds materially closer to the art direction of
+Dan Greenheck's `threejs-procedural-planets` demo without adopting its
+per-fragment multi-octave terrain shader, unconditional animation loop,
+particle-atmosphere cost, or full-frame bloom pass.
+
+- [x] Preserve the canonical graph as the source of continents, drainage, and
+      climate while adding deterministic worker-side fractal surface detail at
+      artifact resolution. Flat and detailed artifacts must sample the same
+      detail function and canonical identity.
+- [x] Replace discrete Meadow biome patches with continuous height, moisture,
+      temperature, and ridge blends: deep ocean, turquoise shallows, narrow
+      warm beaches, saturated meadow/forest, dark rock, and restrained snow.
+- [x] Retune v2 Meadow material roughness, water opacity/specular response,
+      cloud altitude/opacity, atmospheric intensity, and directional contrast
+      without interaction-time shader topology changes or main-thread
+      procedural loops.
+- [x] Add deterministic detail/color tests, inspect a canonical browser
+      screenshot,
+      and full bundle/browser/performance evidence before delivery.
+
+### 16. Orbital climate and universal v2 seeds (delivered 2026-08-01)
+
+Make a world's place in a stellar system a physical input to its generated
+surface rather than an animation-only property. Keep the result honest: this
+is a deterministic first-order energy-balance estimate, not a weather or
+general-circulation simulation and never an assertion that life exists.
+
+- [x] Add stellar luminosity, orbit-averaged flux, Bond-albedo equilibrium
+      temperature, atmosphere-profile greenhouse warming, eccentric
+      perihelion/aphelion bounds, conservative habitable-zone edges, and
+      bounded satellite tidal heating.
+- [x] Derive liquid-water state, persistent polar-frost latitude/coverage,
+      evaporation/moisture, and Earth-like vegetation potential from that
+      shared climate. Feed it through v2 worker identity, biome generation,
+      flat/detail color, water/cloud shells, system cards, and spectrometer.
+- [x] Make editable measured-system copies procedural so moving Earth can
+      actually freeze or dry its appearance instead of retaining a static
+      photograph. Keep the measured original photographic and label every
+      computed climate as modeled.
+- [x] Route standalone, preset, ancient, moon, Solar System, fiction,
+      observed-system, surprise-world, and rolled-system seeds through v2.
+      Continue reading explicitly old/unversioned saved payloads as v1 until
+      the user reseeds or reshapes them.
+- [x] Cover Earth at 1 AU, Earth at Jupiter's sixth-planet orbit, satellite
+      stellar distance, luminosity fallback, climate-driven worker output,
+      and the full browser edit/visit/scan journey.
+- [x] Complete bundle, full browser, idle-render, and real-GPU performance
+      verification before delivery.
+
+### 17. V2 24-body generation stress gate (delivered 2026-08-01)
+
+Before increasing the canonical graph resolution or adding custom terrain
+shader work, exercise the actual separately loaded v2 worker at a deliberately
+larger-than-current system size. The benchmark is engineering evidence, not a
+visitor-facing route, and must remain outside the application entry bundle.
+
+- [x] Add a deterministic 24-body mix that requests production-sized flat and
+      detailed artifacts through the real v2 worker and records end-to-end
+      throughput, per-phase/worker generation time, transferred bytes, and
+      bounded canonical-cache behavior. All previews must settle within the
+      research gate of 3,000 ms and incremental cache memory within 64 MB.
+- [x] Include latest-wins replacement and focused-over-preview preemption so
+      obsolete jobs are observed as cancelled and never counted as delivered
+      GPU-ready artifacts. No compile phase may exceed 50 ms and a superseded
+      job must stop spending worker time within 100 ms of replacement.
+- [x] Record browser heap memory where the engine exposes it, clearly marking
+      the metric unavailable elsewhere rather than inventing a value. Verify
+      teardown/worker disposal and keep the scenario deterministic enough for
+      before/after comparison on the same machine.
+- [x] Add a repeatable Bun command, focused automated contract coverage, and
+      measured results in `PERFORMANCE_RESULTS.md`; then rerun the normal type,
+      lint, unit, e2e, bundle, and browser performance gates.
+
+### 18. One world, one surface; living-world diversity (delivered 2026-08-01)
+
+- [x] Retire Auto / Flat / Detailed as user-facing choices. A rocky world now
+      always receives displaced terrain, fluid, cloud, and atmosphere detail;
+      a gas giant keeps its physically appropriate animated weather shader
+      without presenting that renderer as a lower-quality tier.
+- [x] Keep orbit geometry inexpensive enough for 24-body systems while deriving
+      its coastlines, terrain colours, biomes, ice, and composited clouds from
+      the same canonical v2 model and seed-stable fields used in the focused
+      planet or moon view.
+- [x] Replace Meadow's single hard-coded green/blue ramp with eight controlled,
+      deterministic ecosystem families. Give Pandora six separate alien
+      biosphere families, so a shared terrain profile no longer implies a
+      shared visual identity.
+- [x] Apply each ecosystem's ocean identity to both the terrain projection and
+      detailed water shell. Continue applying orbital-climate vegetation,
+      liquid-water, temperature, and polar-ice constraints over that identity.
+- [x] Preserve narrow invalidation: cloud-only edits rebake only the cloud map,
+      not canonical geography or detailed geometry. The cloud worker and v2
+      orbit artifact now sample the same seamless weather function.
+- [x] Complete lint, browser, bundle-size, and real-GPU performance checks; add
+      the final measurements to `progress.txt` before marking this phase done.
 
 ### 14. The sky from where you are standing (delivered 2026-08-01)
 

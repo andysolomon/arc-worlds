@@ -45,7 +45,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .orderBy(desc(worlds.createdAt))
         .limit(limit)
 
-      return res.status(200).json({ worlds: rows })
+      // Old rows predate generatorVersion. Normalise on the API boundary so
+      // gallery consumers receive an explicit v1 identity rather than having
+      // to infer it independently.
+      return res.status(200).json({ worlds: rows.map((row) => ({ ...row, params: sanitize(row.params) })) })
     }
 
     if (req.method === 'POST') {

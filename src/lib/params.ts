@@ -7,7 +7,12 @@
  */
 import { mulberry32 } from '../engine/noise.js'
 import { PRESETS } from '../data/presets.js'
-import type { PlanetParams, PresetKey } from '../engine/types.js'
+import {
+  CURRENT_GENERATOR_VERSION,
+  LEGACY_GENERATOR_VERSION,
+  type PlanetParams,
+  type PresetKey,
+} from '../engine/types.js'
 
 /** Whimsical two-syllable world names, occasionally with a regnal suffix. */
 export function genName(r: () => number): string {
@@ -19,6 +24,10 @@ export function genName(r: () => number): string {
 }
 
 export const DEFAULT_PARAMS: PlanetParams = {
+  // This is also the compatibility baseline for hand-authored and persisted
+  // payloads. New rolls opt into v2 below; an absent field must never rewrite
+  // an existing world's geography as the generator evolves.
+  generatorVersion: LEGACY_GENERATOR_VERSION,
   seed: 31174,
   preset: 'temperate',
   mountains: 0.5,
@@ -43,6 +52,12 @@ export const DEFAULT_PARAMS: PlanetParams = {
   atmoColor: null,
   texture: null,
   cloudTexture: null,
+}
+
+/** Baseline for every new/bundled world; DEFAULT_PARAMS remains the v1 loader fallback. */
+export const CURRENT_PARAMS: PlanetParams = {
+  ...DEFAULT_PARAMS,
+  generatorVersion: CURRENT_GENERATOR_VERSION,
 }
 
 const UNIT_KEYS = [
@@ -75,6 +90,12 @@ const clamp01 = (v: unknown, fallback: number) =>
 export function sanitize(input: unknown): PlanetParams {
   const raw = (input ?? {}) as Record<string, unknown>
   const out: PlanetParams = { ...DEFAULT_PARAMS }
+
+  // Old saved worlds predate the field, so missing and malformed values are
+  // deliberately legacy v1. Only an explicit 2 opts into the new generator.
+  out.generatorVersion = raw.generatorVersion === CURRENT_GENERATOR_VERSION
+    ? CURRENT_GENERATOR_VERSION
+    : LEGACY_GENERATOR_VERSION
 
   const seed = Number(raw.seed)
   out.seed = Number.isFinite(seed) ? Math.abs(Math.floor(seed)) % 1_000_000 : DEFAULT_PARAMS.seed
@@ -121,6 +142,7 @@ export function surprise(seed = (Math.random() * 99999) | 0, forced?: PresetKey)
 
   const params: PlanetParams = {
     ...DEFAULT_PARAMS,
+    generatorVersion: CURRENT_GENERATOR_VERSION,
     seed,
     preset: preset.key,
     mountains: j(def.mountains),
