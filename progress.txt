@@ -975,3 +975,79 @@ WORTH KNOWING (a test, not this work)
   playwright.config already calls oversubscribing the GPU. Passes at the
   worker counts the project actually uses, CI included: 12 of 12 at one
   worker, and the full suite twice.
+
+2026-08-01 the sky from where you are standing
+
+DONE
+- A display option, Sky, draws the real sky in the single-world view: the
+  star this world orbits and the other planets of its system, in the
+  directions and at the angular sizes they truly have from here. Nothing
+  in it is compressed, which makes it the only part of the app at true
+  scale, and that is what it is for. The orbit view pulls Neptune in to
+  eight times Mercury's distance rather than seventy-seven, so nothing in
+  it can show what the size of a system actually means.
+- The star at its measured angular size. Mercury's sun swings from 1.14
+  to 1.73 degrees across as its eccentric orbit carries it; Earth's holds
+  between 0.525 and 0.542; Pluto's runs from 0.018 down to 0.011. A disc
+  at the true size with a bloom around it, the bloom a fixed multiple of
+  the disc, so a small sun glows small.
+- The planets as points of light, because that is what they are. Jupiter
+  from Earth is forty arcseconds — a fiftieth of the Moon — and every
+  planet in every system here is under a minute of arc. They carry their
+  own colour, and a brightness read the way a magnitude is: reflected
+  sunlight, falling off with distance twice, dimmed by the phase turned
+  away. Four decades below the brightest is the bottom of the scale.
+- Names come from the Labels option that already existed. This is the one
+  place a label is not decoration: without it the sky is honest and
+  illegible, a true-size planet being a point, and a point among fourteen
+  hundred invented stars is not a planet anybody can find.
+- The whole sky is turned by the one rotation that lands its star on the
+  light. Every angle inside it is then the true one, measured from a sun
+  that is still wherever the light sliders put it. What that leaves free
+  is the roll about the sun's own axis, and nothing depends on it.
+- A moon observes from its planet. Ours is a fifth of a percent of the
+  way to the Sun, which moves nothing in that sky by a pixel — and the
+  planet itself is left out, the view already drawing it beside the moon
+  at 28 degrees across.
+
+WORTH KNOWING
+- The star is off screen more often than not, and that is the geometry
+  rather than a bug. The default light comes over the viewer's shoulder,
+  which is what makes these worlds look lit; a sun behind you is a sun
+  you have to turn round for. The panel says so when the option is on.
+- Two clocks, and they disagree on purpose. The orbit view runs a year in
+  fourteen seconds so orbits can be watched. The sky runs a year in
+  fourteen times 365 — the rate a day implies, which is the clock this
+  view is built around — so the sky is nearly still over a day, as a sky
+  should be. They agree at the start and drift apart after that.
+- Sizes are set by giving each sprite a scale equal to its angular size in
+  radians. With sizeAttenuation off that is exactly what three.js means by
+  scale, which is why the numbers in the tests are the numbers in the
+  textbook and not a fudge factor.
+- Fixed in passing, and for the second time it has cost an hour: the
+  "holding on hover" test compared a frame counter published every tenth
+  frame across a fixed 900 ms window, which at the 30 fps passive cadence
+  is two or three ticks and on a busy machine sometimes none. The two
+  assertions that a clock is running now poll for it instead. The one
+  that it is stopped keeps its stopwatch, because proving something never
+  happens does mean watching for a while and seeing it not happen. Six of
+  six at the parallelism that failed five of six before.
+
+- The first attempt drew the sun invisibly. It was the right size — ten
+  pixels for Earth — but the dot texture spent eight of those pixels on a
+  soft halo, leaving a smudge nobody could find. A bright core with the
+  bloom moved out into a second, wider sprite fixed it.
+
+VERIFIED
+- bun run typecheck
+- bun run lint
+- bun run test: 145 passed, 10 of them new and all about real numbers
+- bun run build
+- bun run size:check: passed, entry 244 KB of 256 KB gzip
+- bun run perf:smoke: passed, activeRendererFps 23.3 — unchanged
+- bun run test:e2e: 35 passed
+- Watched by hand: the Sun from Earth's night side at half a degree with
+  Mercury never far from it, Saturn further round, and the whole lot
+  named. The sun's published angle from every planet matches the
+  textbook: 1.734 from Mercury, 0.534 from Earth, 0.098 from Jupiter,
+  0.018 from Neptune, 0.017 from Pluto.

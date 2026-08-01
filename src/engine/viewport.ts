@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import type { BakeWorkerRequest, BakeWorkerResponse } from './bake.worker'
 import { customRing, moonGeo, ringGeo, ringMaterial, toneTex } from './materials'
 import { mulberry32, type Noise3 } from './noise'
+import { skyFrom } from './sky'
 import { makeSurface, noiseFor } from './surface'
 import { parentOf, REAL, realFor } from './planets'
 import { isGas, PALETTES } from './palettes'
@@ -35,6 +36,27 @@ interface MoonInstance {
 
 /** Orbit-path opacity when shown. Hidden paths fade to 0 and back on hover. */
 const PATH_OPACITY = 0.55
+
+/**
+ * How far out the real sky is drawn — inside the starfield, so a planet passes
+ * in front of the invented stars rather than behind them, and far enough that
+ * nothing in the scene ever reaches it. The distance is arbitrary and has to
+ * be: these things are effectively at infinity, and only their direction and
+ * their angular size mean anything.
+ */
+const SKY_R = 300
+
+/**
+ * The smallest a sky object may be drawn, in radians.
+ *
+ * About two and a half pixels of a 45° view, which is the floor at which a
+ * point of light still reads as one. Every planet in every system here is far
+ * below it — Jupiter from Earth is a fiftieth of this — so the planets are all
+ * drawn the same size, as they appear, and it is brightness that tells them
+ * apart. The star is usually above it, and that is the whole point: a sun
+ * really is the one thing in the sky with a size worth drawing.
+ */
+const SKY_MIN_ANG = 0.0025
 
 /** The most of the frame's height a star may fill before the camera backs off. */
 const STAR_FRAME_SHARE = 0.4
@@ -196,6 +218,41 @@ function dataTexture(
   return texture
 }
 
+const dotCache = new Map<number, THREE.CanvasTexture>()
+
+/**
+ * A round dot with a soft edge, for the things in the sky too small to be
+ * discs — which, from any world in any of these systems, is all of them but the
+ * star.
+ *
+ * `core` is the fraction of the radius held at full brightness before the
+ * falloff begins, and it has to be most of it. These sprites are drawn at their
+ * true angular size, which for the Sun from Earth is ten pixels: spend eight of
+ * those on a gentle halo and what is left is a smudge nobody can find. The
+ * bloom around a bright light belongs in a second, wider sprite, where it can
+ * be soft without eating the disc.
+ */
+function skyDot(core: number): THREE.CanvasTexture {
+  const hit = dotCache.get(core)
+  if (hit) return hit
+  const n = 64
+  const cv = document.createElement('canvas')
+  cv.width = n
+  cv.height = n
+  const ctx = cv.getContext('2d')!
+  const g = ctx.createRadialGradient(n / 2, n / 2, 0, n / 2, n / 2, n / 2)
+  g.addColorStop(0, 'rgba(255,255,255,1)')
+  g.addColorStop(core, 'rgba(255,255,255,1)')
+  g.addColorStop(Math.min(0.995, core + (1 - core) * 0.55), 'rgba(255,255,255,0.45)')
+  g.addColorStop(1, 'rgba(255,255,255,0)')
+  ctx.fillStyle = g
+  ctx.fillRect(0, 0, n, n)
+  const tex = new THREE.CanvasTexture(cv)
+  tex.colorSpace = THREE.SRGBColorSpace
+  dotCache.set(core, tex)
+  return tex
+}
+
 /** A mapped placeholder keeps the material's shader variant stable on swaps. */
 function solidTexture(color: THREE.ColorRepresentation, alpha = 255): THREE.DataTexture {
   const c = new THREE.Color(color)
@@ -298,6 +355,7 @@ export class PlanetViewport {
   private lastPublishedLines = -1
   private lastPublishedPoints = -1
   private lastPublishedParent = ''
+  private lastPublishedSky = ''
   private orbitFirstRenderPending = false
   private orbitMaxRenderMs = 0
 
@@ -346,6 +404,23 @@ export class PlanetViewport {
   private spin = 0
   private dayH = 0
   private spinRate = 0.1
+  /** The real sky: the star and the other planets, drawn where they are. */
+  private skyGroup: THREE.Group
+  private skyStar: THREE.Sprite
+  private skyGlow: THREE.Sprite
+  private skyDots: THREE.Sprite[] = []
+  /** Names for the sky, made only when the labels layer is switched on. */
+  private skyLabels: Array<THREE.Sprite | null> = []
+  private skyStarLabel: THREE.Sprite | null = null
+  /** Which world's sky is being drawn, by name in its own system. */
+  private skyOf = ''
+  private skyWanted = false
+  /** Frames between recomputes; a sky is nearly still on this clock. */
+  private skyTick = 0
+  /** Published: how many bodies are up there, and how wide the sun is. */
+  private skyCount = 0
+  private sunAngle = 0
+
   private moonKey = ''
   private moons: MoonInstance[] = []
   /** How far the outermost moon reaches, for framing and for the shadow box. */
@@ -550,6 +625,34 @@ export class PlanetViewport {
       }),
     )
     this.scene.add(this.stars)
+
+    // The real sky, when it is asked for: the star this world orbits and the
+    // other planets of its system, in the directions they actually lie. It
+    // hangs off the scene rather than the world, because it does not turn with
+    // it — a day passes underneath a sky that is very nearly still.
+    this.skyGroup = new THREE.Group()
+    this.skyGroup.visible = false
+    this.scene.add(this.skyGroup)
+    const skySprite = (core: number) =>
+      new THREE.Sprite(
+        new THREE.SpriteMaterial({
+          map: skyDot(core),
+          sizeAttenuation: false,
+          transparent: true,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+        }),
+      )
+    // The star is two sprites: the disc at the size it really subtends, and a
+    // soft bloom around it. Ten pixels of sun would be a dull smudge without
+    // the second one and a lie without the first.
+    this.skyStar = skySprite(0.55)
+    this.skyStar.visible = false
+    this.skyGroup.add(this.skyStar)
+    this.skyGlow = skySprite(0.04)
+    this.skyGlow.material.opacity = 0.5
+    this.skyGlow.visible = false
+    this.skyGroup.add(this.skyGlow)
 
     // Exposure rides the tone-mapping stage. Linear at 1.0 is exactly the
     // identity, so the neutral setting cannot change a single pixel.
@@ -1094,6 +1197,195 @@ export class PlanetViewport {
     // the warmup has to run again before the first frame that needs it.
     this.compileNeeded = true
     if (!on) this.setEclipse(false)
+  }
+
+  /**
+   * Decide whether this world has a sky to show, and make room for it.
+   *
+   * A world has one when it is a body of the system currently loaded — which is
+   * how it knows where it stands. A world you have only sculpted is nowhere in
+   * particular, and gets the invented starfield it always had.
+   */
+  private syncSky(P: PlanetParams) {
+    const def = this.sysDef
+    const me = def?.bodies.find(
+      (b) => b.params.preset === P.preset && b.params.seed === P.seed,
+    )
+    this.skyWanted = P.sky === true && !!me
+    this.skyGroup.visible = this.skyWanted
+    if (!this.skyWanted || !me || !def) {
+      this.skyOf = ''
+      return
+    }
+    if (me.name === this.skyOf) return
+    this.skyOf = me.name
+
+    // One sprite per body that could be up there. The set only changes with
+    // the system, so this runs on arrival rather than per frame.
+    const want = Math.max(0, def.bodies.filter((b) => !b.orbits).length - 1)
+    while (this.skyDots.length > want) {
+      const s = this.skyDots.pop()!
+      this.skyGroup.remove(s)
+      s.material.dispose()
+      const lab = this.skyLabels.pop()
+      if (lab) {
+        this.skyGroup.remove(lab)
+        lab.material.map?.dispose()
+        lab.material.dispose()
+      }
+    }
+    while (this.skyDots.length < want) {
+      const s = new THREE.Sprite(
+        new THREE.SpriteMaterial({
+          map: skyDot(0.5),
+          sizeAttenuation: false,
+          transparent: true,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+        }),
+      )
+      s.visible = false
+      this.skyGroup.add(s)
+      this.skyDots.push(s)
+      this.skyLabels.push(null)
+    }
+    // A name changes which body each sprite is, so the old ones are wrong.
+    for (let i = 0; i < this.skyLabels.length; i++) {
+      const lab = this.skyLabels[i]
+      if (!lab) continue
+      this.skyGroup.remove(lab)
+      lab.material.map?.dispose()
+      lab.material.dispose()
+      this.skyLabels[i] = null
+    }
+    this.skyTick = 0
+    this.compileNeeded = true
+  }
+
+  /**
+   * Put the sky where it belongs, for the moment the clock is at.
+   *
+   * Two things are being reconciled. The geometry knows where the star is in
+   * the system's own frame; the view has a sun the user aims with a pair of
+   * sliders, and has had since long before any of this. So the whole sky is
+   * turned by the one rotation that lands the star on the light — after which
+   * every angle within it is the true one, measured from a sun that is where
+   * you put it. What that leaves free is the roll about the sun's own axis,
+   * and nothing observable depends on it.
+   */
+  private updateSky() {
+    const def = this.sysDef
+    if (!this.skyWanted || !def || !this.skyOf) return
+    // A drawn year is 365.25 drawn days, and a drawn day is DAY_SEC — which
+    // makes this the one clock in the app running at the rate a person on the
+    // surface would experience. The sky barely moves over a day, and that is
+    // exactly right; leave it at 20x for a while and the planets wander.
+    const sky = skyFrom(def, this.skyOf, this.t / (365.25 * DAY_SEC))
+    if (!sky) return
+
+    this.tmpV.set(...sky.star.dir)
+    this.skyGroup.quaternion.setFromUnitVectors(this.tmpV, this.sunDir)
+
+    const starAng = Math.max(SKY_MIN_ANG * 1.6, 2 * sky.star.ang)
+    this.skyStar.position.set(...sky.star.dir).multiplyScalar(SKY_R)
+    this.skyStar.scale.set(starAng, starAng, 1)
+    this.skyStar.material.color.set(def.star.color)
+    this.skyStar.visible = true
+    // The bloom is a fixed multiple of the disc, so a small sun glows small.
+    const glow = starAng * 4.5
+    this.skyGlow.position.copy(this.skyStar.position)
+    this.skyGlow.scale.set(glow, glow, 1)
+    this.skyGlow.material.color.set(def.star.color)
+    this.skyGlow.visible = true
+    this.skyStarLabel = this.nameInSky(this.skyStarLabel, sky.star.name, this.skyStar.position, starAng)
+    this.sunAngle = 2 * sky.star.ang
+
+    // Brightness spans decades, so it is read the way magnitudes are: the
+    // brightest thing up there sets the top, and four decades below it is the
+    // bottom of the scale. Everything is drawn at the same size, because
+    // everything is the same size — a point — and the bright ones bloom a
+    // little wider only because that is what brightness looks like.
+    const top = Math.log10(Math.max(1e-30, sky.bodies[0]?.bright ?? 1))
+    for (let i = 0; i < this.skyDots.length; i++) {
+      const b = sky.bodies[i]
+      const s = this.skyDots[i]
+      if (!b) {
+        s.visible = false
+        continue
+      }
+      const norm = Math.min(1, Math.max(0, (Math.log10(Math.max(1e-30, b.bright)) - top + 4) / 4))
+      const ang = SKY_MIN_ANG * (1 + 0.7 * norm)
+      s.position.set(...b.dir).multiplyScalar(SKY_R)
+      s.scale.set(ang, ang, 1)
+      s.material.opacity = 0.28 + 0.72 * norm
+      // Its own colour, the one its orbit line wears in the system view. Mars
+      // is ruddy from anywhere, and it is the only thing telling one point of
+      // light from another once they are all the same size.
+      const pal = PALETTES[def.bodies[b.index].params.preset] ?? PALETTES.temperate
+      s.material.color.set(isGas(pal) ? pal.bands[(pal.bands.length / 2) | 0][1] : pal.mid)
+      s.visible = true
+      // Named, when names are switched on. Without them the sky is honest and
+      // illegible: a planet at its true size is a point, and a point among
+      // fourteen hundred invented stars is not a planet anybody can find. This
+      // is the one place a label is not decoration but the whole difference
+      // between showing something and only having drawn it.
+      this.skyLabels[i] = this.nameInSky(this.skyLabels[i], b.name, s.position, ang)
+    }
+    this.skyCount = 1 + Math.min(this.skyDots.length, sky.bodies.length)
+  }
+
+  /**
+   * Keep one sky body's name beside it, making the sprite the first time it is
+   * needed and freeing it when the names go away again.
+   */
+  private nameInSky(
+    existing: THREE.Sprite | null,
+    name: string,
+    at: THREE.Vector3,
+    ang: number,
+  ): THREE.Sprite | null {
+    if (!this.showLabels) {
+      if (existing) {
+        this.skyGroup.remove(existing)
+        existing.material.map?.dispose()
+        existing.material.dispose()
+      }
+      return null
+    }
+    const label = existing ?? this.makeLabel(name)
+    if (!existing) {
+      // The orbit view's labels deliberately ignore depth, so a name is never
+      // lost behind the body it belongs to. Up here the opposite is wanted: a
+      // planet round the back of the world is not visible, and a name floating
+      // over the world's face claiming otherwise is a lie the picture tells.
+      label.material.depthTest = true
+      this.skyGroup.add(label)
+    }
+    label.position.copy(at)
+    // Clear of the dot, whatever size the dot came out: a sun wants more room
+    // than a planet, and both want the name above rather than across them.
+    // Closer than the orbit view's labels sit, because the thing being named
+    // is three pixels wide and a name floating far above it names nothing.
+    label.center.set(0.5, 0.5 - (0.75 + ang * 60))
+    return label
+  }
+
+  /**
+   * Where the star is on screen, in canvas pixels, or `off` when it is not.
+   *
+   * The same reasoning as the parent planet's position: the drawing buffer
+   * cannot be read back, and a thing whose whole claim is *where it is* has to
+   * say so somehow. It is off screen more often than not — the default light
+   * comes over the viewer's shoulder, which is what makes these worlds look
+   * lit, and a sun behind you is a sun you have to turn round for.
+   */
+  private projectSky(): string {
+    if (!this.skyStar.visible) return 'off'
+    this.skyStar.getWorldPosition(this.tmpV).project(this.camera)
+    if (this.tmpV.z > 1 || Math.abs(this.tmpV.x) > 1 || Math.abs(this.tmpV.y) > 1) return 'off'
+    const x = Math.round(((this.tmpV.x + 1) / 2) * this.cssW)
+    const y = Math.round(((1 - this.tmpV.y) / 2) * this.cssH)
+    return `${x},${y}`
   }
 
   /**
@@ -1804,6 +2096,7 @@ export class PlanetViewport {
     this.setShadows(this.moons.length > 0, this.moonSpan)
 
     this.syncCompanion(P)
+    this.syncSky(P)
 
     // A moon with a planet beside it needs room for both. Framed tight, the
     // planet sits outside the view for all but a sliver of each orbit.
@@ -2356,6 +2649,9 @@ export class PlanetViewport {
     }
     this.amb.intensity = 0.16
     this.sun.visible = false
+    // The sky belongs to standing on a world, not to looking down on a system.
+    this.skyGroup.visible = false
+    this.skyWanted = false
     this.sunDir.set(5, 3, 4).normalize()
 
     this.planet.visible = false
@@ -2751,6 +3047,12 @@ export class PlanetViewport {
 
     this.scene.updateMatrixWorld()
     if (this.shadows) this.setEclipse(this.shadowOnTheWorld())
+    // A sky moves a degree a day, so recomputing it every frame would be work
+    // spent on a picture nobody could tell from the last one.
+    if (this.skyWanted && this.skyTick-- <= 0) {
+      this.skyTick = 8
+      this.updateSky()
+    }
 
     if (this.atmo.visible) {
       const amat = this.atmo.material as THREE.ShaderMaterial
@@ -2821,6 +3123,18 @@ export class PlanetViewport {
       this.lastPublishedParent = parentXY
       if (parentXY) cv.dataset.parent = parentXY
       else delete cv.dataset.parent
+    }
+    // What is in the sky and how wide its sun is, in degrees. The angle is the
+    // claim worth checking from outside: half a degree from Earth and a
+    // hundredth from Pluto is the fact the whole option exists to show, and no
+    // count of triangles can tell you whether it came out right.
+    const skyNow = this.skyWanted
+      ? `${this.skyCount}|${(this.sunAngle * (180 / Math.PI)).toFixed(3)}|${this.projectSky()}`
+      : ''
+    if (skyNow !== this.lastPublishedSky) {
+      this.lastPublishedSky = skyNow
+      if (skyNow) cv.dataset.sky = skyNow
+      else delete cv.dataset.sky
     }
 
     const frameGap = this.lastRender ? now - this.lastRender : 0
