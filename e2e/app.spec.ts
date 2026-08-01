@@ -810,3 +810,30 @@ test('holding on hover stops the clock, and only while asked', async ({ page }) 
   await page.waitForTimeout(900)
   expect(await frames()).toBeGreaterThan(freed)
 })
+
+test('the Moon stands in front of the sun, and the Earth wears the shadow', async ({ page }) => {
+  test.slow() // eclipses arrive in seasons, and a season has to come round
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Systems' }).click()
+  await page.getByRole('button', { name: 'Body list' }).click()
+  await page.getByRole('button', { name: /^Earth/ }).click()
+  await expect(page.getByRole('heading', { name: 'Earth' })).toBeVisible()
+  await awaitGeometry(page)
+
+  // A shadow is geometry, not decoration — and the drawing buffer is gone by
+  // the time a test could look at it, so the engine publishes how many times a
+  // moon has stood between the sun and the world. Wound forward, the Moon's
+  // orbit precesses into line with the sunlight and the shadows start falling.
+  const eclipses = () =>
+    page.evaluate(() => Number(document.querySelector('canvas')?.dataset.eclipses ?? 0))
+  await page.getByRole('button', { name: '20×' }).click()
+  await expect.poll(eclipses, { timeout: 90_000 }).toBeGreaterThan(0)
+
+  // And it is the Moon casting it. With no moon there is nothing in the sky to
+  // cast one, so the count stops where it stood.
+  await page.getByRole('tab', { name: 'Systems' }).click()
+  await page.getByRole('button', { name: 'Moons' }).click()
+  const stopped = await eclipses()
+  await page.waitForTimeout(3000)
+  expect(await eclipses()).toBe(stopped)
+})

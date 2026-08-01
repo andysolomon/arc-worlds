@@ -266,6 +266,43 @@ Promoted set — the ones with real character: **the Moon**, **Io**, **Europa**,
       Reproduced on `main` roughly one run in six. A deadline on the wait turns
       a viewport frozen until reload into one late frame.
 
+### 13. The Moon, properly (delivered 2026-08-01)
+
+- [x] A moon is never drawn smaller than it is. The sub-linear size curve
+      survives only as a floor, for Phobos and Deimos, which are subpixels at
+      their true size; above it the number is the measurement. Our Moon goes
+      from 0.09 of Earth to its real 0.273, and Charon from a pebble to the
+      half of Pluto that it is.
+- [x] The single-world camera frames the whole of a moon's orbit, derived from
+      the field of view instead of the old flat 1.32× — which had no
+      relationship to it and left two thirds of every orbit off screen. The
+      Earth is smaller for it, and the Moon is now something you watch go
+      round rather than something you catch in the corner twice a lap.
+- [x] In the orbit view a moon's year is tied to its planet's, not to the wall
+      clock. Each planet's moons share one factor, slowed together until the
+      fastest is watchable, so their ratios are exact. Our Moon now laps Earth
+      about eleven times a year against a true thirteen; it used to manage one
+      lap every four years, which read as not going round at all.
+- [x] Tidal lock in the orbit view. Every measured satellite is locked and the
+      table says so — its sidereal day is its orbital period — so its drawn
+      spin is read off its drawn orbit rather than run on a second clock that
+      happened to agree before the two were compressed differently.
+- [x] The lock is visible, which it never was on a plain sphere: the Moon wears
+      the measured albedo difference between highlands and maria, turned toward
+      us and held there. Iapetus's dark half moves to the leading hemisphere,
+      where it belongs.
+- [x] Moons cast shadows. A moon between the sun and its world drops a real
+      shadow on it — a solar eclipse — and the moon's orbital node precesses,
+      which is why eclipses come in seasons rather than once an orbit. The
+      world does not cast back: a lunar eclipse would mean drawing tens of
+      thousands of triangles a second time every frame. Gas giants do not
+      receive, their bands being a hand-written shader that samples no shadow
+      map; that is a shader to be written, not a decision.
+- [x] Fixed along the way: every regeneration after the first — a time scale, a
+      toggle, a slider — slammed the single-world camera back to 3.15 whenever
+      the world had moons, so a moon system framed itself once and lost it at
+      the next keystroke.
+
 ### Removed scope
 
 - The dedicated Venus field trip was removed on 2026-07-29 after product

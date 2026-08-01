@@ -7,8 +7,8 @@ import { parentOf, REAL, realFor } from './planets'
 import { isGas, PALETTES } from './palettes'
 import {
   D2R, DAY_SEC, kepler, moonDist, moonPeriodSec, moonRad, sameDist,
-  satMult, satRadii, satRank, SIZE_MAX, sizeMap, starSize, systemStretch,
-  tempoFor, visDist, YEAR_SEC,
+  satMult, satRadii, satRank, satTempo, SIZE_MAX, sizeMap, starSize,
+  systemStretch, tempoFor, visDist, YEAR_SEC,
 } from './scale'
 import { ATMO_FRAG, ATMO_VERT, GAS_FRAG, GAS_VERT, SUN_FRAG, SUN_VERT } from './shaders'
 import { effectiveTier } from './tiers'
@@ -19,10 +19,16 @@ interface MoonInstance {
   orbit: THREE.Group
   mesh: THREE.Mesh
   line: THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>
+  /** Drawn radius, in planet radii. */
+  r: number
   d: number
   e: number
   P: number
   phase: number
+  /** Where the ascending node started, before precession moved it. */
+  node: number
+  /** Which face the surface markings are painted on. See `Moon.mark`. */
+  mark: number
   /** Set for moons that are worlds, which makes them clickable. */
   world?: { preset: PresetKey; seed: number }
 }
@@ -49,6 +55,29 @@ const COMPANION_DIST = 4.6
 
 /** How far back to sit when a moon has a planet to show beside it. */
 const COMPANION_CAM = 8.5
+
+/**
+ * How many of its own orbits a moon takes to precess its node once round.
+ *
+ * This is why eclipses are seasons rather than a monthly event. A moon's orbit
+ * is tilted out of the plane the sunlight arrives in, so most times round it
+ * passes above or below its planet's shadow line and nothing happens; the plane
+ * itself turns slowly, and twice per turn it lies edge-on to the sun and the
+ * shadows fall. Our Moon really takes 18.6 years — 249 lunations — which is
+ * hours of watching at any speed the app offers. Twelve keeps the mechanism and
+ * its consequence: a season comes round while somebody is still looking, and
+ * the drift is a couple of degrees an orbit rather than a tumble.
+ */
+const NODE_CYCLE_ORBITS = 12
+
+/**
+ * How much wider than the outermost moon the shadow camera looks.
+ *
+ * The shadow map is spent entirely on this box, so it is kept to what has to be
+ * in it: the moons, the world, and enough margin that a moon at the edge is not
+ * clipped mid-eclipse.
+ */
+const SHADOW_MARGIN = 0.6
 
 /**
  * The sphere the world in the single view is hit-tested against.
@@ -122,6 +151,8 @@ interface SysNode {
   labelName: string
   /** Index of the body this one orbits, or -1 for the ones orbiting the star. */
   parent: number
+  /** Tidally locked, so the drawn spin is read off the drawn orbit. */
+  lock: boolean
 }
 
 /**
@@ -317,6 +348,13 @@ export class PlanetViewport {
   private spinRate = 0.1
   private moonKey = ''
   private moons: MoonInstance[] = []
+  /** How far the outermost moon reaches, for framing and for the shadow box. */
+  private moonSpan = 0
+  /** Whether the sun is currently casting shadows, which only moons earn. */
+  private shadows = false
+  /** Whether a moon's shadow is on the world right now, published for tests. */
+  private eclipse = false
+  private eclipseCount = 0
   private real: (typeof REAL)[string] | null = null
   private ringKey = ''
   private fitZ = 3.15
@@ -349,6 +387,7 @@ export class PlanetViewport {
   private ringM3 = new THREE.Matrix3()
   private ringN = new THREE.Vector3()
   private tmpV = new THREE.Vector3()
+  private tmpM = new THREE.Vector3()
   private m3g = new THREE.Matrix3()
   private ray = new THREE.Raycaster()
   private v2 = new THREE.Vector2()
@@ -396,6 +435,25 @@ export class PlanetViewport {
     this.sun = new THREE.DirectionalLight(0xfff2df, 2.1)
     this.sun.position.set(5, 3, 4)
     this.scene.add(this.sun)
+    // Enabling the map costs nothing until a light actually casts: with no
+    // shadow-casting light in the scene, three.js compiles the same programs it
+    // always did. `setShadows` turns the sun into one, and only for a world
+    // that has a moon to throw a shadow with.
+    renderer.shadowMap.enabled = true
+    // Not PCFSoftShadowMap, however much softer an eclipse edge would look for
+    // it. Three.js deprecated it: asking for it gets a console warning and a
+    // silent swap to this on the first shadow render, and the swap recompiles
+    // every material in the scene mid-frame — which left the cloud shell
+    // sampling a shadow map that was being replaced underneath it, and painted
+    // Earth's weather black.
+    renderer.shadowMap.type = THREE.PCFShadowMap
+    // Enough to resolve a moon's silhouette across the box the shadow camera
+    // covers: at 1024 over ten units, our Moon's shadow is about 60 texels.
+    this.sun.shadow.mapSize.set(1024, 1024)
+    // An eclipse shadow is a moon's own silhouette, so acne shows up as a rash
+    // across the whole day side rather than anywhere near it. Biasing along the
+    // normal moves the comparison off the surface without detaching the shadow.
+    this.sun.shadow.normalBias = 0.02
     this.amb = new THREE.AmbientLight(0x9a8fb8, 0.34)
     this.scene.add(this.amb)
 
@@ -936,7 +994,13 @@ export class PlanetViewport {
       maxD = Math.max(maxD, dist * (1 + (d.e || 0) * 0.5))
 
       const orbit = new THREE.Group()
-      orbit.rotation.y = i * 2.399 + 0.7 // spread ascending nodes
+      // The node has to turn the tilted plane, not spin the moon inside it, so
+      // it must be the outer rotation of the two. Default Euler order applies
+      // X last, which quietly made the node a phase offset and nothing else —
+      // every moon of a planet shared one plane, and precessing it did nothing.
+      const node = i * 2.399 + 0.7
+      orbit.rotation.order = 'YXZ'
+      orbit.rotation.y = node // longitude of the ascending node
       orbit.rotation.x = (d.inc || 0) * D2R
 
       const geoKey = `${rd}:${d.irr?.join(':') ?? ''}`
@@ -957,6 +1021,9 @@ export class PlanetViewport {
         this.compileNeeded = true
       }
       const mesh = new THREE.Mesh(geo, mmat)
+      // A moon is the only thing here small enough to throw a shadow worth
+      // looking at, and cheap enough to be worth rendering twice for it.
+      mesh.castShadow = true
       orbit.add(mesh)
 
       // The moon's path, in its own orbital plane and its own colour, traced
@@ -980,11 +1047,113 @@ export class PlanetViewport {
 
       this.moonRoot.add(orbit)
       this.moons.push({
-        orbit, mesh, line, d: dist, e: ecc, P: d.P, phase: (i * 2.1) % 6.283, world: d.world,
+        orbit, mesh, line, r: rd, d: dist, e: ecc, P: d.P, phase: (i * 2.1) % 6.283,
+        node, mark: d.mark ?? 0, world: d.world,
       })
     }
     if (list.length) this.compileNeeded = true
+    this.moonSpan = maxD
     return maxD
+  }
+
+  /**
+   * Let the moons throw shadows, or stop paying for them.
+   *
+   * Only a world with moons turns this on. A shadow map is a second render of
+   * everything that casts and a second program for everything that receives,
+   * which is a real price to pay on a world with nothing to cast. The world
+   * itself does not cast: its shadow would fall on a moon behind it, which is a
+   * lunar eclipse and worth having, but the world is the tens of thousands of
+   * triangles in this scene and drawing them twice a frame is the one cost this
+   * engine has always refused. A moon is a 22-segment sphere.
+   *
+   * Gas giants are the other gap: their bands come from a hand-written shader
+   * that samples no shadow map, so Io's shadow does not cross Jupiter. That is
+   * a shader to be written, not a decision.
+   */
+  private setShadows(on: boolean, md: number) {
+    if (on) {
+      // The map is spent entirely on this box, so it holds only what has to be
+      // in it — the moons and the world — with room for a moon at the edge.
+      const c = this.sun.shadow.camera
+      const r = Math.max(1.5, md) + SHADOW_MARGIN
+      c.left = -r
+      c.right = r
+      c.top = r
+      c.bottom = -r
+      c.near = 0.5
+      c.far = 14
+      c.updateProjectionMatrix()
+    }
+    for (const mo of this.moons) mo.mesh.receiveShadow = on
+    if (on === this.shadows) return
+    this.shadows = on
+    this.sun.castShadow = on
+    for (const m of [this.planet, this.texMesh, this.water, this.clouds]) m.receiveShadow = on
+    // Sampling a shadow map is a different program from not sampling one, so
+    // the warmup has to run again before the first frame that needs it.
+    this.compileNeeded = true
+    if (!on) this.setEclipse(false)
+  }
+
+  /**
+   * Whether a moon is standing between the sun and the world.
+   *
+   * The same arithmetic the shadow map is about to do, and the only way to say
+   * so out loud: WebGL discards its drawing buffer, so no test can look at the
+   * canvas and see an eclipse. The sunlight here is parallel, so a moon's
+   * shadow is a cylinder of its own width — it falls on the world exactly when
+   * the moon is on the lit side and within a world's radius of the axis.
+   */
+  private shadowOnTheWorld(): boolean {
+    for (const mo of this.moons) {
+      mo.mesh.getWorldPosition(this.tmpM)
+      const along = this.tmpM.dot(this.sunDir)
+      if (along <= 0) continue
+      // Within one radius of the axis, which is where the shadow's own centre
+      // strikes the world. Any overlap at all would be truthful and useless:
+      // a moon a whisker outside this clips the limb with an edge of penumbra
+      // nobody would call an eclipse.
+      if (this.tmpM.lengthSq() - along * along < 1) return true
+    }
+    return false
+  }
+
+  /**
+   * Publish the eclipse, on the change rather than every frame.
+   *
+   * The running total is the half that can be relied on. An eclipse is over in
+   * a tenth of an orbit, so anything sampling `eclipse` on a timer will mostly
+   * find it false and conclude, wrongly, that shadows never fall.
+   */
+  private setEclipse(on: boolean) {
+    if (on === this.eclipse) return
+    this.eclipse = on
+    const cv = this.renderer.domElement
+    if (!on) {
+      delete cv.dataset.eclipse
+      return
+    }
+    cv.dataset.eclipse = '1'
+    cv.dataset.eclipses = String(++this.eclipseCount)
+  }
+
+  /**
+   * Frame the whole of a moon's orbit.
+   *
+   * The difference between watching a moon go round and catching sight of it in
+   * the corner twice a lap. The old rule multiplied the orbit by 1.32, which
+   * bears no relation to the field of view: at 45° a camera `d` back shows
+   * `0.41·d` either side of the middle, so 1.32 left two thirds of every orbit
+   * off screen. The orbit is drawn nearly edge-on, so width binds and height
+   * rarely does. The world is smaller in frame for this, which is the trade —
+   * a planet and its moon are a pair, and a pair has to fit.
+   */
+  private frameForMoons(md: number): number {
+    const halfV = Math.tan((this.camera.fov * D2R) / 2)
+    const byWidth = (md + 0.4) / (halfV * Math.max(0.4, this.camera.aspect))
+    const byHeight = (md * Math.abs(Math.sin(this.rotX)) + 1.35) / halfV
+    return Math.min(9.8, Math.max(3.15, byWidth, byHeight))
   }
 
   /** Create the star and the container everything orbits in, once. */
@@ -1232,7 +1401,7 @@ export class PlanetViewport {
         rSame: parent >= 0 ? 0.092 : 0.24, rScale: sizeMap(b.radius * 6371) * 0.85,
         peri: 0, angle: (i * 2.3994) % 6.2832, day: b.day, f: b.flattening,
         lineSame, lineScale, lineTarget: lineOpacity, label, labelName: b.name,
-        parent,
+        parent, lock: false,
       }
       m.userData = ud
 
@@ -1266,6 +1435,13 @@ export class PlanetViewport {
     const stretch = systemStretch(aMax)
     const tempo = tempoFor(pMin)
 
+    // Each planet's moons share one clock factor of their own, so a family
+    // keeps its internal ratios exactly and only its overall pace is eased.
+    const famMin = new Map<string, number>()
+    for (const b of bodies) {
+      if (b.orbits) famMin.set(b.orbits, Math.min(famMin.get(b.orbits) ?? Infinity, b.period))
+    }
+
     // Parents first: a satellite's drawn orbit is measured against its
     // planet's, so the planet's has to exist by the time the moon asks.
     const order = bodies
@@ -1282,11 +1458,21 @@ export class PlanetViewport {
       u.e = b.e
       // The drawn period; the body list keeps quoting the measured one. A
       // satellite's real year is days, which at the system's pace would be a
-      // blur, so it borrows the easing the single-world view already applies
-      // to moons — inner moons quick, outer ones slower, all of them watchable.
+      // blur — so its family is slowed together, which is the one easing that
+      // leaves a moon's pace tied to its planet's. The easing it used to borrow
+      // from the single-world view was in wall-clock seconds and knew nothing
+      // about the planet at all: it put the Moon round Earth once every four
+      // Earth years, which is why it read as not going round at all.
       u.period = b.orbits
-        ? moonPeriodSec(b.period * 365.25) / YEAR_SEC
+        ? b.period * tempo * satTempo((famMin.get(b.orbits) ?? b.period) * tempo)
         : b.period * tempo
+      // Every measured satellite here is tidally locked, and the table says so:
+      // its sidereal day is its orbital period. Drawn, that has to be a
+      // consequence of the orbit rather than a second clock that happens to
+      // agree, because the two are compressed differently and a spin of its own
+      // drifts — the Moon showed Earth every face it has, several times a lap.
+      const days = b.period * 365.25
+      u.lock = u.parent >= 0 && Math.abs(Math.abs(b.day) / 24 - days) < days * 0.02
       u.peri = (b.peri - b.node) * D2R
       if (u.parent >= 0) {
         // A satellite's true distance is unusable at system scale — the Moon
@@ -1586,12 +1772,20 @@ export class PlanetViewport {
     if (R) {
       // Moons off skips building them at all — Saturn carries six and Jupiter
       // four, and their meshes and per-frame Kepler work are the cost.
+      // `md` is only non-zero when the set of moons actually changed, which is
+      // the only time the camera may be moved: every later pass — a time scale,
+      // a toggle, a slider — has to leave the framing where it found it. It
+      // used to reach the second branch instead and slam the camera to 3.15,
+      // so a moon system framed itself once and lost it at the next keystroke.
       const md = this.setMoons(this.showMoons ? R.moons : [])
-      if (md) {
-        const want = Math.min(8.4, Math.max(3.15, md * 1.32))
+      if (this.moons.length) {
+        const want = this.frameForMoons(this.moonSpan)
         this.fitZ = want
-        if (Math.abs(want - this.camZ) > 0.05 && !this.dragging) this.camZ = want
-      } else if (this.camZ > 4) this.camZ = 3.15
+        if (md && Math.abs(want - this.camZ) > 0.05 && !this.dragging) this.camZ = want
+      } else {
+        this.fitZ = 3.15
+        if (this.camZ > 4) this.camZ = 3.15
+      }
     } else {
       const mc = this.showMoons ? Math.min(3, P.moons | 0) : 0
       const gm: Moon[] = []
@@ -1607,6 +1801,7 @@ export class PlanetViewport {
 
     // Toggling paths must not rebuild moons, so visibility is applied here too.
     for (const mo of this.moons) mo.line.visible = this.showPaths
+    this.setShadows(this.moons.length > 0, this.moonSpan)
 
     this.syncCompanion(P)
 
@@ -2478,17 +2673,24 @@ export class PlanetViewport {
     }
 
     for (const mo of this.moons) {
-      const ang = mo.phase + this.t * (6.2832 / moonPeriodSec(mo.P)) * (mo.P < 0 ? -1 : 1)
+      const P = moonPeriodSec(mo.P)
+      const ang = mo.phase + this.t * (6.2832 / P) * (mo.P < 0 ? -1 : 1)
+      // The node regresses, which is the whole reason eclipses arrive in
+      // seasons instead of once a month.
+      mo.orbit.rotation.y = mo.node - (this.t * 6.2832) / (P * NODE_CYCLE_ORBITS)
+      let face = ang
       if (mo.e > 0.001) {
         const Em = kepler(ang, mo.e)
         mo.mesh.position.set(
           mo.d * (Math.cos(Em) - mo.e), 0, mo.d * Math.sqrt(1 - mo.e * mo.e) * Math.sin(Em),
         )
-        mo.mesh.rotation.y = -Math.atan2(mo.mesh.position.z, mo.mesh.position.x)
+        face = Math.atan2(mo.mesh.position.z, mo.mesh.position.x)
       } else {
         mo.mesh.position.set(Math.cos(ang) * mo.d, 0, Math.sin(ang) * mo.d)
-        mo.mesh.rotation.y = -ang // tidally locked: one face always inward
       }
+      // Tidally locked: one face always inward, and whatever that face is
+      // marked with stays where the moon really wears it.
+      mo.mesh.rotation.y = mo.mark - face
     }
 
     if (this.sys?.visible) {
@@ -2501,8 +2703,13 @@ export class PlanetViewport {
         const z = u.a * Math.sqrt(1 - u.e * u.e) * Math.sin(E)
         const cp = Math.cos(u.peri)
         const sp2 = Math.sin(u.peri)
-        u.node.position.set(x * cp - z * sp2, 0, x * sp2 + z * cp)
-        u.spin.rotation.y += sdt * (6.2832 / ((Math.abs(u.day) / 24) * DAY_SEC)) * (u.day < 0 ? -1 : 1)
+        const px = x * cp - z * sp2
+        const pz = x * sp2 + z * cp
+        u.node.position.set(px, 0, pz)
+        // A locked moon's spin is its orbit: one turn a lap, the same face
+        // inward, whichever way round the drawn orbit happens to go.
+        if (u.lock) u.spin.rotation.y = -Math.atan2(pz, px)
+        else u.spin.rotation.y += sdt * (6.2832 / ((Math.abs(u.day) / 24) * DAY_SEC)) * (u.day < 0 ? -1 : 1)
       }
     }
 
@@ -2543,6 +2750,7 @@ export class PlanetViewport {
     }
 
     this.scene.updateMatrixWorld()
+    if (this.shadows) this.setEclipse(this.shadowOnTheWorld())
 
     if (this.atmo.visible) {
       const amat = this.atmo.material as THREE.ShaderMaterial

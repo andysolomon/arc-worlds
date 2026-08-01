@@ -129,6 +129,17 @@ export interface Moon {
   irr?: [number, number, number]
   /** Two-tone surface, as for Iapetus. */
   tone?: [number, number]
+  /**
+   * Where the dark half of a two-tone surface sits, in radians, measured from
+   * the face that points away from the planet.
+   *
+   * A tidally locked moon has four distinguishable faces, and real ones are not
+   * marked alike: our Moon's maria are on the near side, Iapetus's Cassini
+   * Regio on the leading one. Without this they would all be painted in the
+   * same place — the sort of detail nobody notices until it is wrong.
+   * `Math.PI` faces the planet; `-Math.PI / 2` leads the orbit.
+   */
+  mark?: number
   /** Explicit render radius/distance, used by procedural moons. */
   rd?: number
   dd?: number

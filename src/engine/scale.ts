@@ -20,9 +20,18 @@ export function moonDist(a: number): number {
   return 2.35 + 0.62 * Math.log(a / 2.8)
 }
 
-/** Moon render radius. Sub-linear so Phobos stays visible next to Titan. */
+/**
+ * Moon render radius, in planet radii.
+ *
+ * A moon is never drawn smaller than it really is. Our own Moon is 0.273 of
+ * Earth — a quarter of the planet, which is what makes the pair unusual — and
+ * the sub-linear curve alone drew it at 0.09, a third of the truth and the
+ * difference between a companion world and a speck. So the curve survives as a
+ * floor, which is all it was ever for: Phobos is 0.0033 of Mars and would be a
+ * subpixel at its true size. Above the floor, the number is the measurement.
+ */
 export function moonRad(r: number): number {
-  return Math.max(0.01, 0.03 * Math.pow(r / 0.02, 0.42))
+  return Math.max(r, 0.01, 0.03 * Math.pow(r / 0.02, 0.42))
 }
 
 /**
@@ -142,6 +151,27 @@ export function systemStretch(aMax: number): number {
  */
 export function tempoFor(pMin: number): number {
   return pMin > 0 && pMin < P_DRAW_MIN ? P_DRAW_MIN / pMin : 1
+}
+
+/** The fastest a drawn satellite orbit may be, in drawn years. */
+const SAT_P_DRAW_MIN = 0.09
+
+/**
+ * Clock multiplier for one planet's family of moons, in the orbit view.
+ *
+ * `tempoFor`, one level down. A satellite's year is measured in days, and at
+ * the system's own pace — a drawn year is 14 s — Io's 1.77 days is a 68 ms
+ * blur. So each planet's moons share one factor, chosen to slow the fastest of
+ * them to something an eye can follow: every moon in the family keeps its exact
+ * relative pace, and the family keeps its pace relative to nothing else.
+ *
+ * What this is not is the old easing, which gave every moon a period in wall
+ * clock seconds regardless of what its planet was doing. That put our Moon
+ * round Earth once every four Earth years. Here it needs a factor of 1.2, so
+ * the drawn Moon laps Earth about eleven times a year against a true thirteen.
+ */
+export function satTempo(pMin: number): number {
+  return pMin > 0 && pMin < SAT_P_DRAW_MIN ? SAT_P_DRAW_MIN / pMin : 1
 }
 
 export { SIZE_MAX, SIZE_MIN }
