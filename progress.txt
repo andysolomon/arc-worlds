@@ -590,6 +590,7 @@ VERIFIED
 NEXT
 - The satellite band is tuned for the built-in systems; a custom system
   with a satellite has no UI to create one yet.
+  (Closed the same day: the moon button and Orbits selector.)
 - Same-size mode's overlapping planets at conjunction remain a
   pre-existing oddity now shared by satellites.
 
