@@ -724,3 +724,89 @@ test('display choices survive a reload', async ({ page }) => {
   await awaitGeometry(page)
   expect(await datum(page, 'lines')).toBe(0)
 })
+
+test('the offer to join a system is one the button keeps', async ({ page }) => {
+  await page.goto('/')
+  // A freshly sculpted world belongs to nothing, so back has nowhere to go —
+  // and offers a destination instead of a return.
+  const back = page.locator('.btn-back')
+  await expect(back).toHaveText('‹ Add to The Solar System')
+
+  await back.click()
+  // Read-only systems are never edited in place, so the world lands in a copy
+  // — and the view that opens is the one it has just joined.
+  await expect(page.getByRole('heading', { name: 'The Solar System (copy)' })).toBeVisible()
+  await awaitGeometry(page)
+
+  await page.getByRole('button', { name: 'Body list' }).click()
+  await expect(page.locator('input[value="Peachmoss"]')).toBeVisible()
+  // Having joined, it has somewhere to go back to, so the offer is withdrawn.
+  await expect(back).toHaveText('‹ The Solar System (copy)')
+})
+
+test('the planet in a moon\u2019s sky is a place you can travel to', async ({ page }) => {
+  test.slow() // the planet has to come round before it can be clicked
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Systems' }).click()
+  await page.getByRole('button', { name: /Saturn/ }).click()
+  await page.getByRole('button', { name: 'Titan', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Titan' })).toBeVisible()
+  await awaitGeometry(page)
+
+  const box = (await page.locator('canvas').boundingBox())!
+  // Saturn wheels around Titan as the moon turns — one face always inward —
+  // so for part of every turn it is off the side of the view entirely. Wind
+  // time forward until it is somewhere clickable, then stop the clock so it
+  // is still there when the click lands. Where it is drawn is published for
+  // the same reason the frame counts are: the canvas cannot be read back.
+  const drawnAt = async () => {
+    const at = await page.evaluate(() => document.querySelector('canvas')?.dataset.parent)
+    return at ? (at.split(',').map(Number) as [number, number]) : null
+  }
+  const clickable = (at: [number, number] | null) =>
+    !!at && at[0] > 80 && at[0] < box.width - 80 && at[1] > 80 && at[1] < box.height - 80
+
+  await page.getByRole('button', { name: '20×' }).click()
+  await expect.poll(async () => clickable(await drawnAt()), { timeout: 60_000 }).toBe(true)
+  await page.getByRole('button', { name: 'Pause' }).click()
+
+  const at = await drawnAt()
+  // Stopped means stopped: whatever was in reach a moment ago still is.
+  expect(clickable(at)).toBe(true)
+  await page.mouse.click(box.x + at![0], box.y + at![1])
+  await expect(page.getByRole('heading', { name: 'Saturn' })).toBeVisible()
+})
+
+test('holding on hover stops the clock, and only while asked', async ({ page }) => {
+  await page.goto('/')
+  await awaitGeometry(page)
+  const box = (await page.locator('canvas').boundingBox())!
+  const onTheWorld = () => page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  const offIt = () => page.mouse.move(box.x + 8, box.y + 8)
+  const frames = () =>
+    page.evaluate(() => Number(document.querySelector('canvas')?.dataset.frames ?? 0))
+
+  // Off by default: resting on the world changes nothing.
+  await onTheWorld()
+  await page.waitForTimeout(900)
+  const running = await frames()
+  await page.waitForTimeout(900)
+  expect(await frames()).toBeGreaterThan(running)
+
+  await page.getByRole('button', { name: 'Hold on hover' }).click()
+  // Leave and return, so the engine sees the pointer arrive with the option on.
+  await offIt()
+  await page.waitForTimeout(300)
+  await onTheWorld()
+  await page.waitForTimeout(900)
+  const held = await frames()
+  await page.waitForTimeout(900)
+  expect(await frames()).toBe(held)
+
+  // The sky is not a body: moving off the world starts it again.
+  await offIt()
+  await page.waitForTimeout(900)
+  const freed = await frames()
+  await page.waitForTimeout(900)
+  expect(await frames()).toBeGreaterThan(freed)
+})

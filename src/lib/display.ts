@@ -72,12 +72,20 @@ export interface DisplayOptions {
   nebula: NebulaKey
   /** Overall exposure, 0..1; 0.5 is exactly neutral. */
   exposure: number
+  /**
+   * Stop the clock while the pointer rests on a planet or a moon.
+   *
+   * A time control, and it lives in the time bar — but it is a habit rather
+   * than a speed, so unlike the speeds it is remembered between visits.
+   */
+  pauseOnHover: boolean
 }
 
 /** Every default reproduces what the app always drew; labels are opt-in. */
 export const DEFAULT_DISPLAY: DisplayOptions = {
   paths: true, labels: false, moons: true, tier: 'auto',
   starDensity: 0.5, starBright: 0.5, nebula: 'none', exposure: 0.5,
+  pauseOnHover: false,
 }
 
 const unit = (v: unknown, fallback: number) =>
@@ -101,6 +109,8 @@ export function loadDisplay(): DisplayOptions {
       starBright: unit(p.starBright, DEFAULT_DISPLAY.starBright),
       nebula: NEBULA_KEYS.has(p.nebula as NebulaKey) ? (p.nebula as NebulaKey) : DEFAULT_DISPLAY.nebula,
       exposure: unit(p.exposure, DEFAULT_DISPLAY.exposure),
+      pauseOnHover:
+        typeof p.pauseOnHover === 'boolean' ? p.pauseOnHover : DEFAULT_DISPLAY.pauseOnHover,
     }
   } catch {
     return { ...DEFAULT_DISPLAY }

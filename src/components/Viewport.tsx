@@ -14,6 +14,8 @@ interface Props {
   onPick?: (index: number) => void
   /** A moon that is a world was clicked in the single-world view. */
   onPickMoon?: (world: { preset: PresetKey; seed: number }) => void
+  /** The planet a moon orbits was clicked, in that moon's own view. */
+  onPickParent?: () => void
   /** Nebula tint: plain CSS behind the transparent canvas, free to the GPU. */
   background?: string
 }
@@ -26,7 +28,7 @@ interface Props {
  * rebuild the scene.
  */
 export function Viewport({
-  params, system, scanNonce = 0, resetNonce = 0, onPick, onPickMoon, background,
+  params, system, scanNonce = 0, resetNonce = 0, onPick, onPickMoon, onPickParent, background,
 }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const engine = useRef<PlanetViewport | null>(null)
@@ -34,12 +36,15 @@ export function Viewport({
   pickRef.current = onPick
   const moonRef = useRef(onPickMoon)
   moonRef.current = onPickMoon
+  const parentRef = useRef(onPickParent)
+  parentRef.current = onPickParent
 
   useEffect(() => {
     if (!host.current) return
     const v = new PlanetViewport(host.current)
     v.onPick = (i) => pickRef.current?.(i)
     v.onPickMoon = (w) => moonRef.current?.(w)
+    v.onPickParent = () => parentRef.current?.()
     engine.current = v
     return () => {
       v.dispose()

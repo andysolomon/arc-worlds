@@ -27,6 +27,7 @@ describe('loadDisplay', () => {
     expect(loadDisplay()).toEqual({
       paths: true, labels: false, moons: true, tier: 'auto',
       starDensity: 0.5, starBright: 0.5, nebula: 'none', exposure: 0.5,
+      pauseOnHover: false,
     })
   })
 
@@ -35,6 +36,7 @@ describe('loadDisplay', () => {
     const chosen = {
       paths: false, labels: true, moons: false, tier: 'flat',
       starDensity: 0.9, starBright: 0.2, nebula: 'violet', exposure: 0.7,
+      pauseOnHover: true,
     } as const
     saveDisplay(chosen)
     expect(loadDisplay()).toEqual(chosen)
@@ -77,6 +79,7 @@ describe('loadDisplay', () => {
     expect(loadDisplay()).toEqual({
       paths: false, labels: false, moons: true, tier: 'auto',
       starDensity: 0.5, starBright: 0.5, nebula: 'none', exposure: 0.5,
+      pauseOnHover: false,
     })
   })
 
