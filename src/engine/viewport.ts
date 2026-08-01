@@ -14,6 +14,8 @@ import { ATMO_FRAG, ATMO_VERT, GAS_FRAG, GAS_VERT, SUN_FRAG, SUN_VERT } from './
 import { effectiveTier } from './tiers'
 import { heightAt, heightFieldFrom, type HeightField } from './heightfield'
 import type { Moon, PlanetParams, PresetKey, RingConfig, SystemBody, SystemDef } from './types'
+import { V2TerrainClient } from './v2/client'
+import type { V2WorkerResponse } from './v2/protocol'
 
 interface MoonInstance {
   orbit: THREE.Group
@@ -163,7 +165,7 @@ interface SysNode {
 function bodyKey(b: SystemBody): string {
   const p = b.params
   const baked = [
-    p.seed, p.preset, p.mountains, p.water, p.roughness, p.ice, p.clouds,
+    p.generatorVersion, p.seed, p.preset, p.mountains, p.water, p.roughness, p.ice, p.clouds,
   ].join(':')
   const ring = b.ring ?? (p.rings
     ? [p.ringN, p.ringInner, p.ringTilt, p.ringWidth, p.ringGap, p.ringOpacity, p.ringColor]
@@ -176,9 +178,12 @@ function bodyKey(b: SystemBody): string {
 /** Params that require the high-detail single-world sphere to be resampled. */
 function surfaceKey(p: PlanetParams, detail: string): string {
   return [
-    detail, p.seed, p.preset, p.mountains, p.water, p.roughness, p.ice,
+    p.generatorVersion, detail, p.seed, p.preset, p.mountains, p.water, p.roughness, p.ice,
   ].join(':')
 }
+
+const V2_FLAT_WIDTH = 256
+const V2_FLAT_HEIGHT = 128
 
 function dataTexture(
   pixels: Uint8Array,
@@ -275,6 +280,11 @@ export class PlanetViewport {
   /** CPU-heavy procedural maps are produced away from the rendering thread. */
   private worldWorker: Worker | null = null
   private cloudWorker: Worker | null = null
+  /** Created only for a v2 world; its canonical cache stays in the module worker. */
+  private v2Terrain: V2TerrainClient | null = null
+  private v2DetailKey = ''
+  private v2SeaRadius = 1
+  private v2PreviewTargets = new Map<string, { generation: number; node: SysNode }>()
   private bakeId = 0
   private bakeGeneration = 0
   private bakeTargets = new Map<number, { generation: number; node: SysNode }>()
@@ -630,6 +640,9 @@ export class PlanetViewport {
     this.ro.observe(container)
     this.io = new IntersectionObserver(([entry]) => {
       this.inView = entry?.isIntersecting ?? true
+      this.v2Terrain?.setSuspended(
+        document.hidden || !this.inView || this.p?.autoRotate === false,
+      )
       if (this.inView) this.invalidate()
       else if (this.raf) {
         cancelAnimationFrame(this.raf)
@@ -638,6 +651,9 @@ export class PlanetViewport {
     })
     this.io.observe(container)
     this.visibilityHandler = () => {
+      this.v2Terrain?.setSuspended(
+        document.hidden || !this.inView || this.p?.autoRotate === false,
+      )
       if (document.hidden && this.raf) {
         cancelAnimationFrame(this.raf)
         this.raf = 0
@@ -692,6 +708,8 @@ export class PlanetViewport {
     document.removeEventListener('visibilitychange', this.visibilityHandler)
     this.worldWorker?.terminate()
     this.cloudWorker?.terminate()
+    this.v2Terrain?.dispose()
+    this.v2Terrain = null
     this.clearBodies()
     this.flatMap?.dispose()
     this.flatSolid?.dispose()
@@ -927,7 +945,9 @@ export class PlanetViewport {
     const g = new THREE.SphereGeometry(1, seg, hseg)
     const n = g.attributes.position.count
     this.dirs = new Float32Array(g.attributes.position.array)
-    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3), 3))
+    // White vertex colour lets a first-use v2 world show its palette fallback
+    // while the worker compiles, without changing material shader topology.
+    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3).fill(1), 3))
     this.geo = g
     this.planet.geometry = g
     this.surfaceKey = ''
@@ -1188,6 +1208,8 @@ export class PlanetViewport {
   private clearBodies() {
     this.bakeGeneration++
     this.bakeTargets.clear()
+    for (const slot of this.v2PreviewTargets.keys()) this.v2Terrain?.cancel(slot)
+    this.v2PreviewTargets.clear()
     this.worldWorker?.terminate()
     this.worldWorker = null
     for (const u of this.sysNodes) {
@@ -1288,16 +1310,138 @@ export class PlanetViewport {
   }
 
   private queueWorldBake(node: SysNode, params: PlanetParams) {
+    if (params.generatorVersion === 2) {
+      const slot = `preview:${node.index}`
+      this.v2PreviewTargets.set(slot, { generation: this.bakeGeneration, node })
+      this.ensureV2Terrain().request(slot, {
+        params,
+        priority: 'preview',
+        artifact: { kind: 'flat', width: V2_FLAT_WIDTH, height: V2_FLAT_HEIGHT },
+      })
+      return
+    }
     const id = ++this.bakeId
     this.bakeTargets.set(id, { generation: this.bakeGeneration, node })
     const request: BakeWorkerRequest = { id, kind: 'world', params }
     this.ensureWorldWorker().postMessage(request)
   }
 
+  /** Lazily create the separately bundled v2 compiler on its first v2 world. */
+  private ensureV2Terrain(): V2TerrainClient {
+    if (this.v2Terrain) return this.v2Terrain
+    const client = new V2TerrainClient({
+      onArtifact: (response) => this.acceptV2Artifact(response),
+      // The last complete artifact (or palette placeholder) remains visible on
+      // failure, so worker errors do not turn an interaction into a blank globe.
+      onError: () => this.invalidate(),
+    })
+    client.setSuspended(
+      this.stopped || document.hidden || !this.inView || this.p?.autoRotate === false,
+    )
+    this.v2Terrain = client
+    return client
+  }
+
+  /** Install only current, complete v2 artifacts; stale filtering lives in the client too. */
+  private acceptV2Artifact(response: Extract<V2WorkerResponse, { type: 'artifact' }>) {
+    if (this.stopped) return
+    const artifact = response.artifact
+    if (artifact.kind === 'flat') {
+      const texture = dataTexture(
+        new Uint8Array(artifact.rgba), artifact.width, artifact.height,
+      )
+      texture.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy())
+
+      if (response.slot === 'single:flat') {
+        const P = this.p
+        if (!P || P.generatorVersion !== 2 || this.mode !== 'single' || effectiveTier(P) !== 'flat') {
+          texture.dispose()
+          return
+        }
+        this.flatMap?.dispose()
+        this.flatMap = texture
+        const pal = PALETTES[P.preset] ?? PALETTES.temperate
+        if (isGas(pal)) this.gasMesh.material.uniforms.uMap.value = texture
+        else {
+          this.texMesh.material.map = texture
+          this.texMesh.material.color.set(0xffffff)
+        }
+        this.invalidate()
+        return
+      }
+
+      if (response.slot === 'companion') {
+        if (!this.companion.visible) {
+          texture.dispose()
+          return
+        }
+        this.companionMap?.dispose()
+        this.companionMap = texture
+        this.companion.material.map = texture
+        this.companion.material.color.set(0xffffff)
+        this.companion.material.needsUpdate = true
+        this.invalidate()
+        return
+      }
+
+      const target = this.v2PreviewTargets.get(response.slot)
+      this.v2PreviewTargets.delete(response.slot)
+      if (
+        !target ||
+        target.generation !== this.bakeGeneration ||
+        !this.sysNodes.includes(target.node)
+      ) {
+        texture.dispose()
+        return
+      }
+      const mat = target.node.mesh.material
+      if (mat.map && mat.map !== target.node.baked) mat.map.dispose()
+      target.node.baked?.dispose()
+      target.node.baked = texture
+      mat.map = texture
+      mat.color.set(0xffffff)
+      this.invalidate()
+      return
+    }
+
+    const P = this.p
+    if (
+      response.slot !== 'single:detailed' ||
+      !P ||
+      P.generatorVersion !== 2 ||
+      this.mode !== 'single' ||
+      effectiveTier(P) !== 'detailed' ||
+      surfaceKey(P, this.detail) !== this.v2DetailKey
+    ) return
+
+    const geometry = this.geo
+    if (!geometry) return
+    geometry.setAttribute(
+      'position',
+      new THREE.BufferAttribute(new Float32Array(artifact.positions), 3),
+    )
+    geometry.setAttribute(
+      'color',
+      new THREE.BufferAttribute(new Float32Array(artifact.colors), 3),
+    )
+    geometry.setAttribute(
+      'normal',
+      new THREE.BufferAttribute(new Float32Array(artifact.normals), 3),
+    )
+    // Relief is bounded by the compiler; avoid a main-thread bounds scan.
+    geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1.06)
+    const material = this.planet.material as THREE.MeshStandardMaterial
+    material.color.set(0xffffff)
+    this.v2SeaRadius = artifact.seaRadius
+    this.water.scale.setScalar(Math.max(0.88, artifact.seaRadius))
+    this.invalidate()
+  }
+
   /**
    * Build one mesh per body. Measured bodies get their photographic map;
-   * sculpted ones get a map baked from the very same `Surface` the single-world
-   * view uses, so a world looks like itself wherever you meet it.
+   * v1 worlds bake the same `Surface` as the single view, while v2 worlds
+   * resample their worker-owned canonical model. Either way a world keeps one
+   * identity wherever you meet it.
    */
   private buildBodies(def: SystemDef) {
     const buildStart = performance.now()
@@ -1702,6 +1846,12 @@ export class PlanetViewport {
     const P = this.p
     if (!P) return
 
+    // Pause is a worker lifecycle boundary too: retain the previous artifact,
+    // start no new v2 phase, and resume only the latest desired job.
+    this.v2Terrain?.setSuspended(
+      P.autoRotate === false || document.hidden || !this.inView,
+    )
+
     // Display toggles are read before either branch: paths and moons matter in
     // both views, and none of them participates in any bake or surface key.
     this.showPaths = P.showPaths !== false
@@ -1727,6 +1877,8 @@ export class PlanetViewport {
     if (P.mode === 'system') return this.regenSystem(P)
 
     if (this.mode !== 'single') {
+      for (const slot of this.v2PreviewTargets.keys()) this.v2Terrain?.cancel(slot)
+      this.v2PreviewTargets.clear()
       this.mode = 'single'
       this.camZ = 3.15
       this.rotX = 0.16
@@ -1832,6 +1984,8 @@ export class PlanetViewport {
 
   /** A real planet shown with its photographic map. */
   private regenTextured(P: PlanetParams, R: (typeof REAL)[string] | null) {
+    this.v2Terrain?.cancel('single:flat')
+    this.v2Terrain?.cancel('single:detailed')
     const pal = PALETTES[P.preset] ?? PALETTES.temperate
     const gas = isGas(pal)
 
@@ -1909,6 +2063,7 @@ export class PlanetViewport {
   private regenFlat(P: PlanetParams) {
     const pal = PALETTES[P.preset] ?? PALETTES.temperate
     const gas = isGas(pal)
+    this.v2Terrain?.cancel('single:detailed')
 
     this.planet.visible = false
     this.water.visible = false
@@ -1942,13 +2097,22 @@ export class PlanetViewport {
     }
 
     const key = [
-      P.seed, P.preset, P.mountains, P.water, P.roughness, P.ice, P.clouds,
+      P.generatorVersion, P.seed, P.preset, P.mountains, P.water, P.roughness, P.ice, P.clouds,
     ].join(':')
     if (key !== this.flatKey) {
       this.flatKey = key
-      this.flatBakeId = ++this.bakeId
-      const request: BakeWorkerRequest = { id: this.flatBakeId, kind: 'world', params: { ...P } }
-      this.ensureWorldWorker().postMessage(request)
+      if (P.generatorVersion === 2) {
+        this.ensureV2Terrain().request('single:flat', {
+          params: P,
+          priority: 'focused',
+          artifact: { kind: 'flat', width: V2_FLAT_WIDTH, height: V2_FLAT_HEIGHT },
+        })
+      } else {
+        this.v2Terrain?.cancel('single:flat')
+        this.flatBakeId = ++this.bakeId
+        const request: BakeWorkerRequest = { id: this.flatBakeId, kind: 'world', params: { ...P } }
+        this.ensureWorldWorker().postMessage(request)
+      }
     }
 
     // Sculpted giants swirl by their own roughness; a photograph keeps 1.
@@ -1986,6 +2150,7 @@ export class PlanetViewport {
     const parent = P.mode === 'system' ? null : (parentOf(P) ?? this.systemParentOf(P))
     this.companion.visible = !!parent
     if (!parent) {
+      this.v2Terrain?.cancel('companion')
       this.companionKey = ''
       return
     }
@@ -2049,7 +2214,9 @@ export class PlanetViewport {
       mat.color.set(isGas(pal) ? pal.bands[(pal.bands.length / 2) | 0][1] : pal.mid)
       if (parent.params) {
         const q = parent.params
-        const key = [q.seed, q.preset, q.mountains, q.water, q.roughness, q.ice, q.clouds].join(':')
+        const key = [
+          q.generatorVersion, q.seed, q.preset, q.mountains, q.water, q.roughness, q.ice, q.clouds,
+        ].join(':')
         if (key === this.companionMapKey && this.companionMap) {
           // Already painted this world: leaving and coming back should not
           // send the worker off to paint it again.
@@ -2057,11 +2224,20 @@ export class PlanetViewport {
           mat.color.set(0xffffff)
         } else {
           this.companionMapKey = key
-          this.companionBakeId = ++this.bakeId
-          const request: BakeWorkerRequest = {
-            id: this.companionBakeId, kind: 'world', params: { ...q },
+          if (q.generatorVersion === 2) {
+            this.ensureV2Terrain().request('companion', {
+              params: q,
+              priority: 'focused',
+              artifact: { kind: 'flat', width: V2_FLAT_WIDTH, height: V2_FLAT_HEIGHT },
+            })
+          } else {
+            this.v2Terrain?.cancel('companion')
+            this.companionBakeId = ++this.bakeId
+            const request: BakeWorkerRequest = {
+              id: this.companionBakeId, kind: 'world', params: { ...q },
+            }
+            this.ensureWorldWorker().postMessage(request)
           }
-          this.ensureWorldWorker().postMessage(request)
         }
       }
     }
@@ -2086,7 +2262,8 @@ export class PlanetViewport {
     const def = this.sysDef
     if (!def) return null
     const me = def.bodies.find(
-      (b) => b.orbits && b.params.preset === P.preset && b.params.seed === P.seed,
+      (b) => b.orbits && b.params.preset === P.preset && b.params.seed === P.seed &&
+        b.params.generatorVersion === P.generatorVersion,
     )
     if (!me || !(me.radius > 0)) return null
     const host = def.bodies.find((b) => b.name === me.orbits)
@@ -2113,6 +2290,8 @@ export class PlanetViewport {
    * what makes this read as a world rather than a decal on a ball.
    */
   private regenPhotoDetailed(P: PlanetParams, R: (typeof REAL)[string] | null) {
+    this.v2Terrain?.cancel('single:flat')
+    this.v2Terrain?.cancel('single:detailed')
     const pal = PALETTES[P.preset] ?? PALETTES.temperate
     const url = P.texture!
 
@@ -2208,6 +2387,7 @@ export class PlanetViewport {
   /** A sculpted world: displace and colour the sphere from noise. */
   private regenProcedural(P: PlanetParams) {
     const pal = PALETTES[P.preset] ?? PALETTES.temperate
+    this.v2Terrain?.cancel('single:flat')
     this.texMesh.visible = false
     this.gasMesh.visible = false
     if (!this.planet.visible) this.compileNeeded = true
@@ -2234,34 +2414,55 @@ export class PlanetViewport {
       this.cloudKey = ''
     }
 
-    const surface = makeSurface(P, this.n1!, this.n2!)
     const nextSurfaceKey = surfaceKey(P, this.detail)
-    if (nextSurfaceKey !== this.surfaceKey) {
-      this.surfaceKey = nextSurfaceKey
-      const pa = this.geo!.attributes.position.array as Float32Array
-      const ca = this.geo!.attributes.color.array as Float32Array
-      const dirs = this.dirs!
-      const tmp = new THREE.Color()
-
-      for (let i = 0; i < dirs.length; i += 3) {
-        const x = dirs[i], y = dirs[i + 1], z = dirs[i + 2]
-        const r = surface.sample(x, y, z, tmp)
-        pa[i] = x * r
-        pa[i + 1] = y * r
-        pa[i + 2] = z * r
-        ca[i] = tmp.r
-        ca[i + 1] = tmp.g
-        ca[i + 2] = tmp.b
+    let seaRadius: number
+    if (P.generatorVersion === 2) {
+      seaRadius = this.v2SeaRadius
+      if (nextSurfaceKey !== this.surfaceKey) {
+        const firstArtifact = this.surfaceKey === ''
+        this.surfaceKey = nextSurfaceKey
+        this.v2DetailKey = nextSurfaceKey
+        if (firstArtifact) pmat.color.set(isGas(pal) ? pal.bands[(pal.bands.length / 2) | 0][1] : pal.mid)
+        const widthSegments = this.detail === 'high' ? 220 : 150
+        const heightSegments = this.detail === 'high' ? 150 : 104
+        this.ensureV2Terrain().request('single:detailed', {
+          params: P,
+          priority: 'focused',
+          artifact: { kind: 'detailed', widthSegments, heightSegments },
+        })
       }
+    } else {
+      this.v2Terrain?.cancel('single:detailed')
+      const surface = makeSurface(P, this.n1!, this.n2!)
+      seaRadius = surface.seaRadius
+      if (nextSurfaceKey !== this.surfaceKey) {
+        this.surfaceKey = nextSurfaceKey
+        pmat.color.set(0xffffff)
+        const pa = this.geo!.attributes.position.array as Float32Array
+        const ca = this.geo!.attributes.color.array as Float32Array
+        const dirs = this.dirs!
+        const tmp = new THREE.Color()
 
-      this.geo!.attributes.position.needsUpdate = true
-      this.geo!.attributes.color.needsUpdate = true
-      this.geo!.computeVertexNormals()
+        for (let i = 0; i < dirs.length; i += 3) {
+          const x = dirs[i], y = dirs[i + 1], z = dirs[i + 2]
+          const r = surface.sample(x, y, z, tmp)
+          pa[i] = x * r
+          pa[i + 1] = y * r
+          pa[i + 2] = z * r
+          ca[i] = tmp.r
+          ca[i + 1] = tmp.g
+          ca[i + 2] = tmp.b
+        }
+
+        this.geo!.attributes.position.needsUpdate = true
+        this.geo!.attributes.color.needsUpdate = true
+        this.geo!.computeVertexNormals()
+      }
     }
 
     const wmat = this.water.material as THREE.MeshPhongMaterial
     this.water.visible = !isGas(pal) && (P.water || 0) > 0.03
-    this.water.scale.setScalar(Math.max(0.88, surface.seaRadius))
+    this.water.scale.setScalar(Math.max(0.88, seaRadius))
     if (!isGas(pal)) {
       wmat.color.set(pal.water)
       wmat.emissive.set(pal.emissive ?? 0x000000)
@@ -2306,6 +2507,8 @@ export class PlanetViewport {
     let rebuilt = false
     this.ensureSystem()
     if (this.mode !== 'system') {
+      this.v2Terrain?.cancel('single:flat')
+      this.v2Terrain?.cancel('single:detailed')
       this.mode = 'system'
       this.rotX = 0.5
       this.rotY = 0
@@ -2398,6 +2601,17 @@ export class PlanetViewport {
     // With paths shown there is nothing for hover to reveal.
     if (this.showPaths) this.hoverIndex = -1
     this.syncPathTargets()
+
+    // Preview work is cancelled while the single-world view is active. When
+    // Orbit returns, resume only still-missing v2 textures.
+    this.sysBodies.forEach((body, index) => {
+      const node = this.sysNodes[index]
+      const slot = `preview:${node?.index ?? index}`
+      if (
+        node && node.parent < 0 && !body.texture && body.params.generatorVersion === 2 &&
+        !node.baked && !this.v2PreviewTargets.has(slot)
+      ) this.queueWorldBake(node, body.params)
+    })
 
     this.stars.visible = P.stars !== false
     if (rebuilt) recordOrbitMeasure('regen-system', regenStart)

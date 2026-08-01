@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest'
+import {
+  CURRENT_GENERATOR_VERSION,
+  LEGACY_GENERATOR_VERSION,
+} from '../engine/types'
 import { DEFAULT_PARAMS, sanitize, serialize, surprise } from './params'
 import { computeScan } from './scan'
 
@@ -7,6 +11,24 @@ describe('sanitize', () => {
     for (const junk of [null, undefined, 42, 'nope', [], {}]) {
       expect(sanitize(junk)).toEqual(DEFAULT_PARAMS)
     }
+  })
+
+  it('treats an absent generator version as legacy v1', () => {
+    // This is the migration rule for every shared link saved before terrain
+    // versioning existed. It must not follow the default for newly rolled
+    // worlds in a future release.
+    const legacy = sanitize({ seed: 91234, preset: 'desert' })
+    expect(legacy.generatorVersion).toBe(LEGACY_GENERATOR_VERSION)
+  })
+
+  it('keeps explicit generator versions and rejects unknown ones', () => {
+    expect(sanitize({ generatorVersion: LEGACY_GENERATOR_VERSION }).generatorVersion)
+      .toBe(LEGACY_GENERATOR_VERSION)
+    expect(sanitize({ generatorVersion: CURRENT_GENERATOR_VERSION }).generatorVersion)
+      .toBe(CURRENT_GENERATOR_VERSION)
+    expect(sanitize({ generatorVersion: 0 }).generatorVersion).toBe(LEGACY_GENERATOR_VERSION)
+    expect(sanitize({ generatorVersion: 3 }).generatorVersion).toBe(LEGACY_GENERATOR_VERSION)
+    expect(sanitize({ generatorVersion: '2' }).generatorVersion).toBe(LEGACY_GENERATOR_VERSION)
   })
 
   it('clamps sliders into 0..1', () => {
@@ -87,6 +109,10 @@ describe('surprise', () => {
       expect(sanitize(params)).toEqual(params)
     }
   })
+
+  it('opts freshly rolled worlds into the current generator', () => {
+    expect(surprise(1234).params.generatorVersion).toBe(CURRENT_GENERATOR_VERSION)
+  })
 })
 
 describe('serialize', () => {
@@ -98,6 +124,15 @@ describe('serialize', () => {
 
   it('stays comfortably under 1KB', () => {
     expect(serialize(DEFAULT_PARAMS).length).toBeLessThan(1024)
+  })
+
+  it('round-trips generator version as part of the serialized identity', () => {
+    for (const generatorVersion of [LEGACY_GENERATOR_VERSION, CURRENT_GENERATOR_VERSION]) {
+      const p = { ...DEFAULT_PARAMS, generatorVersion }
+      const encoded = serialize(p)
+      expect(JSON.parse(encoded).generatorVersion).toBe(generatorVersion)
+      expect(sanitize(JSON.parse(encoded))).toEqual(p)
+    }
   })
 })
 

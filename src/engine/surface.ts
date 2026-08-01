@@ -1,11 +1,12 @@
 /**
- * What a sculpted world looks like, as a pure function of direction.
+ * What a generator-v1 sculpted world looks like, as a pure function of direction.
  *
  * This is the single source of truth for a world's surface. The single-world
  * view feeds it sphere vertices and writes vertex colours; the orbit view
  * feeds it equirectangular texels and bakes a map. Sharing it is the point —
  * otherwise the same seed could read as two different planets depending on
- * which view you happened to be looking at.
+ * which view you happened to be looking at. Generator v2 keeps the same
+ * identity rule through its worker-owned canonical spherical model.
  */
 import * as THREE from 'three'
 import { fbm, makeNoise, type Noise3 } from './noise'

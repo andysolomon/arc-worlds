@@ -19,7 +19,7 @@ import {
   getSystem, getWorld, listSystems, listWorlds, saveSystem, saveWorld,
   type SavedSystem, type SavedWorld,
 } from './lib/api'
-import type { PlanetParams, PresetKey, SystemDef } from './engine/types'
+import { CURRENT_GENERATOR_VERSION, type PlanetParams, type PresetKey, type SystemDef } from './engine/types'
 import './styles.css'
 
 type Tab = 'sculpt' | 'scan' | 'solar' | 'worlds'
@@ -178,8 +178,16 @@ export default function App() {
 
   const setParam = useCallback(<K extends keyof PlanetParams>(k: K, v: PlanetParams[K]) => {
     // Changing the seed means this is no longer the real planet, so drop its
-    // photographic map and fall back to procedural terrain.
-    setParams((s) => ({ ...s, [k]: v, ...(k === 'seed' ? { texture: null, cloudTexture: null } : null) }))
+    // photographic map and fall back to procedural terrain. It also starts a
+    // fresh world, so it is an explicit opt-in to the current generator; an
+    // untouched v1 payload remains v1 when merely opened or edited.
+    setParams((s) => ({
+      ...s,
+      [k]: v,
+      ...(k === 'seed'
+        ? { generatorVersion: CURRENT_GENERATOR_VERSION, texture: null, cloudTexture: null }
+        : null),
+    }))
     setScan(null)
     setSavedSlug(null)
   }, [])
@@ -263,12 +271,17 @@ export default function App() {
       if (host) return { kind: 'planet' as const, label: host.name, host }
     }
     const mine = system.bodies.find(
-      (b) => b.orbits && b.params.preset === params.preset && b.params.seed === params.seed,
+      (b) => b.orbits &&
+        b.params.preset === params.preset &&
+        b.params.seed === params.seed &&
+        b.params.generatorVersion === params.generatorVersion,
     )
     const invented = mine && system.bodies.find((b) => b.name === mine.orbits)
     if (invented) return { kind: 'body' as const, label: invented.name, body: invented }
     const inSystem = system.bodies.some(
-      (b) => b.params.preset === params.preset && b.params.seed === params.seed,
+      (b) => b.params.preset === params.preset &&
+        b.params.seed === params.seed &&
+        b.params.generatorVersion === params.generatorVersion,
     )
     if (inSystem) return { kind: 'system' as const, label: system.name }
     // Only offer to join a system that will actually take the world. A full

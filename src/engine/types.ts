@@ -1,5 +1,15 @@
+/**
+ * A terrain algorithm is part of geography, not presentation.  Persist it so
+ * a shared seed keeps meaning the same thing after a newer generator ships.
+ */
+export const LEGACY_GENERATOR_VERSION = 1 as const
+export const CURRENT_GENERATOR_VERSION = 2 as const
+export type GeneratorVersion = typeof LEGACY_GENERATOR_VERSION | typeof CURRENT_GENERATOR_VERSION
+
 /** The complete description of a world. Everything else is derived from this. */
 export interface PlanetParams {
+  /** Which deterministic terrain generator interprets this world's seed. */
+  generatorVersion: GeneratorVersion
   seed: number
   preset: PresetKey
   mountains: number

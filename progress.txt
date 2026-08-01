@@ -953,19 +953,66 @@ FIXED IN PASSING
   so the node was the inner rotation of the two and only shifted the
   moon's phase inside a plane every moon of that planet shared. It
   turns the plane now, which is what makes precession mean anything.
+2026-08-01 hybrid v2 planet terrain prototype
 
-VERIFIED
+PLAN
+- Sol High split the work into compatibility/versioning, a pure canonical
+  spherical compiler, worker orchestration, and viewport integration. Luna
+  Max was not exposed in this session, so Terra Max implementation agents were
+  used as the available substitute; one of them delegated the invariant suite
+  to a further Terra Max subagent.
+
+DONE
+- Added generatorVersion 1|2 throughout saved world identity. Missing old
+  payloads are v1; random/reseeded worlds are v2; built-ins retain v1. API read
+  boundaries normalize legacy rows, and version participates in system/world
+  duplicate identity and every surface/flat/Orbit cache key.
+- Kept engine/surface.ts unchanged and pinned complete v1 output with SHA-256
+  fixtures for the full flat RGBA map and standard detailed position/color/
+  normal buffers.
+- Added a cached 642-cell geodesic graph with typed CSR adjacency and one
+  deterministic canonical model: continent anchors, ridge-distance mountains,
+  priority-flood drainage, accumulated flow, prevailing-wind moisture,
+  temperature, and biome IDs.
+- One worker-owned model now derives both cloud-composited 256x128 flat maps
+  and detailed UV-sphere position/color/normal buffers. The detailed path no
+  longer samples terrain or calls computeVertexNormals on the main thread.
+- Added a separately loaded v2 worker with focused-over-preview priority,
+  task-yielding phase boundaries, latest-wins slots, cooperative cancellation,
+  a bounded canonical-model LRU, transferable final artifacts, and explicit
+  pause/hidden/offscreen suspension, and disposal. Orbit keeps its shared smooth
+  sphere and shader count.
+- Previous complete maps/geometry remain visible during a compile; the palette
+  placeholder is used only when no artifact has ever landed. Companion planets
+  use the same versioned flat pipeline.
+
+VERIFIED AFTER INTEGRATING BOTH 2026-08-01 DELIVERIES
 - bun run typecheck
 - bun run lint
-- bun run test: 135 passed
+- bun run test: 161 passed
 - bun run build
-- bun run size:check: passed, entry 244416 of 256000 gzip
+- bun run size:check: entry 246,142 B gzip; v1 worker 92,993 B raw; v2 worker
+  24,746 B raw; every checked budget passed.
 - bun run perf:smoke: passed, activeRendererFps 23.3 — the same number the
   unmodified engine measures on this machine
-- bun run test:e2e: 33 passed, including the new eclipse test
+- bun run test:e2e: 33 passed, including random v2 worlds, rendering tiers,
+  custom systems, pause/idle behavior, Orbit, and the new eclipse test.
 - Watched by hand: Earth with the Moon in frame for the whole orbit, the
   Moon in the orbit view lapping Earth eleven times a year, and a shadow
   on the Pacific with the clock stopped inside it.
+- Three-run headless browser median: first Orbit frame 283.1 ms, interaction
+  48 ms, longest task 253 ms, total long-task time 455 ms, 3 shader programs,
+  23.3 fps, zero paused frames/tasks, zero errors. bun run perf:budget passed.
+- Against the clean pre-terrain baseline from the same machine: entry size
+  +0.7%; first Orbit frame improved from 359 ms; interaction added 8 ms (inside
+  the 80 ms noise floor); long-task total added 127 ms (inside the 150 ms noise
+  floor); all other checked regressions were below their noise floors or
+  improved.
+- bun run perf:engines, three-run medians: WebKit / Apple GPU 31 ms and
+  Chromium headed / Apple GPU 39 ms, both with zero frames over 50 ms. The
+  prior production record was 31 ms / 38 ms, so the real-GPU transition is
+  unchanged. Headless Chromium / software rendering measured 510 ms; the
+  checked headless benchmark above remains the regression gate and passed.
 
 WORTH KNOWING (a test, not this work)
 - "holding on hover stops the clock" is marginal under load. It compares a
@@ -975,3 +1022,9 @@ WORTH KNOWING (a test, not this work)
   playwright.config already calls oversubscribing the GPU. Passes at the
   worker counts the project actually uses, CI included: 12 of 12 at one
   worker, and the full suite twice.
+
+NEXT
+- Add the research prototype's dedicated 24-body v2 throughput, cancellation,
+  worker-CPU, and memory scenario before raising graph resolution or adding a
+  custom normal shader. The modest graph and MeshStandardMaterial are deliberate
+  until that evidence and a visible product gain justify more cost.

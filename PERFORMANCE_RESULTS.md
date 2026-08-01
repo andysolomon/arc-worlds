@@ -195,3 +195,46 @@ proper needs `safaridriver --enable`, which requires an administrator, and it
 cannot run headless. Given WebKit and Chromium's Metal backend agree to within
 7 ms, a Safari run is unlikely to disagree — but it is the one measurement still
 outstanding.
+
+## Terrain v2 prototype verification (2026-08-01)
+
+Measured on the same machine before and after the hybrid terrain prototype.
+The clean baseline was detached at `c783883`; the after build includes explicit
+generator versioning, the separate v2 compiler worker, and viewport routing.
+The controlled Orbit scenario remains the existing v1 Solar System, so this is
+the regression check for retained behavior rather than a v2 throughput test.
+
+| Metric | Clean baseline | Terrain v2 build | Interpretation |
+| --- | ---: | ---: | --- |
+| Entry gzip | 243,818 B | 245,540 B | +0.7%, below 256,000 B |
+| Retained v1 worker raw | 92,993 B | 92,993 B | unchanged |
+| New v2 worker raw | — | 24,746 B | separate lazy worker, below 102,400 B |
+| First Orbit frame | 359 ms | 283.1 ms | improved |
+| Event Timing interaction | 40 ms | 48 ms | +8 ms, below 80 ms noise floor |
+| Longest task | 307 ms | 253 ms | improved |
+| Total long-task time | 328 ms | 455 ms | +127 ms, below 150 ms noise floor |
+| Main-thread task time | 1,409 ms | 1,635 ms | +226 ms, below 600 ms noise floor |
+| Orbit shader programs | 3 | 3 | unchanged |
+| Passive renderer | 23.3 fps | 23.3 fps | unchanged |
+| Paused frames / task time | 0 / 0 ms | 0 / 0 ms | unchanged |
+
+`bun run perf:budget` passed every absolute local budget. The v2 pure compiler
+was also sampled directly in Bun: a 642-cell canonical model compiled in about
+4.3 ms, a clouded 256x128 flat artifact in 21.3 ms, and standard detailed
+position/color/normal buffers in 7.8 ms. These are directional phase-cost
+checks, not browser throughput claims.
+
+The intended three-run `perf:engines` medians show no real-GPU Orbit regression:
+
+| Engine | Renderer | Largest stall | Frames > 50 ms |
+| --- | --- | ---: | ---: |
+| WebKit | Apple GPU | 31 ms | 0 |
+| Chromium, headed | Apple GPU | 39 ms | 0 |
+| Chromium, headless | software renderer | 510 ms | 40 |
+
+The previous real-GPU record was 31 ms in WebKit and 38 ms in headed Chromium;
+the one-millisecond difference is below a frame and within normal run noise.
+The software-renderer row is intentionally governed by the controlled browser
+benchmark and its checked noise floors, which passed. A dedicated worst-case
+24-body v2 throughput/cancellation/memory scenario remains required before
+raising canonical resolution or adding custom shader/normal topology.

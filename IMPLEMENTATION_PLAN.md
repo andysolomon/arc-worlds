@@ -302,7 +302,47 @@ Promoted set — the ones with real character: **the Moon**, **Io**, **Europa**,
       toggle, a slider — slammed the single-world camera back to 3.15 whenever
       the world had moons, so a moon system framed itself once and lost it at
       the next keystroke.
+### 14. Planet terrain generation v2 prototype (delivered 2026-08-01)
 
+Implements the hybrid direction in
+`docs/planet-terrain-generation-research/research.md`: Arc Worlds remains the
+runtime foundation, v1 remains immutable, and richer geography compiles into
+the existing flat and detailed rendering tiers rather than replacing them.
+
+- [x] Version world geography explicitly. Missing or malformed
+      `generatorVersion` is v1; saved/API/system identity and cache keys carry
+      the version; newly rolled/reseeded worlds opt into v2. Canonical built-in
+      worlds remain v1.
+- [x] Pin complete v1 output with SHA-256 fixtures for the full 256x128 flat
+      RGBA map and the standard detailed position, color, and normal buffers.
+      `engine/surface.ts` remains unchanged.
+- [x] Add one cached 642-cell geodesic graph with typed CSR adjacency and
+      deterministic phases for continent-scale elevation, ridge-distance
+      mountains, priority-flood drainage, accumulated flow, prevailing-wind
+      moisture, temperature, and biomes.
+- [x] Resample that single canonical model into both cloud-composited flat RGBA
+      and Three-compatible detailed position/color/normal buffers. Coastlines,
+      drainage, and biomes are never regenerated at render resolution.
+- [x] Put v2 behind its own lazy module worker. Focused work preempts previews;
+      compilation yields between bounded phases; latest-wins slots reject
+      obsolete uploads; canonical arrays remain worker-owned; only final
+      artifacts transfer.
+- [x] Preserve the previous complete artifact during recompilation, use a
+      palette placeholder only on first generation, keep Orbit on shared smooth
+      geometry, and upload detailed normals without a main-thread
+      `computeVertexNormals()` call or a new shader topology.
+- [x] Suspend/cancel v2 work while paused, hidden, or offscreen, resume only missing
+      artifacts, and explicitly dispose the worker, transferred textures, and
+      Three.js resources.
+- [x] Cover topology, seams, poles, hydrology invariants, determinism,
+      flat/detail identity, cloud artifact identity, async cancellation,
+      stale-result suppression, suspension/resume, disposal, and full v1
+      compatibility.
+- [ ] Before increasing canonical resolution or adding a custom normal shader,
+      add a dedicated 24-body v2 throughput/cancellation/memory browser scenario
+      and keep it within the research prototype's 3 s / 64 MB gates. The first
+      implementation deliberately stays on `MeshStandardMaterial` and the
+      modest graph until measured visual value justifies more cost.
 ### Removed scope
 
 - The dedicated Venus field trip was removed on 2026-07-29 after product

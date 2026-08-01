@@ -1,4 +1,4 @@
-import type { OrbitRow, PlanetParams, RealBody } from './types'
+import { LEGACY_GENERATOR_VERSION, type OrbitRow, type PlanetParams, type RealBody } from './types'
 
 /**
  * Measured values for the real bodies.
@@ -144,7 +144,7 @@ export function realKeyFor(orbitName: string): string {
  * the unit sphere there, and everything else is measured against it.
  */
 export function parentOf(
-  p: Pick<PlanetParams, 'preset' | 'seed'>,
+  p: Pick<PlanetParams, 'preset' | 'seed'> & { generatorVersion?: PlanetParams['generatorVersion'] },
 ): {
   key: string
   radius: number
@@ -154,6 +154,11 @@ export function parentOf(
   /** Only invented parents carry params; the measured ones have photographs. */
   params?: PlanetParams
 } | null {
+  // The built-in moon table records v1 worlds. A v2 world can deliberately
+  // reuse a familiar preset and seed, but it is still a different geography
+  // and must not inherit a real moon's parentage.
+  if ((p.generatorVersion ?? LEGACY_GENERATOR_VERSION) !== LEGACY_GENERATOR_VERSION) return null
+
   for (const key of Object.keys(REAL)) {
     for (const m of REAL[key].moons) {
       if (m.world?.preset !== p.preset || m.world.seed !== p.seed) continue
@@ -168,9 +173,15 @@ export function parentOf(
 }
 
 export function realFor(
-  p: Pick<PlanetParams, 'preset' | 'texture' | 'seed'>,
+  p: Pick<PlanetParams, 'preset' | 'texture' | 'seed'> & { generatorVersion?: PlanetParams['generatorVersion'] },
 ): RealBody | null {
   const R = REAL[p.preset]
   if (!R) return null
-  return p.texture || R.seed === p.seed ? R : null
+  // A photograph remains a photograph whatever terrain version is selected.
+  // Seed-only canonical bodies (Pluto and the promoted moons) are v1 identity
+  // records, so a v2 world with the same seed must remain a new world.
+  return p.texture || (
+    R.seed === p.seed &&
+    (p.generatorVersion ?? LEGACY_GENERATOR_VERSION) === LEGACY_GENERATOR_VERSION
+  ) ? R : null
 }

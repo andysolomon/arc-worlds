@@ -12,7 +12,7 @@ import {
   type BioReading, type Profile, type SpectralLine, type WaterReading,
 } from '../data/spectrometer'
 import { ANCIENT, FICTION, MOONS, PRESETS, typeOf } from '../data/presets'
-import type { PlanetParams, PresetKey } from '../engine/types'
+import { LEGACY_GENERATOR_VERSION, type PlanetParams, type PresetKey } from '../engine/types'
 
 /**
  * Presets whose derived readings borrow another family's chemistry. Only
@@ -291,13 +291,17 @@ export async function computeScan(P: PlanetParams): Promise<ScanResult> {
   // A moon that is a world scans as itself from its own chunk — measured
   // prose, same standing as a planet's, kept separate only because each lazy
   // chunk carries its own size budget and the planet prose fills most of one.
-  const isMoon = MOONS.some((m) => m.key === P.preset && m.params.seed === P.seed)
+  // Canonical measured/reconstructed/story readings describe the existing v1
+  // worlds. A v2 seed is intentionally a different world even when someone
+  // reuses one of those familiar preset-and-seed pairs.
+  const isLegacyIdentity = P.generatorVersion === LEGACY_GENERATOR_VERSION
+  const isMoon = isLegacyIdentity && MOONS.some((m) => m.key === P.preset && m.params.seed === P.seed)
   const moon = isMoon ? (await import('../data/moon-profiles')).MOON_PROFILES[P.preset] ?? null : null
   const real = moon ?? (realFor(P) ? REAL_PROFILES[P.preset] ?? null : null)
-  const ancient = ANCIENT.some((a) => a.key === P.preset && a.params.seed === P.seed)
+  const ancient = isLegacyIdentity && ANCIENT.some((a) => a.key === P.preset && a.params.seed === P.seed)
     ? ANCIENT_PROFILES[P.preset] ?? null
     : null
-  const story = FICTION.some((f) => f.key === P.preset && f.params.seed === P.seed)
+  const story = isLegacyIdentity && FICTION.some((f) => f.key === P.preset && f.params.seed === P.seed)
     ? (await import('../data/fiction')).FICTION_PROFILES[P.preset] ?? null
     : null
   const prof = real ?? ancient ?? story ?? buildProfile(P, r)
