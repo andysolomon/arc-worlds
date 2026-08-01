@@ -89,6 +89,7 @@ export default function App() {
       showPaths: display.paths,
       showLabels: display.labels,
       showMoons: display.moons,
+      sky: display.sky,
       pauseOnHover: display.pauseOnHover,
       tier: display.tier === 'auto' ? undefined : display.tier,
       starDensity: display.starDensity,
@@ -98,7 +99,7 @@ export default function App() {
     [params, view, sizeMode, timeScale, display],
   )
 
-  const toggleDisplay = useCallback((k: 'paths' | 'labels' | 'moons') => {
+  const toggleDisplay = useCallback((k: 'paths' | 'labels' | 'moons' | 'sky') => {
     setDisplay((d) => ({ ...d, [k]: !d[k] }))
   }, [])
 

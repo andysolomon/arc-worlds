@@ -786,29 +786,39 @@ test('holding on hover stops the clock, and only while asked', async ({ page }) 
   const frames = () =>
     page.evaluate(() => Number(document.querySelector('canvas')?.dataset.frames ?? 0))
 
+  /**
+   * Wait for the clock to prove it is running.
+   *
+   * The counter is published every tenth frame, so a fixed 900 ms window at the
+   * 30 fps passive cadence holds only two or three ticks of it — and on a busy
+   * machine, sometimes none. That made this test fail for reasons that had
+   * nothing to do with hovering. Polling asserts the same thing without a
+   * stopwatch: sooner or later, a running clock advances.
+   */
+  const expectRunning = async () => {
+    const from = await frames()
+    await expect.poll(frames, { timeout: 15_000 }).toBeGreaterThan(from)
+  }
+
   // Off by default: resting on the world changes nothing.
   await onTheWorld()
-  await page.waitForTimeout(900)
-  const running = await frames()
-  await page.waitForTimeout(900)
-  expect(await frames()).toBeGreaterThan(running)
+  await expectRunning()
 
   await page.getByRole('button', { name: 'Hold on hover' }).click()
   // Leave and return, so the engine sees the pointer arrive with the option on.
   await offIt()
   await page.waitForTimeout(300)
   await onTheWorld()
+  // Held is the assertion that has to stay on a stopwatch: proving something
+  // never happens means watching for a while and seeing it not happen.
   await page.waitForTimeout(900)
   const held = await frames()
-  await page.waitForTimeout(900)
+  await page.waitForTimeout(1500)
   expect(await frames()).toBe(held)
 
   // The sky is not a body: moving off the world starts it again.
   await offIt()
-  await page.waitForTimeout(900)
-  const freed = await frames()
-  await page.waitForTimeout(900)
-  expect(await frames()).toBeGreaterThan(freed)
+  await expectRunning()
 })
 
 test('the Moon stands in front of the sun, and the Earth wears the shadow', async ({ page }) => {
@@ -836,4 +846,65 @@ test('the Moon stands in front of the sun, and the Earth wears the shadow', asyn
   const stopped = await eclipses()
   await page.waitForTimeout(3000)
   expect(await eclipses()).toBe(stopped)
+})
+
+test('a world’s own sky, at the size the sun really looks from it', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Systems' }).click()
+  await page.getByRole('button', { name: 'Sky' }).click()
+  await page.getByRole('button', { name: 'Body list' }).click()
+
+  // The angle is the claim. The Sun is half a degree across from Earth and a
+  // hundredth of one from Pluto, and no count of triangles reaching the GPU
+  // can tell you whether that came out right — so the engine publishes it,
+  // for the same reason it publishes everything else here.
+  const sunAcross = async () => {
+    const raw = await page.evaluate(() => document.querySelector('canvas')?.dataset.sky ?? '')
+    return Number(raw.split('|')[1] ?? 0)
+  }
+  // The published angle survives the walk back out to the system, so a reading
+  // taken too early is the last planet's. Wait for it to become this one's.
+  let previous = 0
+  const visit = async (name: string) => {
+    await page.getByRole('button', { name: new RegExp(`^${name}`) }).click()
+    await expect(page.getByRole('heading', { name })).toBeVisible()
+    await awaitGeometry(page)
+    await expect
+      .poll(async () => (await sunAcross()) !== previous && (await sunAcross()) > 0, {
+        timeout: 20_000,
+      })
+      .toBe(true)
+    const deg = await sunAcross()
+    previous = deg
+    // Read before leaving: back out to the system and the sky is not drawn at
+    // all, so the signal is gone with it.
+    const bodies = await page.evaluate(
+      () => Number((document.querySelector('canvas')?.dataset.sky ?? '').split('|')[0]),
+    )
+    await page.getByRole('button', { name: '‹ The Solar System' }).click()
+    await page.getByRole('tab', { name: 'Systems' }).click()
+    await page.getByRole('button', { name: 'Body list' }).click()
+    return { deg, bodies }
+  }
+
+  // Mercury's sun swings between 1.14° and 1.73° across its own eccentric
+  // orbit; Earth's holds near half a degree; Pluto's is a spark.
+  expect((await visit('Mercury')).deg).toBeGreaterThan(1.1)
+  const earth = await visit('Earth')
+  expect(earth.deg).toBeCloseTo(0.53, 1)
+  expect((await visit('Pluto')).deg).toBeLessThan(0.02)
+
+  // And what is up there: the star, plus every planet but the one underfoot.
+  expect(earth.bodies).toBe(9)
+})
+
+test('a sculpted world is nowhere in particular, and has no sky to draw', async ({ page }) => {
+  // The option only means something for a world with a place. Peachmoss was
+  // made in the sculptor and is not in orbit around anything.
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Systems' }).click()
+  await page.getByRole('button', { name: 'Sky' }).click()
+  await awaitGeometry(page)
+  await page.waitForTimeout(1200)
+  expect(await page.evaluate(() => document.querySelector('canvas')?.dataset.sky)).toBeUndefined()
 })

@@ -62,6 +62,12 @@ export interface DisplayOptions {
   labels: boolean
   /** Moons — off skips building and moving them entirely. */
   moons: boolean
+  /**
+   * The real sky in the single-world view: this world's own star and the other
+   * planets of its system, where they actually are. Off by default, like every
+   * other addition — the app should open looking exactly as it always has.
+   */
+  sky: boolean
   /** Rendering tier for the single-world view; a quality choice, not identity. */
   tier: TierChoice
   /** Starfield density, 0..1; 0.5 is the count the app always drew. */
@@ -83,7 +89,7 @@ export interface DisplayOptions {
 
 /** Every default reproduces what the app always drew; labels are opt-in. */
 export const DEFAULT_DISPLAY: DisplayOptions = {
-  paths: true, labels: false, moons: true, tier: 'auto',
+  paths: true, labels: false, moons: true, sky: false, tier: 'auto',
   starDensity: 0.5, starBright: 0.5, nebula: 'none', exposure: 0.5,
   pauseOnHover: false,
 }
@@ -104,6 +110,7 @@ export function loadDisplay(): DisplayOptions {
       paths: typeof p.paths === 'boolean' ? p.paths : DEFAULT_DISPLAY.paths,
       labels: typeof p.labels === 'boolean' ? p.labels : DEFAULT_DISPLAY.labels,
       moons: typeof p.moons === 'boolean' ? p.moons : DEFAULT_DISPLAY.moons,
+      sky: typeof p.sky === 'boolean' ? p.sky : DEFAULT_DISPLAY.sky,
       tier: p.tier === 'flat' || p.tier === 'detailed' ? p.tier : DEFAULT_DISPLAY.tier,
       starDensity: unit(p.starDensity, DEFAULT_DISPLAY.starDensity),
       starBright: unit(p.starBright, DEFAULT_DISPLAY.starBright),

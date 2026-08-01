@@ -16,7 +16,7 @@ interface Props {
   view: 'single' | 'system'
   sizeMode: 'same' | 'scale'
   display: DisplayOptions
-  onDisplay: (k: 'paths' | 'labels' | 'moons') => void
+  onDisplay: (k: 'paths' | 'labels' | 'moons' | 'sky') => void
   /** Set any display field — the Universe controls are not toggles. */
   onDisplaySet: <K extends keyof DisplayOptions>(k: K, v: DisplayOptions[K]) => void
   onView: (v: 'single' | 'system') => void
@@ -211,13 +211,21 @@ export function SystemsPanel(props: Props) {
           <Chip on={display.moons} onClick={() => onDisplay('moons')}>
             Moons
           </Chip>
+          <Chip on={display.sky} onClick={() => onDisplay('sky')}>
+            Sky
+          </Chip>
         </div>
-        {(!display.paths || !display.moons) && (
+        {(!display.paths || !display.moons || display.sky) && (
           <div className="note" style={{ marginTop: 10 }}>
             {!display.paths &&
               'Paths are hidden — hover a planet in the orbit view to glimpse its own. '}
             {!display.moons &&
-              'Moons are off, so visiting a planet skips building them — the quickest performance win.'}
+              'Moons are off, so visiting a planet skips building them — the quickest performance win. '}
+            {display.sky &&
+              'Visit a planet or a moon and its own sky is drawn: the star it orbits, at the size ' +
+                'it really looks from there, and the other planets as the points of light they are. ' +
+                'Everything sits where it truly lies, so the star is wherever the light is coming ' +
+                'from — usually over your shoulder. Drag to turn round and find it. Labels name them.'}
           </div>
         )}
       </div>
