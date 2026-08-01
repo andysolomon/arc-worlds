@@ -18,6 +18,7 @@ import {
 import {
   V2_WORKER_PROTOCOL,
   type V2RenderRequest,
+  type V2WorkerTelemetryEvent,
   type V2WorkerRequest,
   type V2WorkerResponse,
 } from './protocol.js'
@@ -25,6 +26,8 @@ import {
 interface QueuedJob {
   readonly request: V2RenderRequest
   readonly sequence: number
+  /** Only populated for an opt-in measurement, never used for scheduling. */
+  readonly measuredAt: number
 }
 
 const MAX_CANONICAL_MODELS = 12
@@ -38,6 +41,29 @@ let sequence = 0
 let pumping = false
 let suspended = false
 let disposed = false
+let cacheHits = 0
+let cacheMisses = 0
+let cacheEvictions = 0
+
+// Chromium may clamp a worker's nominal setTimeout(0) to roughly 20 ms. A
+// 24-body miss workload has more than 150 cooperative phase boundaries, so
+// timer clamping alone can consume several seconds. MessageChannel schedules a
+// real task without that timer floor and still returns to the worker event loop
+// so queued cancel/focus messages can run between phases.
+const controlChannel = typeof MessageChannel !== 'undefined'
+  ? new MessageChannel()
+  : null
+const controlYields: Array<() => void> = []
+if (controlChannel) {
+  // Node exposes MessageChannel while running the worker module's unit tests;
+  // unref is absent in browsers and only prevents those test ports keeping the
+  // process alive after the fake worker scope is restored.
+  const nodePort1 = controlChannel.port1 as MessagePort & { unref?: () => void }
+  const nodePort2 = controlChannel.port2 as MessagePort & { unref?: () => void }
+  nodePort1.unref?.()
+  nodePort2.unref?.()
+  controlChannel.port1.onmessage = () => controlYields.shift()?.()
+}
 
 function priority(job: QueuedJob): number {
   return job.request.priority === 'focused' ? 0 : 1
@@ -50,6 +76,107 @@ function cancelledJob(job: QueuedJob | null): boolean {
 function post(message: V2WorkerResponse, transfer: Transferable[] = []) {
   if (disposed) return
   self.postMessage(message, { transfer })
+}
+
+function now(): number {
+  return typeof performance === 'undefined' ? Date.now() : performance.now()
+}
+
+function elapsed(start: number): number {
+  return Math.max(0, now() - start)
+}
+
+function canonicalCacheBytes(): number {
+  const buffers = new Set<ArrayBufferLike>()
+  for (const model of canonicalModels.values()) {
+    buffers.add(model.elevation.buffer)
+    buffers.add(model.ridgeDistance.buffer)
+    buffers.add(model.filledElevation.buffer)
+    buffers.add(model.downslope.buffer)
+    buffers.add(model.outlets.buffer)
+    buffers.add(model.flow.buffer)
+    buffers.add(model.moisture.buffer)
+    buffers.add(model.temperature.buffer)
+    buffers.add(model.biome.buffer)
+  }
+  let bytes = 0
+  for (const buffer of buffers) bytes += buffer.byteLength
+  return bytes
+}
+
+function canonicalCacheTelemetry() {
+  return {
+    maxModels: MAX_CANONICAL_MODELS,
+    size: canonicalModels.size,
+    hits: cacheHits,
+    misses: cacheMisses,
+    evictions: cacheEvictions,
+    accountedBytes: canonicalCacheBytes(),
+  }
+}
+
+function postTelemetry(job: QueuedJob, event: V2WorkerTelemetryEvent) {
+  if (!job.request.measure) return
+  post({
+    type: 'telemetry',
+    protocol: V2_WORKER_PROTOCOL,
+    id: job.request.id,
+    slot: job.request.slot,
+    event,
+  })
+}
+
+function postJobTelemetry(
+  job: QueuedJob,
+  startedAt: number,
+  state: Extract<V2WorkerTelemetryEvent, { lifecycle: 'job' }>['state'],
+  phase?: TerrainV2CancelledError['phase'],
+) {
+  if (!job.request.measure) return
+  postTelemetry(job, {
+    lifecycle: 'job',
+    state,
+    queueDepth: queue.length,
+    workerElapsedMs: elapsed(startedAt),
+    cache: canonicalCacheTelemetry(),
+    ...(phase ? { phase } : null),
+  })
+}
+
+function postCacheTelemetry(
+  job: QueuedJob,
+  startedAt: number,
+  state: Extract<V2WorkerTelemetryEvent, { lifecycle: 'cache' }>['state'],
+  hit: boolean,
+) {
+  if (!job.request.measure) return
+  postTelemetry(job, {
+    lifecycle: 'cache',
+    state,
+    hit,
+    queueDepth: queue.length,
+    workerElapsedMs: elapsed(startedAt),
+    cache: canonicalCacheTelemetry(),
+  })
+}
+
+function postArtifactTelemetry(
+  job: QueuedJob,
+  startedAt: number,
+  state: Extract<V2WorkerTelemetryEvent, { lifecycle: 'artifact' }>['state'],
+  artifactElapsedMs?: number,
+  transferBytes?: number,
+) {
+  if (!job.request.measure) return
+  postTelemetry(job, {
+    lifecycle: 'artifact',
+    state,
+    queueDepth: queue.length,
+    workerElapsedMs: elapsed(startedAt),
+    cache: canonicalCacheTelemetry(),
+    ...(artifactElapsedMs === undefined ? null : { artifactElapsedMs }),
+    ...(transferBytes === undefined ? null : { transferBytes }),
+  })
 }
 
 function postCancelled(job: QueuedJob, phase?: TerrainV2CancelledError['phase']) {
@@ -88,11 +215,18 @@ function storeModel(key: string, model: TerrainV2Model) {
     const oldest = canonicalModels.keys().next().value
     if (oldest === undefined) break
     canonicalModels.delete(oldest)
+    cacheEvictions++
   }
 }
 
 /** Yield a task, not a microtask, so `onmessage` can set cancellation flags. */
 function yieldToMessages(): Promise<void> {
+  if (controlChannel) {
+    return new Promise((resolve) => {
+      controlYields.push(resolve)
+      controlChannel.port2.postMessage(null)
+    })
+  }
   return new Promise((resolve) => setTimeout(resolve, 0))
 }
 
@@ -110,14 +244,22 @@ function transferBuffer(bytes: Uint8Array | Float32Array): ArrayBuffer {
 
 async function process(job: QueuedJob) {
   const { request } = job
+  const startedAt = request.measure ? now() : 0
   if (cancelledJob(job)) {
     postCancelled(job)
+    postJobTelemetry(job, startedAt, 'cancelled')
     cancelled.delete(job.request.id)
     return
   }
 
+  postJobTelemetry(job, startedAt, 'start')
+
   const key = terrainV2CanonicalKey(request.params)
   let model = touchModel(key)
+  const cacheHit = !!model
+  if (cacheHit) cacheHits++
+  else cacheMisses++
+  postCacheTelemetry(job, startedAt, 'lookup', cacheHit)
   try {
     if (!model) {
       model = await compileTerrainV2Async(request.params, {
@@ -137,9 +279,11 @@ async function process(job: QueuedJob) {
       })
       if (cancelledJob(job)) {
         postCancelled(job)
+        postJobTelemetry(job, startedAt, 'cancelled')
         return
       }
       storeModel(key, model)
+      postCacheTelemetry(job, startedAt, 'store', false)
     }
 
     // Give a cancellation/control message one final task before the output
@@ -148,21 +292,28 @@ async function process(job: QueuedJob) {
     await yieldToMessages()
     if (cancelledJob(job)) {
       postCancelled(job)
+      postJobTelemetry(job, startedAt, 'cancelled')
       return
     }
 
     if (request.artifact.kind === 'flat') {
+      postArtifactTelemetry(job, startedAt, 'start')
+      const artifactStartedAt = request.measure ? now() : 0
       const artifact = deriveV2FlatArtifact(
         model,
         request.artifact.width,
         request.artifact.height,
         { clouds: request.params.clouds, cloudSeed: request.params.seed },
       )
+      const artifactElapsedMs = request.measure ? elapsed(artifactStartedAt) : undefined
       if (cancelledJob(job)) {
+        postArtifactTelemetry(job, startedAt, 'discarded', artifactElapsedMs)
         postCancelled(job)
+        postJobTelemetry(job, startedAt, 'cancelled')
         return
       }
       const rgba = transferBuffer(artifact.rgba)
+      postArtifactTelemetry(job, startedAt, 'complete', artifactElapsedMs, rgba.byteLength)
       post({
         type: 'artifact',
         protocol: V2_WORKER_PROTOCOL,
@@ -176,20 +327,30 @@ async function process(job: QueuedJob) {
           rgba,
         },
       }, [rgba])
+      postJobTelemetry(job, startedAt, 'complete')
       return
     }
 
+    postArtifactTelemetry(job, startedAt, 'start')
+    const artifactStartedAt = request.measure ? now() : 0
     const artifact = deriveV2DetailedArtifact(model, {
       widthSegments: request.artifact.widthSegments,
       heightSegments: request.artifact.heightSegments,
     })
+    const artifactElapsedMs = request.measure ? elapsed(artifactStartedAt) : undefined
     if (cancelledJob(job)) {
+      postArtifactTelemetry(job, startedAt, 'discarded', artifactElapsedMs)
       postCancelled(job)
+      postJobTelemetry(job, startedAt, 'cancelled')
       return
     }
     const positions = transferBuffer(artifact.positions)
     const colors = transferBuffer(artifact.colors)
     const normals = transferBuffer(artifact.normals)
+    const normalMap = transferBuffer(artifact.normalMap)
+    const transferBytes = positions.byteLength + colors.byteLength + normals.byteLength
+      + normalMap.byteLength
+    postArtifactTelemetry(job, startedAt, 'complete', artifactElapsedMs, transferBytes)
     post({
       type: 'artifact',
       protocol: V2_WORKER_PROTOCOL,
@@ -203,15 +364,22 @@ async function process(job: QueuedJob) {
         positions,
         colors,
         normals,
+        normalMap,
+        detailMapWidth: artifact.detailMapWidth,
+        detailMapHeight: artifact.detailMapHeight,
         seaRadius: artifact.seaRadius,
       },
-    }, [positions, colors, normals])
+    }, [positions, colors, normals, normalMap])
+    postJobTelemetry(job, startedAt, 'complete')
   } catch (error) {
     if (error instanceof TerrainV2CancelledError || cancelledJob(job)) {
-      postCancelled(job, error instanceof TerrainV2CancelledError ? error.phase : undefined)
+      const phase = error instanceof TerrainV2CancelledError ? error.phase : undefined
+      postCancelled(job, phase)
+      postJobTelemetry(job, startedAt, 'cancelled', phase)
       return
     }
     postError(job, error)
+    postJobTelemetry(job, startedAt, 'error')
   }
 }
 
@@ -221,6 +389,7 @@ function takeNext(): QueuedJob | null {
     const job = queue.shift()!
     if (cancelledJob(job)) {
       postCancelled(job)
+      postJobTelemetry(job, job.measuredAt, 'cancelled')
       cancelled.delete(job.request.id)
       continue
     }
@@ -252,12 +421,13 @@ async function pump() {
 
 function enqueue(request: V2RenderRequest) {
   if (disposed) return
-  const job = { request, sequence: ++sequence }
+  const job = { request, sequence: ++sequence, measuredAt: request.measure ? now() : 0 }
   // A focused result should never wait for an obsolete preview's remaining
   // canonical phase. The async compiler observes this at its next yield.
   if (active && priority(job) < priority(active)) cancelled.add(active.request.id)
   if (suspended) {
     postCancelled(job)
+    postJobTelemetry(job, job.measuredAt, 'cancelled')
     return
   }
   queue.push(job)
@@ -273,6 +443,7 @@ function cancel(ids: readonly number[]) {
     if (!cancelled.has(job.request.id)) continue
     queue.splice(index, 1)
     postCancelled(job)
+    postJobTelemetry(job, job.measuredAt, 'cancelled')
     cancelled.delete(job.request.id)
   }
 }
@@ -287,6 +458,7 @@ function setSuspended(next: boolean) {
   while (queue.length) {
     const job = queue.shift()!
     postCancelled(job)
+    postJobTelemetry(job, job.measuredAt, 'cancelled')
   }
 }
 
@@ -309,6 +481,9 @@ self.onmessage = (event: MessageEvent<V2WorkerRequest>) => {
       queue.length = 0
       canonicalModels.clear()
       cancelled.clear()
+      controlChannel?.port1.close()
+      controlChannel?.port2.close()
+      controlYields.splice(0).forEach((resolve) => resolve())
       self.close()
       break
   }

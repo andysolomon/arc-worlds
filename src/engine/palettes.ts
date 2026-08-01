@@ -1,4 +1,4 @@
-import type { Palette, PresetKey } from './types'
+import type { Palette, PresetKey } from './types.js'
 
 /**
  * Colour ramps per world type. Rocky worlds interpolate deep→water→sand→

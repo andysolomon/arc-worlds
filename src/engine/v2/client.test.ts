@@ -35,6 +35,31 @@ function flatResponse(id: number, slot: string): V2WorkerResponse {
   }
 }
 
+function artifactTelemetry(id: number, slot: string): V2WorkerResponse {
+  return {
+    type: 'telemetry',
+    protocol: V2_WORKER_PROTOCOL,
+    id,
+    slot,
+    event: {
+      lifecycle: 'artifact',
+      state: 'complete',
+      queueDepth: 0,
+      workerElapsedMs: 1,
+      artifactElapsedMs: 1,
+      transferBytes: 4,
+      cache: {
+        maxModels: 12,
+        size: 1,
+        hits: 0,
+        misses: 1,
+        evictions: 0,
+        accountedBytes: 1,
+      },
+    },
+  }
+}
+
 describe('V2TerrainClient', () => {
   it('creates the worker lazily and suppresses replaced results', () => {
     const worker = new FakeWorker()
@@ -52,6 +77,8 @@ describe('V2TerrainClient', () => {
     expect(worker.messages.map((message) => (message as { type: string }).type))
       .toEqual(['render', 'cancel', 'render'])
 
+    worker.emit(artifactTelemetry(second, 'preview:0'))
+    expect(artifacts).toEqual([])
     worker.emit(flatResponse(first, 'preview:0'))
     expect(artifacts).toEqual([])
     worker.emit(flatResponse(second, 'preview:0'))

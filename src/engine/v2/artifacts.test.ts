@@ -3,14 +3,19 @@ import { DEFAULT_PARAMS } from '../../lib/params'
 import { buildCanonicalGraph } from './graph'
 import {
   V2_RELIEF_AMPLITUDE,
+  V2_DETAIL_MAP_HEIGHT,
+  V2_DETAIL_MAP_WIDTH,
   bakeV2Flat,
   colorTerrainV2Into,
   createV2Color,
+  createV2Surface,
+  createV2SurfaceNoise,
   deriveV2DetailedArtifact,
   deriveV2FlatArtifact,
   directionForV2DetailVertex,
   directionForV2EquirectangularPixel,
   linearToSrgbByte,
+  sampleV2SurfaceInto,
   terrainV2FlatArtifactKey,
 } from './artifacts'
 import { createTerrainV2Model, createTerrainV2Sample, sampleTerrainV2Into } from './model'
@@ -42,6 +47,8 @@ describe('v2 render artifacts', () => {
     const flat = deriveV2FlatArtifact(model, FLAT_WIDTH, FLAT_HEIGHT)
     const direction = directionForV2EquirectangularPixel(FLAT_WIDTH, FLAT_HEIGHT, 0, 0)
     const sample = createTerrainV2Sample()
+    const surface = createV2Surface()
+    const surfaceNoise = createV2SurfaceNoise(model)
     const color = createV2Color()
 
     expect(flat.width).toBe(FLAT_WIDTH)
@@ -54,7 +61,10 @@ describe('v2 render artifacts', () => {
       for (let column = 0; column < FLAT_WIDTH; column++) {
         directionForV2EquirectangularPixel(FLAT_WIDTH, FLAT_HEIGHT, column, row, direction)
         sampleTerrainV2Into(model, direction.x, direction.y, direction.z, sample)
-        colorTerrainV2Into(model, sample, color)
+        sampleV2SurfaceInto(
+          model, surfaceNoise, direction.x, direction.y, direction.z, sample.elevation, surface,
+        )
+        colorTerrainV2Into(model, sample, color, surface.elevation, surface.detail)
         const pixel = row * FLAT_WIDTH + column
         const offset = pixel * 4
 
@@ -80,6 +90,8 @@ describe('v2 render artifacts', () => {
     const count = rowLength * (DETAIL_HEIGHT + 1)
     const direction = directionForV2DetailVertex(DETAIL_WIDTH, DETAIL_HEIGHT, 0, 0)
     const sample = createTerrainV2Sample()
+    const surface = createV2Surface()
+    const surfaceNoise = createV2SurfaceNoise(model)
     const color = createV2Color()
 
     expect(detailed.widthSegments).toBe(DETAIL_WIDTH)
@@ -91,6 +103,14 @@ describe('v2 render artifacts', () => {
     expect(detailed.position).toBe(detailed.positions)
     expect(detailed.color).toBe(detailed.colors)
     expect(detailed.normal).toBe(detailed.normals)
+    expect(detailed.detailMapWidth).toBe(V2_DETAIL_MAP_WIDTH)
+    expect(detailed.detailMapHeight).toBe(V2_DETAIL_MAP_HEIGHT)
+    expect(detailed.detailMap).toHaveLength(V2_DETAIL_MAP_WIDTH * V2_DETAIL_MAP_HEIGHT)
+    expect(new Set(detailed.detailMap).size).toBeGreaterThan(32)
+    expect(detailed.normalMap).toHaveLength(V2_DETAIL_MAP_WIDTH * V2_DETAIL_MAP_HEIGHT * 4)
+    for (let index = 3; index < detailed.normalMap.length; index += 4) {
+      expect(detailed.normalMap[index]).toBe(255)
+    }
     expect(detailed.seaRadius).toBeCloseTo(1 + model.seaLevel * V2_RELIEF_AMPLITUDE, 12)
 
     for (let iy = 0; iy <= DETAIL_HEIGHT; iy++) {
@@ -99,8 +119,11 @@ describe('v2 render artifacts', () => {
         const offset = index * 3
         directionForV2DetailVertex(DETAIL_WIDTH, DETAIL_HEIGHT, ix, iy, direction)
         sampleTerrainV2Into(model, direction.x, direction.y, direction.z, sample)
-        colorTerrainV2Into(model, sample, color)
-        const radius = 1 + sample.elevation * V2_RELIEF_AMPLITUDE
+        sampleV2SurfaceInto(
+          model, surfaceNoise, direction.x, direction.y, direction.z, sample.elevation, surface,
+        )
+        colorTerrainV2Into(model, sample, color, surface.elevation, surface.detail)
+        const radius = 1 + surface.elevation * V2_RELIEF_AMPLITUDE
 
         expect(detailed.biomes[index], `biome at ${ix},${iy}`).toBe(sample.biome)
         expectTripletClose(
@@ -119,6 +142,24 @@ describe('v2 render artifacts', () => {
         expect(nx * direction.x + ny * direction.y + nz * direction.z, `outward normal at ${ix},${iy}`).toBeGreaterThan(0)
       }
     }
+  })
+
+  it('keeps the same surface colour when orbit and detailed projections meet', () => {
+    const model = createTerrainV2Model(DEFAULT_PARAMS, { graph: TEST_GRAPH })
+    // These dimensions deliberately align one pixel centre with one sphere
+    // vertex despite the two projections using opposite longitude origins.
+    const detailed = deriveV2DetailedArtifact(model, { widthSegments: 11, heightSegments: 8 })
+    const flat = deriveV2FlatArtifact(model, 11, 4)
+    const detailColumn = 2
+    const detailRow = 3
+    const flatColumn = 3
+    const flatRow = 1
+    const detailOffset = (detailRow * 12 + detailColumn) * 3
+    const flatOffset = (flatRow * 11 + flatColumn) * 4
+
+    expect(flat.rgba[flatOffset]).toBe(linearToSrgbByte(detailed.colors[detailOffset]))
+    expect(flat.rgba[flatOffset + 1]).toBe(linearToSrgbByte(detailed.colors[detailOffset + 1]))
+    expect(flat.rgba[flatOffset + 2]).toBe(linearToSrgbByte(detailed.colors[detailOffset + 2]))
   })
 
   it('makes the UV seam and duplicate poles bit-identical without changing canonical geography', () => {
@@ -152,6 +193,28 @@ describe('v2 render artifacts', () => {
         expect(detailed.biomes[index], `pole biome ${iy}:${ix}`).toBe(detailed.biomes[reference])
       }
     }
+  })
+
+  it('adds deterministic bounded surface detail without mutating canonical elevation', () => {
+    const model = createTerrainV2Model({ ...DEFAULT_PARAMS, generatorVersion: 2, seed: 31_174 }, { graph: TEST_GRAPH })
+    const noise = createV2SurfaceNoise(model)
+    const first = createV2Surface()
+    const second = createV2Surface()
+    const sample = createTerrainV2Sample()
+    const direction = directionForV2EquirectangularPixel(31, 17, 9, 6)
+    sampleTerrainV2Into(model, direction.x, direction.y, direction.z, sample)
+    const canonicalElevation = sample.elevation
+
+    sampleV2SurfaceInto(model, noise, direction.x, direction.y, direction.z, canonicalElevation, first)
+    sampleV2SurfaceInto(
+      model, createV2SurfaceNoise(model), direction.x, direction.y, direction.z, canonicalElevation, second,
+    )
+
+    expect(first).toEqual(second)
+    expect(sample.elevation).toBe(canonicalElevation)
+    expect(first.elevation).toBe(canonicalElevation + first.detail)
+    expect(Math.abs(first.detail)).toBeLessThan(0.5)
+    expect(first.detail).not.toBe(0)
   })
 
   it('keeps clouds out of canonical geography but includes them in flat artifact identity', () => {

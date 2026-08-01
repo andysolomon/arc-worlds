@@ -1028,3 +1028,263 @@ NEXT
   worker-CPU, and memory scenario before raising graph resolution or adding a
   custom normal shader. The modest graph and MeshStandardMaterial are deliberate
   until that evidence and a visible product gain justify more cost.
+
+2026-08-01 v2 Meadow visual direction
+
+PLAN
+- Keep v2's canonical graph and hydrology intact, but add shared deterministic
+  worker-side fractal detail when flat and detailed artifacts are derived.
+- Give Meadow a continuous, reference-led elevation/climate palette instead of
+  dominant-cell biome blocks, then tune its existing standard material, water,
+  cloud shell, atmosphere, and lighting around the sharper surface.
+- Do not copy the reference demo's continuous render loop, 30-ish simplex
+  evaluations per fragment, 4,000 cloud particles, or bloom composer. Arc
+  Worlds retains worker compilation, idle rendering, narrow invalidation, and
+  the checked shader/bundle/browser budgets.
+
+STATUS
+- Delivered.
+
+DONE
+- Kept the 642-cell canonical terrain graph responsible for continent shape,
+  drainage, moisture, temperature, and world identity, then added deterministic
+  broad, fine, and ridged fractal detail only while the worker derives visual
+  artifacts. Flat and focused worlds therefore share the same terrain identity
+  without moving procedural pixel loops onto the main thread.
+- Replaced Meadow's dominant-biome patches with continuous elevation, climate,
+  and ridge blends: navy deep water, cyan shallows, warm narrow beaches,
+  saturated grass and forest, dark rock, and restrained snow. River tinting is
+  retained as a subtle overlay rather than a competing color block.
+- Added a worker-produced 256x128 tangent-space normal map and stable material
+  topology. It restores small-scale land relief without recompiling shaders on
+  slider/seed interactions or displacing canonical coastlines.
+- Retuned Meadow's preset, water, cloud bake, cloud shell, atmosphere, lighting,
+  framing, material roughness, and fluid amplitude toward the reference's crisp,
+  colorful planet silhouette. The cloud bake is sharper and higher resolution,
+  but still lazy, worker-owned, cached, disposable, and idle when hidden.
+- Captured and inspected the canonical Meadow seed in the browser while tuning;
+  the final frame has readable rugged terrain, turquoise coasts, deeper oceans,
+  lighter clouds, and a less dominant atmosphere.
+
+VERIFIED
+- `bun run typecheck`, `bun run lint`, `bun run build`, and `bun run test` pass;
+  163 Vitest tests include deterministic detail, continuous color, normal-map,
+  and opt-in Meadow cloud coverage.
+- `bun run test:e2e`: 32 passed; the known hover timing test landed exactly on
+  its marginal 30-frame boundary once under the full parallel load, then passed
+  alone. This is the pre-existing test documented above, not a rendering error.
+- `bun run size:check` passes: entry 246,457 B gzip, v2 terrain worker 28,604 B
+  raw, and retained bake worker 93,180 B raw.
+- Direct production-sized worker sample: canonical compile 5.2 ms, detailed
+  artifact plus normal map 101.5 ms, flat artifact 89.4 ms, and 701,852 bytes
+  transferred for the focused result.
+- Clean `bun run perf:smoke` passes every local budget: 539.5 ms first Orbit
+  frame, 32 ms interaction, 508 ms longest/total software-renderer long task,
+  1,709 ms task time, 3 transition shader programs, 23.3 fps, zero paused
+  frames/tasks, and zero errors.
+- `bun run perf:engines`: WebKit / Apple GPU had a 32 ms largest frame gap and
+  Chromium headed / Apple GPU 35 ms, with zero frames over 50 ms in either.
+  Headless Chromium's software renderer measured 520 ms, consistent with the
+  checked smoke profile rather than a visitor-facing GPU stall.
+
+2026-08-01 orbital climate and universal v2 seeds
+
+PLAN
+- Make stellar luminosity and orbital placement determine a shared modeled
+  climate before terrain artifacts, fluid shells, system labels, or scans are
+  derived.
+- Keep seed geography stable while allowing water phase, polar frost,
+  moisture, vegetation potential, clouds, and atmosphere presentation to
+  respond to the system around it.
+- Move every bundled/new seed path to v2 while retaining an explicit v1 read
+  boundary for old saved links.
+- Prove the requested experiment: the same Earth at 1 AU and at Jupiter's
+  sixth-planet orbit must produce physically different worlds.
+
+STATUS
+- Delivered.
+
+DONE
+- Added a pure orbital-climate module with explicit bolometric luminosity,
+  main-sequence mass fallback, eccentric-orbit mean flux, Bond-albedo
+  equilibrium temperature, atmosphere-profile greenhouse warming,
+  perihelion/aphelion temperature bounds, conservative habitable-zone edges,
+  and bounded satellite tidal heating.
+- Added rounded luminosities to built-in stars and preserved/clamped them at
+  system save/load boundaries. Custom star changes update luminosity and
+  re-time orbital years together.
+- Derived liquid-water fraction, persistent frost coverage and latitude,
+  evaporation, terrain moisture, vegetation potential, cloud strength, and
+  fluid-shell visibility from one modeled climate. Every result says modeled;
+  habitable-zone membership is never presented as proof of life.
+- Passed orbital climate into the v2 canonical key and worker so moving a world
+  preserves seed/continents but regenerates temperature, moisture, biomes,
+  ice, water, and vegetation consistently in flat and detailed artifacts.
+- System cards now show modeled kelvin temperature and climate state; editable
+  body controls show whether the orbit lies inside the star's modeled
+  habitable zone. The spectrometer reports flux, equilibrium temperature,
+  orbital temperature range, water phase, and climate-limited biosignatures.
+- Editable copies of measured systems discard static photography at render
+  time and use procedural v2 surfaces, allowing orbital experiments to become
+  visible. The measured original retains its imagery and measured profiles.
+- All standalone, preset, ancient, promoted-moon, Solar System, fiction,
+  observed-system, surprise, and rolled-system seeds now start on v2. Old and
+  explicitly v1 saved payloads still load unchanged; reseeding, applying a
+  preset, or reshaping upgrades them.
+- Added the scientific assumptions, NASA references, honesty boundary, and
+  next-model limitations to
+  `docs/planet-terrain-generation-research/science.md`.
+
+EARTH AT THE SIXTH ORBIT
+- At 1 AU the first-order Earth analog resolves near 288 K with liquid surface
+  water, high-latitude permanent ice, and high vegetation potential.
+- At 5.20 AU it receives about 3.7% of Earth sunlight, resolves below 180 K,
+  reaches zero surface-liquid fraction and zero vegetation potential, and
+  freezes globally. The full editor → generated surface → scan journey is an
+  end-to-end browser test and the final frame was inspected by hand.
+
+VERIFIED
+- `bun run typecheck`, `bun run lint`, `bun run build`, and `bun run test`
+  pass; 169 Vitest tests include four direct orbital-climate scenarios and a
+  guard that derived climate never becomes persisted seed identity.
+- `bun run test:e2e`: 34 passed in 1.7 minutes, including the Earth-at-sixth-
+  orbit visual/scan journey and all retained system, moon, v2, idle-render,
+  spectrometer, and eclipse behavior.
+- `bun run size:check` passes: entry 248,901 B gzip, v2 terrain worker 29,681 B
+  raw, bake worker 93,180 B raw.
+- Clean `bun run perf:smoke` passes all local budgets: 353.6 ms first Orbit
+  frame, 309 ms longest software-renderer task, 598 ms total long-task time,
+  1,867 ms task time, three shader programs, 23.3 fps, zero paused work, and
+  zero errors.
+- First real-GPU run: WebKit / Apple GPU 39 ms and Chromium headed / Apple GPU
+  46 ms largest frame gap, with zero frames over 50 ms in either and the same
+  55,920 triangles. A repeat coincided with unrelated `bun`, Spotlight, and
+  media-analysis processes consuming roughly four CPU cores and produced
+  40/52 ms with one Chromium frame over 50 ms; app regeneration/body build
+  remained 1.7/0.8 ms. No budget was loosened; repeat when the machine is quiet.
+
+2026-08-01 v2 24-body generation stress gate
+
+PLAN
+- Exercise the real separately loaded v2 terrain worker with 24 deterministic
+  bodies and production-sized artifacts before considering a denser canonical
+  graph or a custom terrain shader.
+- Measure throughput, worker/phase time, transfer volume, latest-wins
+  cancellation and focused preemption, canonical-cache bounds, and browser
+  heap memory when the browser exposes it.
+- Apply the research prototype's existing gates: all previews settled in
+  3,000 ms, no phase above 50 ms, no more than 100 ms spent after replacement,
+  and no more than 64 MB incremental cache memory.
+- Keep the harness out of the visitor entry bundle, make it repeatable through
+  Bun, and retain all existing correctness and performance gates.
+
+STATUS
+- Delivered.
+
+DONE
+- Added `bun run perf:terrain`, an isolated browser entry that never enters the
+  visitor build. It drives the real module worker with 24 distinct rocky v2
+  worlds at 256×128, then standard 150×104 and high 220×150 detail.
+- Added opt-in worker lifecycle telemetry for worker/artifact elapsed time,
+  phase timing, transfer bytes, queue depth, cache hits/misses/evictions, cache
+  size, and exact retained canonical-buffer bytes. Ordinary render requests
+  emit no telemetry and keep the same artifact protocol.
+- Added real-client latest-wins/focused-preemption coverage with two previews
+  still queued. Worker priority alone cancels the active preview and delivers
+  focused work first. A second replacement lands during synchronous artifact
+  work: one obsolete wire result arrives, but the production client's latest-ID
+  check prevents it from reaching the accepted artifact callback.
+- Proved the 12-model LRU boundary with 24 unique canonical keys, a recent-key
+  hit, and an early-key miss after eviction. Artifact byte counts are checked
+  against their exact production dimensions.
+- Replaced worker `setTimeout(0)` phase yields with one reusable
+  `MessageChannel`. Headless Chromium had clamped each nominal zero timer to
+  roughly 20 ms, turning about one second of real work into a 5.7-second wall
+  time. MessageChannel keeps the cancellation task boundary and removed the
+  timer floor.
+- Report UA-specific memory only when the browser exposes it. This run did not,
+  so the result says unavailable and enforces deterministic cache + transferred
+  buffer accounting instead; the narrower Chromium page-heap value remains a
+  labeled diagnostic.
+
+VERIFIED
+- Three-run `bun run perf:terrain` median: all 24 previews 862.9 ms, focused
+  high detail 103.2 ms, longest canonical phase 1.1 ms, phase-boundary
+  cancellation 1.3 ms, and mid-artifact replacement waste 42.4 ms. The
+  isolated transfer/client handler produced zero long tasks; one stale wire
+  artifact was received and zero were accepted; there were zero errors.
+- The worker retained at most 12 canonical models / 231,120 B, transferred
+  exactly 5,442,152 B for the fixture, and accounted for 5,673,272 B total
+  against the 64 MB gate. Cache telemetry observed 3 hits, 25 misses, and 13
+  evictions.
+- Focused telemetry/client/gate tests: 7 passed. Typecheck and lint pass.
+- Full verification: 174 Vitest tests, production build, and size check pass;
+  entry remains 248,901 B gzip, v2 worker is 31,831 B raw, and bake worker is
+  93,180 B raw. Full Playwright delivered 33/34 with the documented hover frame
+  counter landing exactly on 30 under four-worker load; that test passed alone
+  at one worker, and all other 33—including the climate journey—passed.
+- `bun run perf:smoke` passes: 439.6 ms first Orbit frame, 390 ms longest/total
+  software-renderer task, 1,557 ms task time, three shader programs, 23.3 fps,
+  zero paused work, and zero errors.
+- Retained-path real-GPU sample: WebKit / Apple GPU 38 ms and zero frames over
+  50 ms; headed Chromium / Apple GPU 61 ms and one frame over 50 ms while the
+  previously documented unrelated 100%-CPU Bun process remained active. The
+  measured Solar-System Orbit path does not load the v2 worker; no budget was
+  loosened from this contaminated confirmation sample.
+
+2026-08-01 surface identity and ecosystem diversity
+
+PLAN
+- Remove the Auto / Flat / Detailed preference and present one rich view for
+  every planet or moon, with a specialized weather renderer for gas giants.
+- Keep the orbit mesh budget, but make orbit and focused views consume the same
+  canonical v2 geography, ecotype colours, climate response, and cloud field.
+- Give Meadow and Pandora deterministic ecosystem families selected by seed,
+  then verify diversity, cross-projection identity, browser behavior, bundle
+  size, and the existing performance budgets.
+
+STATUS
+- Delivered.
+
+DONE
+- Removed rendering tier state, migration logic, engine params, Sculpt chips,
+  routing policy, and tier-specific unit coverage. Old browser storage blobs
+  containing `tier` are accepted and ignored.
+- Rocky photographs always keep their measured map and gain the rich relief and
+  atmosphere treatment. Procedural rock always uses detailed canonical
+  geometry. Gas giants retain animated bands and vortices because their visible
+  surface is weather, not terrain.
+- Added eight seed-stable Meadow ecotypes and six separate Pandora biosphere
+  families spanning forests, savannas, steppe, wetlands, alpine heath, alien
+  violet canopy, coral rainforest, and other controlled ramps.
+- Applied ecosystem ocean colour to the detailed fluid shell while continuing
+  to let modeled liquid water, vegetation potential, temperature, and ice
+  determine what survives after a world moves through its system.
+- Moved the v2 cloud field into a shared pure module. Orbit compositing and the
+  detailed moving cloud shell now sample the same seed, coverage, climate
+  scaling, and unit-sphere function without making a cloud edit rebuild land.
+- Added contracts for deterministic ecosystem selection, Meadow breadth,
+  Pandora separation, identical orbit/detail colour at an aligned surface
+  point, exact cloud-field parity, retired preference migration, and the
+  absence of rendering-tier controls.
+
+VERIFIED
+- `bun run typecheck`, `bun run lint`, and all 176 Vitest tests pass. The full
+  Playwright suite passes 34/34, including Pandora, moon travel, the retired
+  tier UI, and the Earth-at-sixth-orbit climate journey.
+- Production build and `bun run size:check` pass: entry 250,247 B gzip, bake
+  worker 93,596 B raw, and v2 terrain worker 35,752 B raw. The ecotype ramps
+  add 1,346 B gzip to the entry and remain below the 256,000 B budget.
+- `bun run perf:smoke` passes: 289.9 ms first Orbit frame, 40 ms interaction,
+  252 ms longest/total software-renderer task, 1,384 ms task time, two added
+  programs, 23.3 fps, zero paused work, and zero errors.
+- Real GPUs retain exactly 55,920 Orbit triangles. WebKit / Apple GPU measured
+  a 38 ms largest gap with zero frames over 50 ms; headed Chromium / Apple GPU
+  measured 50 ms with zero frames over 50 ms. The documented headless software
+  rasterizer measured 562 ms and is not used as real-hardware evidence.
+- Three-run `bun run perf:terrain` remains below every research gate: 24 v2
+  previews 896 ms, focused high detail 108.7 ms, longest canonical phase
+  1.1 ms, replacement cancellation 1.3 ms, mid-artifact waste 44.2 ms, zero
+  main-thread long tasks, zero stale accepted artifacts, and zero errors.
+  Compared with the immediately preceding same-machine medians, preview and
+  focused time rose 3.8% and 5.3%; both remain below the 10% regression guard.

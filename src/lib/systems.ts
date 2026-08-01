@@ -6,6 +6,7 @@
  * of JSON — so the same object is what gets stored, shared and rendered.
  */
 import { mulberry32 } from '../engine/noise.js'
+import { stellarLuminosity } from '../engine/climate.js'
 import { periodFor } from '../engine/scale.js'
 import type {
   PlanetParams, PresetKey, RingConfig, Star, SystemBody, SystemDef,
@@ -128,6 +129,12 @@ export function sanitizeSystem(input: unknown): SystemDef {
     color: rgb(rawStar.color, 0xffd9a0),
     mass: num(rawStar.mass, MASS_MIN, MASS_MAX, 1),
   }
+  star.luminosity = num(
+    rawStar.luminosity,
+    0.00001,
+    100,
+    stellarLuminosity(star),
+  )
 
   const list = Array.isArray(raw.bodies) ? raw.bodies.slice(0, MAX_BODIES) : []
   const bodies = list.map((b, i) => sanitizeBody(b, i, star.mass))
@@ -527,7 +534,7 @@ export function rollSystem(seed = (Math.random() * 99999) | 0): SystemDef {
     name: `${starName} ${['Reach', 'System', 'Cluster', 'Span', 'Fields'][(r() * 5) | 0]}`,
     sub: `imagined · ${kind.label}, ${count} worlds`,
     origin: 'custom',
-    star: { name: starName, color: kind.color, mass },
+    star: { name: starName, color: kind.color, mass, luminosity: stellarLuminosity({ mass }) },
     bodies,
   }
 }
@@ -541,7 +548,7 @@ export function emptySystem(seed = (Math.random() * 99999) | 0): SystemDef {
     name: `${name} System`,
     sub: 'a system of your own',
     origin: 'custom',
-    star: { name, color: 0xffd9a0, mass: 1 },
+    star: { name, color: 0xffd9a0, mass: 1, luminosity: 1 },
     bodies: [],
   }
 }

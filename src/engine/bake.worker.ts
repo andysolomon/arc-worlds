@@ -10,7 +10,7 @@ import type { PlanetParams } from './types'
 
 export type BakeWorkerRequest =
   | { id: number; kind: 'world'; params: PlanetParams }
-  | { id: number; kind: 'clouds'; seed: number; cover: number }
+  | { id: number; kind: 'clouds'; seed: number; cover: number; style?: 'classic' | 'v2'; liquidWater?: number }
 
 export interface BakeWorkerResponse {
   id: number
@@ -25,7 +25,9 @@ self.onmessage = (event: MessageEvent<BakeWorkerRequest>) => {
   const world = request.kind === 'world'
   const bytes = world
     ? bakeWorldPixels(request.params)
-    : bakeCloudPixels(request.seed, request.cover)
+    : bakeCloudPixels(
+        request.seed, request.cover, undefined, undefined, request.style, request.liquidWater,
+      )
   const response: BakeWorkerResponse = {
     id: request.id,
     kind: request.kind,

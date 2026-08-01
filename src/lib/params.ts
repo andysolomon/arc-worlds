@@ -54,6 +54,12 @@ export const DEFAULT_PARAMS: PlanetParams = {
   cloudTexture: null,
 }
 
+/** Baseline for every new/bundled world; DEFAULT_PARAMS remains the v1 loader fallback. */
+export const CURRENT_PARAMS: PlanetParams = {
+  ...DEFAULT_PARAMS,
+  generatorVersion: CURRENT_GENERATOR_VERSION,
+}
+
 const UNIT_KEYS = [
   'mountains', 'water', 'roughness', 'clouds', 'glow', 'ice',
   'lightAz', 'lightEl', 'spinSpeed', 'ringInner', 'ringTilt',

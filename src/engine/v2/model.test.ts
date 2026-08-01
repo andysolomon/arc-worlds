@@ -51,6 +51,7 @@ function expectFiniteSample(sample: ReturnType<typeof sampleTerrainV2>): void {
     sample.z,
     sample.latitude,
     sample.elevation,
+    sample.ridgeDistance,
     sample.filledElevation,
     sample.flow,
     sample.moisture,
@@ -74,7 +75,6 @@ describe('the canonical v2 terrain model', () => {
       spinDir: -1,
       spinSpeed: 1,
       rings: true,
-      tier: 'flat',
     }, { graph: TEST_GRAPH })
     expectCanonicalDataEqual(first, presentationOnly)
     expect(first.params).toEqual({
@@ -84,7 +84,27 @@ describe('the canonical v2 terrain model', () => {
       water: params.water,
       roughness: params.roughness,
       ice: params.ice,
+      meanSurfaceTemperatureK: 288,
+      liquidWater: 1,
+      surfaceIce: params.ice * 0.25,
+      vegetationPotential: 1,
+      iceLineLatitudeDeg: 90 - params.ice * 25,
     })
+
+    const frozen = createTerrainV2Model({
+      ...params,
+      climate: {
+        schema: 'arc-worlds-orbital-climate-1', source: 'modeled',
+        stellarFlux: 0.04, equilibriumTemperatureK: 115, meanSurfaceTemperatureK: 148,
+        perihelionTemperatureK: 149, aphelionTemperatureK: 147, liquidWater: 0,
+        surfaceIce: 1, vegetationPotential: 0, iceLineLatitudeDeg: 0, tidalHeatingK: 0,
+        habitableZoneInnerAU: 0.97, habitableZoneOuterAU: 1.67,
+        inHabitableZone: false, regime: 'frozen',
+      },
+    }, { graph: TEST_GRAPH })
+    expect(frozen.canonicalKey).not.toBe(first.canonicalKey)
+    expect(frozen.temperature).not.toEqual(first.temperature)
+    expect(frozen.moisture).not.toEqual(first.moisture)
 
     const reseeded = createTerrainV2Model({ ...params, seed: params.seed + 1 }, { graph: TEST_GRAPH })
     expect(reseeded.canonicalKey).not.toBe(first.canonicalKey)
@@ -195,6 +215,7 @@ describe('the canonical v2 terrain model', () => {
       expect(returned).toBe(scratch)
       expect(scratch).toEqual(allocated)
       expect(allocated.elevation, `elevation at graph vertex ${vertex}`).toBe(model.elevation[vertex])
+      expect(allocated.ridgeDistance, `ridge distance at graph vertex ${vertex}`).toBe(model.ridgeDistance[vertex])
       expect(allocated.filledElevation, `filled elevation at graph vertex ${vertex}`).toBe(model.filledElevation[vertex])
       expect(allocated.flow, `flow at graph vertex ${vertex}`).toBe(model.flow[vertex])
       expect(allocated.moisture, `moisture at graph vertex ${vertex}`).toBe(model.moisture[vertex])

@@ -12,7 +12,8 @@ import {
   type BioReading, type Profile, type SpectralLine, type WaterReading,
 } from '../data/spectrometer'
 import { ANCIENT, FICTION, MOONS, PRESETS, typeOf } from '../data/presets'
-import { LEGACY_GENERATOR_VERSION, type PlanetParams, type PresetKey } from '../engine/types'
+import type { PlanetParams, PresetKey } from '../engine/types'
+import { formatClimate } from '../engine/climate'
 
 /**
  * Presets whose derived readings borrow another family's chemistry. Only
@@ -66,6 +67,13 @@ export interface LineReading {
 export type { BioReading, WaterReading }
 
 export interface ScanResult {
+  climate: {
+    summary: string
+    equilibrium: string
+    stellarFlux: string
+    seasonalRange: string
+    habitableZone: string
+  } | null
   atmoTitle: string
   pressure: string
   atmoSummary: string
@@ -162,11 +170,12 @@ function buildProfile(P: PlanetParams, r: () => number): Profile {
   if ('gas' in t && t.gas) return gasProfile(P, key, note)
 
   const bias: Record<string, number> = { temperate: 0.15, candy: 0.1, ice: -0.05, desert: -0.12, lava: -0.28 }
-  const score =
+  const baseScore =
     (1 - Math.abs(P.water - 0.55) * 1.6) * 0.55 + P.clouds * 0.25 + (bias[key] ?? 0) + (r() - 0.5) * 0.18
+  const score = baseScore * (P.climate ? 0.05 + P.climate.vegetationPotential * 0.95 : 1)
 
-  const ice = P.ice
-  const wet = P.water
+  const ice = P.climate?.surfaceIce ?? P.ice
+  const wet = P.water * (P.climate?.liquidWater ?? 1)
   const cl = P.clouds
   const oxy = score > 0.45
 
@@ -214,10 +223,10 @@ function buildProfile(P: PlanetParams, r: () => number): Profile {
   let water: WaterReading
   if (key === 'lava') {
     water = { state: 'vapour only', dot: '#e0c49a', detail: 'Any surface water flashed to steam long ago and the rest is locked into hot minerals. An enriched deuterium ratio would be the tell-tale that an ocean was once here.', sig: 'Only the 1.4 µm and 1.9 µm vapour bands register — no liquid or ice absorption anywhere.' }
+  } else if (ice > 0.72 && P.water > 0.06) {
+    water = { state: 'frozen, everywhere', dot: '#cfe6f2', detail: 'Every drop is ice. Fresh surface ice is one of the most reflective natural materials there is, which keeps the planet cold enough to stay that way — a feedback that is hard to escape.', sig: 'Identified by the 1.04 and 1.25 µm ice bands, quite distinct from vapour or liquid.' }
   } else if (wet <= 0.06) {
     water = { state: 'none detected', dot: '#c9b0bb', detail: 'No standing water, no ice, nothing but a few parts per million bound into the rock. Raise the sea level and run the spectrometer again.', sig: 'The 720 nm and 940 nm vapour bands come back flat.' }
-  } else if (ice > 0.72) {
-    water = { state: 'frozen, everywhere', dot: '#cfe6f2', detail: 'Every drop is ice. Fresh surface ice is one of the most reflective natural materials there is, which keeps the planet cold enough to stay that way — a feedback that is hard to escape.', sig: 'Identified by the 1.04 and 1.25 µm ice bands, quite distinct from vapour or liquid.' }
   } else if (ice > 0.3) {
     water = { state: 'liquid, with permanent ice caps', dot: '#7cbfe0', detail: 'Open ocean across the middle latitudes with year-round ice at both poles. All three phases coexist, which needs a narrow band of pressure and temperature.', sig: 'Liquid water absorbs red about 100× more strongly than blue, so the seas return blue; the caps show the 1.04 µm ice band instead.' }
   } else {
@@ -291,17 +300,15 @@ export async function computeScan(P: PlanetParams): Promise<ScanResult> {
   // A moon that is a world scans as itself from its own chunk — measured
   // prose, same standing as a planet's, kept separate only because each lazy
   // chunk carries its own size budget and the planet prose fills most of one.
-  // Canonical measured/reconstructed/story readings describe the existing v1
-  // worlds. A v2 seed is intentionally a different world even when someone
-  // reuses one of those familiar preset-and-seed pairs.
-  const isLegacyIdentity = P.generatorVersion === LEGACY_GENERATOR_VERSION
-  const isMoon = isLegacyIdentity && MOONS.some((m) => m.key === P.preset && m.params.seed === P.seed)
+  // Canonical measured/reconstructed/story identity is preset+seed identity;
+  // those worlds now use v2 terrain without discarding their known chemistry.
+  const isMoon = MOONS.some((m) => m.key === P.preset && m.params.seed === P.seed)
   const moon = isMoon ? (await import('../data/moon-profiles')).MOON_PROFILES[P.preset] ?? null : null
   const real = moon ?? (realFor(P) ? REAL_PROFILES[P.preset] ?? null : null)
-  const ancient = isLegacyIdentity && ANCIENT.some((a) => a.key === P.preset && a.params.seed === P.seed)
+  const ancient = ANCIENT.some((a) => a.key === P.preset && a.params.seed === P.seed)
     ? ANCIENT_PROFILES[P.preset] ?? null
     : null
-  const story = isLegacyIdentity && FICTION.some((f) => f.key === P.preset && f.params.seed === P.seed)
+  const story = FICTION.some((f) => f.key === P.preset && f.params.seed === P.seed)
     ? (await import('../data/fiction')).FICTION_PROFILES[P.preset] ?? null
     : null
   const prof = real ?? ancient ?? story ?? buildProfile(P, r)
@@ -335,6 +342,15 @@ export async function computeScan(P: PlanetParams): Promise<ScanResult> {
   lines.sort((a, b) => a.nm - b.nm)
 
   return {
+    climate: P.climate ? {
+      summary: formatClimate(P.climate),
+      equilibrium: `${Math.round(P.climate.equilibriumTemperatureK)} K equilibrium`,
+      stellarFlux: `${P.climate.stellarFlux.toFixed(P.climate.stellarFlux < 0.1 ? 3 : 2)}× Earth sunlight`,
+      seasonalRange: `${Math.round(P.climate.aphelionTemperatureK)}–${Math.round(P.climate.perihelionTemperatureK)} K orbital range`,
+      habitableZone: P.climate.inHabitableZone
+        ? 'Inside the modeled liquid-water habitable zone'
+        : `Outside the modeled ${P.climate.habitableZoneInnerAU.toFixed(2)}–${P.climate.habitableZoneOuterAU.toFixed(2)} AU habitable zone`,
+    } : null,
     atmoTitle: prof.atmoTitle,
     pressure: prof.pressure,
     atmoSummary: prof.atmoSummary,

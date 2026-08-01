@@ -2,21 +2,12 @@ import { ANCIENT, MOONS, PRESETS, type AncientWorld } from '../data/presets'
 import { realFor } from '../engine/planets'
 import { Chip, Field, Slider } from './ui'
 import type { PlanetParams, PresetKey } from '../engine/types'
-import type { TierChoice } from '../lib/display'
 
 const ATMOS = ['#8fc7ff', '#ffcf8f', '#9fe8c9', '#ff8fc7', '#b9a8ff']
-
-const TIERS: Array<{ key: TierChoice; label: string }> = [
-  { key: 'auto', label: 'Auto' },
-  { key: 'flat', label: 'Flat' },
-  { key: 'detailed', label: 'Detailed' },
-]
 
 interface Props {
   params: PlanetParams
   name: string
-  tier: TierChoice
-  onTier: (t: TierChoice) => void
   /** Visit one of this world's moons, for the moons that are worlds. */
   onVisitMoon: (w: { preset: PresetKey; seed: number }) => void
   onName: (v: string) => void
@@ -30,7 +21,7 @@ interface Props {
 }
 
 export function SculptPanel({
-  params: P, name, tier, onTier, onVisitMoon, onName, onParam, onPreset, onAncient, onReshape,
+  params: P, name, onVisitMoon, onName, onParam, onPreset, onAncient, onReshape,
   onSave, saving, saved,
 }: Props) {
   // Moons that are worlds in their own right, on the body being shown. They
@@ -138,7 +129,7 @@ export function SculptPanel({
       <Slider name="Sea level" value={P.water} disabled={landLocked || isGas} onChange={(v) => onParam('water', v)} />
       <Slider name="Roughness" value={P.roughness} disabled={landLocked} onChange={(v) => onParam('roughness', v)} />
       <Slider name="Clouds" value={P.clouds} disabled={isGas} onChange={(v) => onParam('clouds', v)} />
-      <Slider name="Ice caps" value={P.ice} disabled={landLocked || isGas} onChange={(v) => onParam('ice', v)} />
+      <Slider name="Ice inventory" value={P.ice} disabled={landLocked || isGas} onChange={(v) => onParam('ice', v)} />
       <Slider name="Sky glow" value={P.glow} onChange={(v) => onParam('glow', v)} />
 
       <Field label="Atmosphere tint">
@@ -162,22 +153,6 @@ export function SculptPanel({
       <Field label="Sunlight">
         <Slider name="Direction" value={P.lightAz} onChange={(v) => onParam('lightAz', v)} format={(v) => `${Math.round(v * 360)}°`} />
         <Slider name="Height" value={P.lightEl} onChange={(v) => onParam('lightEl', v)} format={(v) => `${Math.round((v - 0.5) * 180)}°`} />
-      </Field>
-
-      <Field label="Rendering">
-        <div className="chips">
-          {TIERS.map((t) => (
-            <Chip key={t.key} on={tier === t.key} onClick={() => onTier(t.key)}>
-              {t.label}
-            </Chip>
-          ))}
-        </div>
-        <div className="note" style={{ marginTop: 10 }}>
-          A quality choice, never part of the world. Flat is the baked map the orbit view uses,
-          cheap and quick; detailed is sculpted geometry with water, cloud and sky shells. Auto
-          lets each world pick — and gas giants pick flat, where their bands drift and their
-          storms turn.
-        </div>
       </Field>
 
       {!isReal && (

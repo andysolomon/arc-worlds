@@ -30,6 +30,15 @@ export function ScanPanel({ worldName, scan, scanning, onScan }: Props) {
 
       {scan && (
         <>
+          {scan.climate && (
+            <div className="scan-card">
+              <div className="field-label">Modeled orbital climate</div>
+              <h3 style={{ marginTop: 6 }}>{scan.climate.summary}</h3>
+              <p>{scan.climate.equilibrium} · {scan.climate.stellarFlux}</p>
+              <p>{scan.climate.seasonalRange}</p>
+              <p style={{ color: '#8c7d92', fontSize: 12.5 }}>{scan.climate.habitableZone}</p>
+            </div>
+          )}
           <Segmented<Section>
             options={[['atmo', 'Atmosphere'], ['surf', 'Surface & water'], ['light', 'Light']]}
             value={section}

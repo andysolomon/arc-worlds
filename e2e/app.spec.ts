@@ -235,6 +235,37 @@ test('adding a world never edits a read-only system in place', async ({ page }) 
   await expect(page.getByRole('button', { name: /Visit/ })).toHaveCount(16)
 })
 
+test('moving Earth to the sixth-planet orbit freezes its water and biosphere', async ({ page }) => {
+  test.slow() // system edit, a fresh v2 terrain artifact, and the scan sweep
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Systems' }).click()
+  await expect(page.getByRole('button', { name: /^Earth/ })).toContainText(/surface water/)
+
+  await page.getByRole('button', { name: 'Duplicate & edit' }).click()
+  const earthEditor = page.locator('.scan-card').filter({
+    has: page.getByLabel('Name of world 3'),
+  })
+  await expect(earthEditor.getByLabel('Name of world 3')).toHaveValue('Earth')
+
+  // The logarithmic distance slider's 0.69 position is 5.33 AU, effectively
+  // Jupiter's 5.20 AU sixth-planet orbit for this first-order climate model.
+  await earthEditor.getByLabel('Distance').fill('0.69')
+  await expect(earthEditor).toContainText('globally frozen')
+  await expect(earthEditor).toContainText(/outside/i)
+
+  await page.getByRole('button', { name: 'Body list' }).click()
+  await page.getByRole('button', { name: /^Earth/ }).click()
+  await expect(page.getByRole('heading', { name: 'Earth' })).toBeVisible()
+  await awaitGeometry(page)
+
+  await page.getByRole('tab', { name: 'Scan' }).click()
+  await page.getByRole('button', { name: /Run spectrometer on Earth/ }).click()
+  await expect(page.getByText(/globally frozen/)).toBeVisible({ timeout: 15_000 })
+  await page.getByRole('button', { name: 'Surface & water' }).click()
+  await expect(page.getByText(/Water — frozen, everywhere/)).toBeVisible()
+  await expect(page.getByText('No biosignature', { exact: true })).toBeVisible()
+})
+
 test('an imagined system is never presented as a measured one', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('tab', { name: 'Systems' }).click()
@@ -596,28 +627,19 @@ test('the moons toggle drops every satellite from the orbit view', async ({ page
   await expect.poll(() => datum(page, 'triangles')).toBe(withMoons)
 })
 
-test('the rendering tiers trade shells for a baked map, and back', async ({ page }) => {
+test('single worlds always use the detailed presentation with no tier control', async ({ page }) => {
   await page.goto('/')
-  // The default Meadow world is detailed: displaced rock plus water and
-  // cloud shells. Flat swaps all of that for one baked map on one sphere.
   const detailed = await settledTriangles(page)
-
-  await page.getByRole('button', { name: 'Flat', exact: true }).click()
-  await expect.poll(() => datum(page, 'triangles')).toBeLessThan(detailed)
-
-  // The choice is a render control: coming back rebuilds the exact geometry.
-  await page.getByRole('button', { name: 'Detailed', exact: true }).click()
-  await expect.poll(() => datum(page, 'triangles')).toBe(detailed)
+  expect(detailed).toBeGreaterThan(20_000)
+  await expect(page.getByText('Rendering', { exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /^(Auto|Flat|Detailed)$/ })).toHaveCount(0)
 })
 
-test('a gas giant takes the animated flat tier by default', async ({ page }) => {
+test('a gas giant keeps its specialized animated atmosphere without a tier choice', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Amber giant' }).click()
-  // Auto sends gas worlds to the flat pipeline — the gas shader's smooth
-  // sphere — which draws fewer triangles than the sculptor's displaced mesh.
-  const flat = await settledTriangles(page)
-  await page.getByRole('button', { name: 'Detailed', exact: true }).click()
-  await expect.poll(() => datum(page, 'triangles')).toBeGreaterThan(flat)
+  expect(await settledTriangles(page)).toBeGreaterThan(10_000)
+  await expect(page.getByRole('button', { name: /^(Auto|Flat|Detailed)$/ })).toHaveCount(0)
 })
 
 test('the universe is yours to tune, and the sky survives a reload', async ({ page }) => {

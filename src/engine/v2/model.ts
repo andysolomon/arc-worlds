@@ -90,6 +90,11 @@ export interface TerrainV2GeographyParams {
   readonly water: number
   readonly roughness: number
   readonly ice: number
+  readonly meanSurfaceTemperatureK: number
+  readonly liquidWater: number
+  readonly surfaceIce: number
+  readonly vegetationPotential: number
+  readonly iceLineLatitudeDeg: number
 }
 
 /**
@@ -131,6 +136,7 @@ export interface TerrainV2Sample {
   readonly z: number
   readonly latitude: number
   readonly elevation: number
+  readonly ridgeDistance: number
   readonly filledElevation: number
   readonly flow: number
   readonly moisture: number
@@ -144,6 +150,7 @@ export interface MutableTerrainV2Sample {
   z: number
   latitude: number
   elevation: number
+  ridgeDistance: number
   filledElevation: number
   flow: number
   moisture: number
@@ -182,6 +189,7 @@ function geographyValue(value: number): number {
 }
 
 function snapshotGeography(params: PlanetParams): TerrainV2GeographyParams {
+  const climate = params.climate
   return {
     seed: Number.isFinite(params.seed) ? Math.floor(Math.abs(params.seed)) : 0,
     preset: params.preset,
@@ -189,6 +197,11 @@ function snapshotGeography(params: PlanetParams): TerrainV2GeographyParams {
     water: geographyValue(params.water),
     roughness: geographyValue(params.roughness),
     ice: geographyValue(params.ice),
+    meanSurfaceTemperatureK: climate?.meanSurfaceTemperatureK ?? 288,
+    liquidWater: climate?.liquidWater ?? 1,
+    surfaceIce: climate?.surfaceIce ?? geographyValue(params.ice) * 0.25,
+    vegetationPotential: climate?.vegetationPotential ?? 1,
+    iceLineLatitudeDeg: climate?.iceLineLatitudeDeg ?? 90 - geographyValue(params.ice) * 25,
   }
 }
 
@@ -478,6 +491,7 @@ function buildClimate(
   const next = new Float32Array(count)
   const temperature = new Float32Array(count)
   const bias = climateBias(params.preset)
+  const poleGradientK = 42
 
   for (let index = 0; index < count; index++) {
     const offset = index * 3
@@ -486,8 +500,12 @@ function buildClimate(
     const ocean = gas || elevation[index] <= seaLevel
     // Warm equators and low ground hold more water vapour. The explicit
     // latitude term makes polar climate stable even on a rotated graph.
-    temperature[index] = clamp(0.93 - latitude * 0.78 - Math.max(0, elevation[index] - seaLevel) * 0.18 + bias.temperature - params.ice * latitude * 0.22)
-    moisture[index] = clamp((ocean ? 0.68 : 0.07) + (1 - latitude) * 0.1 + bias.moisture)
+    const localTemperatureK = params.meanSurfaceTemperatureK + 12
+      - poleGradientK * Math.pow(latitude, 1.35)
+      - Math.max(0, elevation[index] - seaLevel) * 24
+    temperature[index] = clamp((localTemperatureK - 230) / 90 + bias.temperature * 0.15)
+    const evaporation = 0.08 + params.liquidWater * 0.92
+    moisture[index] = clamp(((ocean ? 0.68 : 0.07) + (1 - latitude) * 0.1 + bias.moisture) * evaporation)
   }
 
   // Eight Jacobi passes are bounded and deterministic. Wind follows latitude
@@ -520,7 +538,8 @@ function buildClimate(
         }
       }
       const ocean = gas || elevation[index] <= seaLevel
-      const source = (ocean ? 0.56 : 0.025) + (1 - latitude) * 0.045 + bias.moisture * 0.2
+      const evaporation = 0.08 + params.liquidWater * 0.92
+      const source = ((ocean ? 0.56 : 0.025) + (1 - latitude) * 0.045 + bias.moisture * 0.2) * evaporation
       const carried = incomingCount > 0 ? incoming / incomingCount : moisture[index]
       const rainShadow = incomingCount > 0 ? lift / incomingCount * (0.72 + params.mountains * 0.58) : 0
       next[index] = clamp(source + carried * 0.79 - rainShadow)
@@ -578,6 +597,7 @@ function classifyBiomes(
     return biome
   }
   const dryBias = climateBias(params.preset).moisture
+  const iceLine = Math.sin(params.iceLineLatitudeDeg * Math.PI / 180)
   for (let index = 0; index < biome.length; index++) {
     const height = elevation[index]
     if (height <= seaLevel - 0.17) biome[index] = TerrainBiome.DeepOcean
@@ -589,7 +609,7 @@ function classifyBiomes(
       const temp = temperature[index]
       const wet = moisture[index]
       const high = height - seaLevel
-      if (temp < 0.2 || (latitude > 0.82 && params.ice > 0.2)) biome[index] = TerrainBiome.Snow
+      if (temp < 0.2 || (latitude >= iceLine && params.surfaceIce > 0.005)) biome[index] = TerrainBiome.Snow
       else if (temp < 0.34) biome[index] = TerrainBiome.Tundra
       else if (high > 0.5 || (high > 0.3 && wet < 0.3)) biome[index] = TerrainBiome.Rock
       else if (wet + dryBias < 0.28) biome[index] = TerrainBiome.Desert
@@ -610,7 +630,7 @@ function valueKey(value: number): string {
 
 /**
  * A stable identity for reusable worker-owned canonical data. Presentation
- * controls (clouds, light, camera, rings, and detail tier) are intentionally
+ * controls (clouds, light, camera, rings, and presentation detail) are intentionally
  * absent, so changing them cannot trigger terrain compilation.
  */
 export function terrainV2CanonicalKey(params: PlanetParams, graph = CANONICAL_GRAPH): string {
@@ -625,6 +645,11 @@ export function terrainV2CanonicalKey(params: PlanetParams, graph = CANONICAL_GR
     valueKey(snapshot.water),
     valueKey(snapshot.roughness),
     valueKey(snapshot.ice),
+    valueKey(snapshot.meanSurfaceTemperatureK / 1000),
+    valueKey(snapshot.liquidWater),
+    valueKey(snapshot.surfaceIce),
+    valueKey(snapshot.vegetationPotential),
+    valueKey(snapshot.iceLineLatitudeDeg / 90),
   ].join(':')
 }
 
@@ -906,6 +931,7 @@ function vertexIntoSample(model: TerrainV2Model, index: number, x: number, y: nu
   out.z = z
   out.latitude = y
   out.elevation = model.elevation[index]
+  out.ridgeDistance = model.ridgeDistance[index]
   out.filledElevation = model.filledElevation[index]
   out.flow = model.flow[index]
   out.moisture = model.moisture[index]
@@ -918,7 +944,7 @@ function vertexIntoSample(model: TerrainV2Model, index: number, x: number, y: nu
 export function createTerrainV2Sample(): MutableTerrainV2Sample {
   return {
     x: 0, y: 1, z: 0, latitude: 1, elevation: 0, filledElevation: 0,
-    flow: 0, moisture: 0, temperature: 0, biome: TerrainBiome.Ocean,
+    ridgeDistance: 1, flow: 0, moisture: 0, temperature: 0, biome: TerrainBiome.Ocean,
   }
 }
 
@@ -956,6 +982,7 @@ export function sampleTerrainV2Into(
   out.z = dz
   out.latitude = dy
   out.elevation = model.elevation[a] * wa + model.elevation[b] * wb + model.elevation[c] * wc
+  out.ridgeDistance = model.ridgeDistance[a] * wa + model.ridgeDistance[b] * wb + model.ridgeDistance[c] * wc
   out.filledElevation = model.filledElevation[a] * wa + model.filledElevation[b] * wb + model.filledElevation[c] * wc
   out.flow = model.flow[a] * wa + model.flow[b] * wb + model.flow[c] * wc
   out.moisture = model.moisture[a] * wa + model.moisture[b] * wb + model.moisture[c] * wc

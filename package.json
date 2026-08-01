@@ -21,6 +21,7 @@
     "db:generate": "drizzle-kit generate",
     "db:studio": "dotenv -e .env.local -- drizzle-kit studio",
     "perf:engines": "bun scripts/profile-engines.mjs",
+    "perf:terrain": "bun scripts/v2-terrain-benchmark.mjs",
     "test:visual": "playwright test --config playwright.visual.config.ts",
     "test:visual:update": "playwright test --config playwright.visual.config.ts --update-snapshots"
   },

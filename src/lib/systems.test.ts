@@ -473,12 +473,12 @@ describe('rollSystem', () => {
     }
   })
 
-  it('creates new worlds with the current generator while built-ins remain v1', () => {
+  it('uses the current generator for rolled and bundled seeded worlds', () => {
     expect(rollSystem(1234).bodies.every(
       (b) => b.params.generatorVersion === CURRENT_GENERATOR_VERSION,
     )).toBe(true)
     expect(MILKY_WAY.bodies.every(
-      (b) => b.params.generatorVersion === LEGACY_GENERATOR_VERSION,
+      (b) => b.params.generatorVersion === CURRENT_GENERATOR_VERSION,
     )).toBe(true)
   })
 })

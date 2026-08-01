@@ -6,6 +6,9 @@
  * the flat/detail identity boundary for v2 worlds.
  */
 import { isGas, PALETTES } from '../palettes.js'
+import { fbm, makeNoise, type Noise3 } from '../noise.js'
+import { ecosystemStyleFor, type EcosystemStyle } from './ecosystems.js'
+import { v2CloudCoverage, v2CloudMask } from './clouds.js'
 import {
   TerrainBiome,
   type MutableTerrainV2Sample,
@@ -14,11 +17,13 @@ import {
   sampleTerrainV2Into,
 } from './model.js'
 
-export const V2_RELIEF_AMPLITUDE = 0.035
+export const V2_RELIEF_AMPLITUDE = 0.045
 export const V2_FLAT_WIDTH = 256
 export const V2_FLAT_HEIGHT = 128
 export const V2_DETAIL_WIDTH_SEGMENTS = 150
 export const V2_DETAIL_HEIGHT_SEGMENTS = 104
+export const V2_DETAIL_MAP_WIDTH = 256
+export const V2_DETAIL_MAP_HEIGHT = 128
 
 export interface MutableV2Direction {
   x: number
@@ -30,6 +35,18 @@ export interface MutableV2Color {
   r: number
   g: number
   b: number
+}
+
+export interface MutableV2Surface {
+  /** Canonical elevation plus deterministic presentation-scale relief. */
+  elevation: number
+  /** Zero-centred fine relief used to vary colour without changing biomes. */
+  detail: number
+}
+
+export interface V2SurfaceNoise {
+  readonly broad: Noise3
+  readonly fine: Noise3
 }
 
 export interface V2FlatArtifact {
@@ -68,11 +85,21 @@ export interface V2DetailedArtifact {
   readonly color: Float32Array
   readonly normal: Float32Array
   readonly biomes: Uint8Array
+  /** Equirectangular presentation relief for the standard material bump map. */
+  readonly detailMap: Uint8Array
+  readonly normalMap: Uint8Array
+  readonly detailMapWidth: number
+  readonly detailMapHeight: number
   readonly seaRadius: number
 }
 
 function clamp(value: number, min = 0, max = 1): number {
   return Math.min(max, Math.max(min, value))
+}
+
+function smoothstep(edge0: number, edge1: number, value: number): number {
+  const t = clamp((value - edge0) / Math.max(1e-8, edge1 - edge0))
+  return t * t * (3 - 2 * t)
 }
 
 function srgbToLinear(value: number): number {
@@ -116,26 +143,6 @@ function mixColor(out: MutableV2Color, hex: number, amount: number): MutableV2Co
   return out
 }
 
-function cloudNoise(seed: number, x: number, y: number, z: number): number {
-  // A handful of seeded broad directional waves are enough at orbit-map
-  // resolution and avoid importing the v1 simplex implementation into the
-  // separate v2 worker chunk. The result is stable in 3D, so it has no map
-  // seam or pole singularity.
-  let state = (seed ^ 0x5bd1e995) >>> 0
-  let total = 0
-  let weight = 0
-  for (let octave = 0; octave < 4; octave++) {
-    state = (state + 0x6d2b79f5) | 0
-    const a = Math.sin(state * 0.0000137) * 0.83
-    const b = Math.sin((state ^ 0x9e3779b9) * 0.0000211) * 0.83
-    const c = Math.sin((state ^ 0x85ebca6b) * 0.0000173) * 0.83
-    const phase = ((state >>> 0) / 4_294_967_296) * Math.PI * 2
-    const amplitude = 1 / (1 + octave)
-    total += (Math.sin((x * a + y * b + z * c) * (2.5 + octave * 1.8) * Math.PI + phase) * 0.5 + 0.5) * amplitude
-    weight += amplitude
-  }
-  return total / weight
-}
 
 /** Allocate reusable direction scratch for the public direction helpers. */
 export function createV2Direction(): MutableV2Direction {
@@ -145,6 +152,61 @@ export function createV2Direction(): MutableV2Direction {
 /** Allocate reusable color scratch for `colorTerrainV2Into`. */
 export function createV2Color(): MutableV2Color {
   return { r: 0, g: 0, b: 0 }
+}
+
+/**
+ * Seeded presentation noise shared by flat and detailed artifacts. Geography
+ * stays canonical; this is the equivalent of a reusable bump/detail map and
+ * is deliberately derived in the worker instead of per fragment.
+ */
+export function createV2SurfaceNoise(model: TerrainV2Model): V2SurfaceNoise {
+  return {
+    broad: makeNoise(model.params.seed ^ 0x6d2b79f5),
+    fine: makeNoise(model.params.seed ^ 0x51ed270b),
+  }
+}
+
+export function createV2Surface(): MutableV2Surface {
+  return { elevation: 0, detail: 0 }
+}
+
+/**
+ * Add multi-frequency relief without moving the canonical coast, climate or
+ * drainage model. The low amplitude changes normals and local silhouettes;
+ * the graph still decides the large land masses and all simulation fields.
+ */
+export function sampleV2SurfaceInto(
+  model: TerrainV2Model,
+  noise: V2SurfaceNoise,
+  x: number,
+  y: number,
+  z: number,
+  canonicalElevation: number,
+  out: MutableV2Surface,
+): MutableV2Surface {
+  if (model.gas) {
+    out.elevation = canonicalElevation
+    out.detail = 0
+    return out
+  }
+
+  const roughness = clamp(model.params.roughness)
+  const mountains = clamp(model.params.mountains)
+  const broad = fbm(noise.broad, x / 0.6 + 7.1, y / 0.6 - 2.7, z / 0.6 + 4.3, 7)
+  const fine = fbm(noise.fine, x * 10.5 - 5.9, y * 10.5 + 3.7, z * 10.5 - 8.1, 4)
+  const ridgeNoise = fbm(noise.broad, x * 5.7 - 11.3, y * 5.7 + 6.2, z * 5.7 + 1.9, 3)
+  const ridged = Math.pow(1 - Math.abs(ridgeNoise), 3) - 0.2
+  // Greenheck's reference gets its craggy character by sharpening a fractal
+  // field instead of displaying raw fBm. Apply that idea as an off-thread
+  // detail layer, centred so it enriches rather than replaces canonical land.
+  const sculpted = Math.pow(clamp(broad * 0.5 + 0.5), 2.6) - 0.17
+  const detail = sculpted * (0.32 + roughness * 0.28)
+    + fine * (0.035 + roughness * 0.055)
+    + ridged * mountains * (0.07 + roughness * 0.09)
+
+  out.elevation = canonicalElevation + detail
+  out.detail = detail
+  return out
 }
 
 /**
@@ -202,14 +264,89 @@ export function directionForV2DetailVertex(
   return out
 }
 
+function colorLivingWorldInto(
+  model: TerrainV2Model,
+  sample: MutableTerrainV2Sample,
+  elevation: number,
+  detail: number,
+  style: EcosystemStyle,
+  out: MutableV2Color,
+): MutableV2Color {
+  const aboveSea = elevation - model.seaLevel
+  if (aboveSea <= 0) {
+    const frozen = (1 - smoothstep(0.16, 0.42, sample.temperature)) * model.params.surfaceIce
+    if (frozen > 0.02) {
+      mixHexLinear(out, style.highRock, style.snow, frozen)
+      return out
+    }
+    if (model.params.liquidWater < 0.08 && model.params.meanSurfaceTemperatureK > 330) {
+      mixHexLinear(out, 0x594f46, 0xd0b788, clamp(-aboveSea / 0.42))
+      return out
+    }
+    const depth = clamp(-aboveSea / 0.42)
+    // Cyan shallows are the strongest readable cue in the reference: they
+    // separate land from ocean before a viewer notices any terrain detail.
+    mixHexLinear(out, style.deepWater, style.water, 1 - smoothstep(0.04, 0.88, depth))
+    if (aboveSea > -0.045) mixColor(out, style.shallows, smoothstep(-0.045, 0, aboveSea) * 0.38)
+    return out
+  }
+
+  const beachMix = smoothstep(0.018, 0.07, aboveSea)
+  const wet = clamp(sample.moisture)
+  const warm = clamp(sample.temperature)
+  const vegetation = clamp(model.params.vegetationPotential)
+  const forest = smoothstep(0.5, 0.78, wet) * smoothstep(0.25, 0.5, warm) * vegetation
+  const ridge = 1 - clamp(sample.ridgeDistance)
+
+  setHexLinear(out, style.beach)
+  const grassMix = clamp(forest * 0.55 + (1 - warm) * 0.1)
+  const grassR = srgbToLinear((style.grass >>> 16) & 0xff)
+  const grassG = srgbToLinear((style.grass >>> 8) & 0xff)
+  const grassB = srgbToLinear(style.grass & 0xff)
+  let landR = grassR + (srgbToLinear((style.woodland >>> 16) & 0xff) - grassR) * grassMix
+  let landG = grassG + (srgbToLinear((style.woodland >>> 8) & 0xff) - grassG) * grassMix
+  let landB = grassB + (srgbToLinear(style.woodland & 0xff) - grassB) * grassMix
+  landR += (srgbToLinear(0x8b) - landR) * (1 - vegetation)
+  landG += (srgbToLinear(0x80) - landG) * (1 - vegetation)
+  landB += (srgbToLinear(0x70) - landB) * (1 - vegetation)
+  const forestShade = forest * 0.08
+  landR += (srgbToLinear((style.detailDark >>> 16) & 0xff) - landR) * forestShade
+  landG += (srgbToLinear((style.detailDark >>> 8) & 0xff) - landG) * forestShade
+  landB += (srgbToLinear(style.detailDark & 0xff) - landB) * forestShade
+  out.r += (landR - out.r) * beachMix
+  out.g += (landG - out.g) * beachMix
+  out.b += (landB - out.b) * beachMix
+
+  const rockHeight = aboveSea + ridge * model.params.mountains * 0.28
+  const rock = smoothstep(0.08, 0.36, rockHeight)
+  mixColor(out, style.rock, rock * 0.76)
+  const highRock = smoothstep(0.3, 0.65, rockHeight)
+  mixColor(out, style.highRock, highRock * 0.9)
+  const snow = smoothstep(0.5, 0.86, aboveSea + (0.31 - warm) * 0.85)
+    * smoothstep(0.005, 0.3, Math.max(model.params.ice * 0.25, model.params.surfaceIce))
+  mixColor(out, style.snow, snow * 0.92)
+
+  // The detail field should read as texture rather than a new biome. Darken
+  // troughs and catch peaks lightly, keeping the palette saturated.
+  const texture = clamp(Math.abs(detail) * 5.5)
+  mixColor(out, detail >= 0 ? style.detailLight : style.detailDark, texture * 0.4)
+  if (aboveSea > 0.02 && sample.flow > 0.7 && model.params.liquidWater > 0.2) {
+    mixColor(out, style.river, (sample.flow - 0.7) * 0.24 * model.params.liquidWater)
+  }
+  return out
+}
+
 /**
- * Convert a canonical sample to a palette colour in linear RGB. Rivers are a
- * very subtle value-layer blend rather than another render object or shader.
+ * Convert a canonical sample to a palette colour in linear RGB. Optional
+ * presentation elevation/detail comes from the shared artifact noise above;
+ * callers that inspect canonical colors retain the original behavior.
  */
 export function colorTerrainV2Into(
   model: TerrainV2Model,
   sample: MutableTerrainV2Sample,
   out: MutableV2Color,
+  elevation = sample.elevation,
+  detail = 0,
 ): MutableV2Color {
   const palette = PALETTES[model.params.preset] ?? PALETTES.temperate
   if (isGas(palette)) {
@@ -226,7 +363,10 @@ export function colorTerrainV2Into(
     return mixHexLinear(out, left[1], right[1], (position - left[0]) / Math.max(1e-8, right[0] - left[0]))
   }
 
-  const aboveSea = sample.elevation - model.seaLevel
+  const ecosystem = ecosystemStyleFor(model.params.seed, model.params.preset)
+  if (ecosystem) return colorLivingWorldInto(model, sample, elevation, detail, ecosystem, out)
+
+  const aboveSea = elevation - model.seaLevel
   switch (sample.biome) {
     case TerrainBiome.DeepOcean:
       mixHexLinear(out, palette.deep, palette.water, clamp((sample.elevation - (model.seaLevel - 0.48)) / 0.48) * 0.2)
@@ -258,9 +398,15 @@ export function colorTerrainV2Into(
     default:
       setHexLinear(out, palette.low)
   }
+  if (aboveSea <= 0 && model.params.surfaceIce > 0.005) {
+    const frozen = (1 - smoothstep(0.16, 0.42, sample.temperature)) * model.params.surfaceIce
+    if (frozen > 0) mixColor(out, palette.snow, frozen)
+  }
   // Rivers remain part of the same source data. Keep the tint restrained so
   // a low-resolution flat map does not turn every drainage basin blue.
-  if (aboveSea > 0.02 && sample.flow > 0.68) mixColor(out, palette.water, (sample.flow - 0.68) * 0.19)
+  if (aboveSea > 0.02 && sample.flow > 0.68 && model.params.liquidWater > 0.2) {
+    mixColor(out, palette.water, (sample.flow - 0.68) * 0.19 * model.params.liquidWater)
+  }
   return out
 }
 
@@ -279,7 +425,7 @@ export function terrainV2FlatArtifactKey(
   const cloudSeed = Number.isFinite(options.cloudSeed) ? Math.floor(Math.abs(options.cloudSeed!)) : model.params.seed
   return [
     model.canonicalKey,
-    'flat-v2-1',
+    'flat-v2-2',
     Math.max(1, Math.floor(width)),
     Math.max(1, Math.floor(height)),
     Math.round(clouds * 1_000_000),
@@ -300,21 +446,31 @@ export function deriveV2FlatArtifact(
   const biomes = new Uint8Array(safeWidth * safeHeight)
   const direction = createV2Direction()
   const sample = createTerrainV2Sample()
+  const surface = createV2Surface()
+  const surfaceNoise = createV2SurfaceNoise(model)
   const color = createV2Color()
   const palette = PALETTES[model.params.preset] ?? PALETTES.temperate
-  const cloudCoverage = clamp(options.clouds ?? 0)
+  const cloudCoverage = v2CloudCoverage(
+    clamp(options.clouds ?? 0), model.params.liquidWater, model.gas,
+  )
   const cloudSeed = Number.isFinite(options.cloudSeed) ? Math.floor(Math.abs(options.cloudSeed!)) : model.params.seed
   const cloudy = !isGas(palette) && cloudCoverage > 0.04
   const cloudHex = !isGas(palette) ? palette.cloudTint ?? 0xffffff : 0xffffff
-  const cloudOpacity = !isGas(palette) ? palette.cloudO * (235 / 255) : 0
+  const cloudOpacity = !isGas(palette)
+    ? palette.cloudO * (model.params.preset === 'temperate' ? 0.58 : 235 / 255)
+    : 0
   for (let row = 0; row < safeHeight; row++) {
     for (let column = 0; column < safeWidth; column++) {
       directionForV2EquirectangularPixel(safeWidth, safeHeight, column, row, direction)
       sampleTerrainV2Into(model, direction.x, direction.y, direction.z, sample)
-      colorTerrainV2Into(model, sample, color)
+      sampleV2SurfaceInto(
+        model, surfaceNoise, direction.x, direction.y, direction.z, sample.elevation, surface,
+      )
+      colorTerrainV2Into(model, sample, color, surface.elevation, surface.detail)
       if (cloudy) {
-        const threshold = 0.78 - cloudCoverage * 0.55
-        const alpha = clamp((cloudNoise(cloudSeed, direction.x, direction.y, direction.z) - threshold) / 0.22) * cloudOpacity
+        const alpha = v2CloudMask(
+          cloudSeed, cloudCoverage, direction.x, direction.y, direction.z,
+        ) * cloudOpacity
         if (alpha > 0) mixColor(color, cloudHex, alpha)
       }
       const pixel = row * safeWidth + column
@@ -402,6 +558,8 @@ export function deriveV2DetailedArtifact(
   const biomes = new Uint8Array(count)
   const direction = createV2Direction()
   const sample = createTerrainV2Sample()
+  const surface = createV2Surface()
+  const surfaceNoise = createV2SurfaceNoise(model)
   const color = createV2Color()
 
   for (let iy = 0; iy <= heightSegments; iy++) {
@@ -410,11 +568,14 @@ export function deriveV2DetailedArtifact(
       const offset = index * 3
       directionForV2DetailVertex(widthSegments, heightSegments, ix, iy, direction)
       sampleTerrainV2Into(model, direction.x, direction.y, direction.z, sample)
-      const radius = 1 + sample.elevation * V2_RELIEF_AMPLITUDE
+      sampleV2SurfaceInto(
+        model, surfaceNoise, direction.x, direction.y, direction.z, sample.elevation, surface,
+      )
+      const radius = 1 + surface.elevation * V2_RELIEF_AMPLITUDE
       positions[offset] = direction.x * radius
       positions[offset + 1] = direction.y * radius
       positions[offset + 2] = direction.z * radius
-      colorTerrainV2Into(model, sample, color)
+      colorTerrainV2Into(model, sample, color, surface.elevation, surface.detail)
       colors[offset] = color.r
       colors[offset + 1] = color.g
       colors[offset + 2] = color.b
@@ -464,6 +625,40 @@ export function deriveV2DetailedArtifact(
     }
   }
 
+  const detailMap = new Uint8Array(V2_DETAIL_MAP_WIDTH * V2_DETAIL_MAP_HEIGHT)
+  for (let row = 0; row < V2_DETAIL_MAP_HEIGHT; row++) {
+    for (let column = 0; column < V2_DETAIL_MAP_WIDTH; column++) {
+      directionForV2EquirectangularPixel(
+        V2_DETAIL_MAP_WIDTH, V2_DETAIL_MAP_HEIGHT, column, row, direction,
+      )
+      sampleV2SurfaceInto(model, surfaceNoise, direction.x, direction.y, direction.z, 0, surface)
+      detailMap[row * V2_DETAIL_MAP_WIDTH + column] = Math.round(clamp(0.5 + surface.detail / 0.6) * 255)
+    }
+  }
+  const normalMap = new Uint8Array(V2_DETAIL_MAP_WIDTH * V2_DETAIL_MAP_HEIGHT * 4)
+  for (let row = 0; row < V2_DETAIL_MAP_HEIGHT; row++) {
+    const north = Math.max(0, row - 1)
+    const south = Math.min(V2_DETAIL_MAP_HEIGHT - 1, row + 1)
+    for (let column = 0; column < V2_DETAIL_MAP_WIDTH; column++) {
+      const west = (column + V2_DETAIL_MAP_WIDTH - 1) % V2_DETAIL_MAP_WIDTH
+      const east = (column + 1) % V2_DETAIL_MAP_WIDTH
+      let nx = (detailMap[row * V2_DETAIL_MAP_WIDTH + west]
+        - detailMap[row * V2_DETAIL_MAP_WIDTH + east]) / 255 * 3.5
+      let ny = (detailMap[north * V2_DETAIL_MAP_WIDTH + column]
+        - detailMap[south * V2_DETAIL_MAP_WIDTH + column]) / 255 * 3.5
+      let nz = 1
+      const length = Math.hypot(nx, ny, nz)
+      nx /= length
+      ny /= length
+      nz /= length
+      const offset = (row * V2_DETAIL_MAP_WIDTH + column) * 4
+      normalMap[offset] = Math.round((nx * 0.5 + 0.5) * 255)
+      normalMap[offset + 1] = Math.round((ny * 0.5 + 0.5) * 255)
+      normalMap[offset + 2] = Math.round((nz * 0.5 + 0.5) * 255)
+      normalMap[offset + 3] = 255
+    }
+  }
+
   const seaRadius = 1 + model.seaLevel * V2_RELIEF_AMPLITUDE
   return {
     widthSegments,
@@ -475,6 +670,10 @@ export function deriveV2DetailedArtifact(
     color: colors,
     normal: normals,
     biomes,
+    detailMap,
+    normalMap,
+    detailMapWidth: V2_DETAIL_MAP_WIDTH,
+    detailMapHeight: V2_DETAIL_MAP_HEIGHT,
     seaRadius,
   }
 }

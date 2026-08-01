@@ -238,3 +238,169 @@ The software-renderer row is intentionally governed by the controlled browser
 benchmark and its checked noise floors, which passed. A dedicated worst-case
 24-body v2 throughput/cancellation/memory scenario remains required before
 raising canonical resolution or adding custom shader/normal topology.
+
+## V2 Meadow visual retune verification (2026-08-01)
+
+The Meadow art-direction pass adds worker-side presentation noise, a 256x128
+normal map, and a higher-resolution optional cloud bake. Canonical terrain,
+hydrology, and climate remain unchanged; the extra CPU work runs only in the
+terrain/bake workers, and the normal-map material topology is stable before an
+artifact lands.
+
+| Check | Result |
+| --- | ---: |
+| Entry gzip | 246,457 B / 256,000 B |
+| V2 terrain worker raw | 28,604 B / 102,400 B |
+| Bake worker raw | 93,180 B / 153,600 B |
+| Canonical compiler (direct sample) | 5.2 ms |
+| Detailed artifact + normal map (direct sample) | 101.5 ms |
+| Flat artifact (direct sample) | 89.4 ms |
+| Focused transferred artifact | 701,852 B |
+
+The clean one-run headless smoke sample passed every local absolute budget:
+539.5 ms to first Orbit frame, 32 ms Event Timing interaction, 508 ms maximum
+and total software-renderer long-task time, 1,709 ms main-thread task time,
+three transition-added shader programs, 23.3 fps passive cadence, no paused
+frames/tasks, and no errors.
+
+The accompanying real-GPU profile showed a 32 ms largest frame gap in WebKit
+on Apple GPU and 35 ms in headed Chromium on Apple GPU, with no frame over
+50 ms in either. These are effectively the intended 30 fps passive cadence and
+remain aligned with the previous 31/39 ms terrain-v2 record. Headless Chromium's
+software renderer measured 520 ms and is represented by the passing checked
+smoke budget rather than treated as visitor-facing GPU performance.
+
+## Orbital climate and universal-v2 verification (2026-08-01)
+
+The climate pass adds one pure calculation per system body and five rounded
+climate scalars to v2 worker/cache identity. Climate calculation runs in React
+memoization when a system changes; graph climate/biome work remains in the
+existing terrain worker. There are no new animation loops, materials, shader
+topologies, render passes, geometries, or Orbit triangles.
+
+| Check | Result |
+| --- | ---: |
+| Entry gzip | 248,901 B / 256,000 B |
+| V2 terrain worker raw | 29,681 B / 102,400 B |
+| Bake worker raw | 93,180 B / 102,400 B |
+| Orbit regeneration | 1.7 ms |
+| Orbit body construction | 0.8 ms |
+| Transition-added shader programs | 3 / 4 |
+| Paused frames / task time | 0 / 0 ms |
+
+The clean headless smoke sample passed all local budgets: 353.6 ms first Orbit
+frame, 309 ms longest software-renderer task, 598 ms total long-task time,
+1,867 ms main-thread task time, 23.3 fps passive cadence, and zero errors.
+
+The first real-GPU profile measured 39 ms in WebKit / Apple GPU and 46 ms in
+headed Chromium / Apple GPU, with no frame over 50 ms in either and 55,920
+triangles in all engines. Those frame gaps are 7/11 ms above the preceding
+32/35 ms sample, more than 10% in relative terms but still below one 50 ms
+frame. Phase attribution shows the new code did not become transition work:
+regeneration plus body construction totaled 2.5 ms and program/triangle counts
+were unchanged.
+
+A confirmation run was not comparable: an unrelated week-old `bun test`
+process held one core near 100%, Spotlight held another, and macOS media
+analysis later consumed about 2.8 cores. It measured 40 ms WebKit and 52 ms
+headed Chromium with one frame above 50 ms. This is recorded rather than
+discarded, but the inference that it is machine contention is supported by the
+unchanged app-phase timings and scene size. No budget was loosened. Repeat the
+real-GPU profile on an uncontended machine before using these samples as a new
+baseline.
+
+## V2 24-body worker stress gate (2026-08-01)
+
+`bun run perf:terrain` drives an engineering-only Vite entry and the actual
+separately loaded v2 module worker. It sends 24 distinct rocky worlds through
+production 256×128 flat artifacts, then requests both 150×104 and 220×150
+detailed artifacts. A fresh-worker probe replaces an active preview with
+focused high detail while two other previews remain queued. Opt-in worker
+telemetry reports canonical phases, synchronous artifact work, queue/cache
+lifecycle, transfer bytes, and cache bytes; normal visitor requests emit none.
+
+The first measurement found a scheduling cost the direct compiler samples had
+hidden: `setTimeout(0)` phase handoffs were clamped to roughly 20 ms in
+headless Chromium. Artifact work totaled about one second and canonical phases
+about 22 ms, but timer waits stretched the 24 previews to 5.7 seconds. The
+worker now yields with one reusable `MessageChannel`, retaining a real event-
+loop cancellation boundary without paying the timer floor. The same workload
+then settled in a three-run median of 862.9 ms.
+
+| Stress metric | Three-run median | Research gate |
+| --- | ---: | ---: |
+| 24 flat previews settled | **862.9 ms** | ≤ 3,000 ms |
+| Focused high detail settled | **103.2 ms** | ≤ 1,000 ms |
+| Longest canonical phase | **1.1 ms** | ≤ 50 ms |
+| Phase-boundary preview stopped | **1.3 ms** | ≤ 100 ms |
+| Mid-artifact replacement waste | **42.4 ms** | ≤ 100 ms |
+| Benchmark transfer/client long task | **0 ms** | ≤ 50 ms |
+| Worker artifact work, total | 988.4 ms | diagnostic |
+| Longest synchronous artifact | 52.9 ms | diagnostic |
+| Main throughput/cache fixture buffers | 5,442,152 B | exact fixture accounting |
+| Maximum canonical cache | 12 models / 231,120 B | 12-model cap |
+| Total accounted increment | **5,673,272 B** | ≤ 67,108,864 B |
+| Obsolete wire artifacts received / client-accepted | **1 / 0** | accepted = 0 |
+| Worker/page errors | **0** | 0 |
+
+Chromium did not expose `measureUserAgentSpecificMemory()` in this non-isolated
+benchmark page, so no total browser/worker heap value is claimed. Its narrower
+`performance.memory` page-heap counter rose about 7.38 MB while the harness
+retained responses and transferred buffers; that is reported in the JSON but
+not mislabeled as worker or GPU memory. Deterministic buffer accounting is the
+enforced 64 MB gate. The worker proved three cache hits, 25 misses, 13 evictions,
+and never exceeded 12 canonical models. Full results are written to
+`.artifacts/performance/v2-terrain.json`.
+
+The two preemption probes use the real `V2TerrainClient`. Focused work cancels
+an active preview by priority alone and completes before either queued preview.
+A second replacement is intentionally sent after a flat artifact loop begins.
+That loop is synchronous, so one obsolete wire artifact arrives 42.4 ms later;
+the production client's latest-ID check suppresses it from the accepted
+artifact callback, and focused high detail follows within the reported 103.2
+ms. The 0 ms long-task row covers this isolated transfer/client handler, not a
+WebGL upload; actual viewport rendering remains covered by the retained app
+e2e and Orbit smoke gates below.
+
+The retained application gates also passed: entry 248,901 B gzip, v2 worker
+31,831 B raw, one-run Orbit smoke 439.6 ms to first frame / 390 ms longest
+software-renderer task / 1,557 ms main-thread task time, three shader programs,
+23.3 fps, and zero paused work or errors. A real-GPU sample recorded WebKit at
+38 ms with no frame over 50 ms and headed Chromium at 61 ms with one frame over
+50 ms; the latter ran alongside the same unrelated week-old 100%-CPU Bun
+process documented above. The profiled measured-Solar-System Orbit path does
+not load the v2 worker, so this is retained-path evidence, not attribution to
+the MessageChannel change. No budget was changed.
+
+## Shared surface identity and ecosystem diversity (2026-08-01)
+
+The rich single-world path no longer has a selectable flat fallback. Orbit
+keeps its shared low-cost sphere geometry, but its v2 map and the focused
+terrain now use the same canonical sample, seed-selected ecosystem ramp, and
+seamless cloud function. Cloud-only changes stay in the bake worker and do not
+invalidate canonical geography or detailed geometry.
+
+| Metric | Before | After | Change |
+| --- | ---: | ---: | ---: |
+| Entry bundle, gzip | 248,901 B | 250,247 B | +0.5% |
+| V2 worker, raw | 31,831 B | 35,752 B | +12.3% (under 102,400 B) |
+| Bake worker, raw | 93,180 B | 93,596 B | +0.4% |
+| 24 v2 previews, median | 862.9 ms | 896.0 ms | +3.8% |
+| Focused v2 detail, median | 103.2 ms | 108.7 ms | +5.3% |
+| Longest canonical phase | 1.1 ms | 1.1 ms | 0% |
+| Orbit triangles, real GPU | 55,920 | 55,920 | 0% |
+
+All enforceable budgets pass. The worker-byte percentage is larger because the
+controlled colour ramps are data, but the actual worker workload remained
+within the 10% regression rule and settled 24 previews in 896 ms against the
+3,000 ms gate. Cache and transfer accounting are unchanged at 12 models /
+231,120 B and 5,442,152 B. The focused-preemption probes accepted zero stale
+artifacts and the isolated client path produced zero main-thread long tasks.
+
+The retained one-run Orbit smoke passed at 289.9 ms to first frame, 40 ms
+interaction, 252 ms longest software-renderer task, two transition-added
+programs, 23.3 fps, zero paused work, and zero errors. Real-GPU confirmation
+kept 55,920 triangles and measured 38 ms in WebKit / Apple GPU and 50 ms in
+headed Chromium / Apple GPU, with zero frames over 50 ms in both. Headless
+Chromium's documented software renderer measured 562 ms and 29 frames over
+50 ms; it is reported separately and did not alter a budget.

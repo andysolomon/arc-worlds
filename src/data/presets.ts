@@ -11,7 +11,7 @@ export interface Preset {
 
 /** The eight sculptable world types. */
 export const PRESETS: Preset[] = [
-    {key:'temperate',label:'Meadow',dot:'#7fae62',def:{mountains:.5,water:.55,roughness:.5,clouds:.5,glow:.5,ice:.25}},
+    {key:'temperate',label:'Meadow',dot:'#72b350',def:{mountains:.62,water:.48,roughness:.65,clouds:.34,glow:.32,ice:.08}},
     {key:'desert',label:'Dune',dot:'#e0b070',def:{mountains:.45,water:.12,roughness:.6,clouds:.18,glow:.4,ice:0}},
     {key:'ice',label:'Frost',dot:'#bcd7e8',def:{mountains:.35,water:.5,roughness:.4,clouds:.6,glow:.6,ice:.85}},
     {key:'lava',label:'Ember',dot:'#ff6a3d',def:{mountains:.7,water:.3,roughness:.7,clouds:.22,glow:.7,ice:0}},

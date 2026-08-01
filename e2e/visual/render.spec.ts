@@ -99,11 +99,10 @@ async function visitPlanet(page: Page, name: string) {
 }
 
 test('a real planet in detail wears its own map', async ({ page }) => {
-  // The bug this catches: detailed mode discarding the photograph and
+  // The bug this catches: the rich view discarding the photograph and
   // inventing continents from the seed.
   await visitPlanet(page, 'Earth')
   await page.getByRole('tab', { name: 'Sculpt' }).click()
-  await page.getByRole('button', { name: 'Detailed', exact: true }).click()
   await shot(page, 'earth-detailed.png')
 })
 
@@ -112,7 +111,6 @@ test('a small rocky world reads as a planet, not an asteroid', async ({ page }) 
   // visibly lumpy.
   await visitPlanet(page, 'Mercury')
   await page.getByRole('tab', { name: 'Sculpt' }).click()
-  await page.getByRole('button', { name: 'Detailed', exact: true }).click()
   await shot(page, 'mercury-detailed.png')
 })
 
@@ -120,7 +118,6 @@ test('a sculpted world keeps its handmade terrain', async ({ page }) => {
   // The other side of the same change: flattening everything would be just as
   // wrong as the asteroid was.
   await page.goto('/')
-  await page.getByRole('button', { name: 'Detailed', exact: true }).click()
   await shot(page, 'sculpted-detailed.png')
 })
 
