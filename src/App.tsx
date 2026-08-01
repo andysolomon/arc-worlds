@@ -105,6 +105,7 @@ export default function App() {
       showPaths: display.paths,
       showLabels: display.labels,
       showMoons: display.moons,
+      sky: display.sky,
       pauseOnHover: display.pauseOnHover,
       starDensity: display.starDensity,
       starBright: display.starBright,
@@ -113,7 +114,7 @@ export default function App() {
     [params, activeClimate, view, sizeMode, timeScale, display],
   )
 
-  const toggleDisplay = useCallback((k: 'paths' | 'labels' | 'moons') => {
+  const toggleDisplay = useCallback((k: 'paths' | 'labels' | 'moons' | 'sky') => {
     setDisplay((d) => ({ ...d, [k]: !d[k] }))
   }, [])
 

@@ -442,6 +442,36 @@ visitor-facing route, and must remain outside the application entry bundle.
 - [x] Complete lint, browser, bundle-size, and real-GPU performance checks; add
       the final measurements to `progress.txt` before marking this phase done.
 
+### 14. The sky from where you are standing (delivered 2026-08-01)
+
+- [x] A display option, `Sky`, draws the real sky in the single-world view:
+      the star this world orbits and the other planets of its system, in the
+      directions and at the angular sizes they truly have from here. Nothing
+      about it is compressed, which makes it the only part of the app at true
+      scale, and that is the point of it — the orbit view pulls Neptune in to
+      eight times Mercury's distance rather than seventy-seven, so nothing in
+      it can show what the system's size actually means.
+- [x] The star is drawn at its measured angular size: 1.14° to 1.73° across
+      from Mercury as its eccentric orbit swings, 0.53° from Earth, a spark of
+      0.011° from Pluto. A disc at the true size with a bloom around it, the
+      bloom scaled from the disc so a small sun glows small.
+- [x] The planets are points of light, because that is what they are — Jupiter
+      from Earth is forty arcseconds, a fiftieth of the Moon. They carry their
+      own colour and a brightness read like a magnitude: reflected sunlight,
+      falling off with distance twice and dimmed by the phase turned away.
+- [x] Names come from the existing Labels option. Without them the sky is
+      honest and illegible — a true-size planet is a point, and a point among
+      fourteen hundred invented stars is not a planet anybody can find.
+- [x] The whole sky is turned by the single rotation that lands its star on the
+      light, so every angle within it is the true one measured from a sun that
+      is still wherever the light sliders put it. What that leaves free is the
+      roll about the sun's own axis, and nothing observable depends on it.
+- [x] A moon observes from its planet — ours is a fifth of a percent of the way
+      to the Sun, which moves nothing by a pixel — and never lists that planet,
+      which the view already draws beside it at 28° across.
+- [x] A sculpted world is nowhere in particular and gets no sky, only the
+      invented starfield it always had.
+
 ### Removed scope
 
 - The dedicated Venus field trip was removed on 2026-07-29 after product

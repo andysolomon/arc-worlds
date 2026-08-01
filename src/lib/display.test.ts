@@ -25,7 +25,7 @@ describe('loadDisplay', () => {
   it('starts from the defaults: the exact look the app always drew', () => {
     vi.stubGlobal('localStorage', fakeStorage())
     expect(loadDisplay()).toEqual({
-      paths: true, labels: false, moons: true,
+      paths: true, labels: false, moons: true, sky: false,
       starDensity: 0.5, starBright: 0.5, nebula: 'none', exposure: 0.5,
       pauseOnHover: false,
     })
@@ -34,7 +34,7 @@ describe('loadDisplay', () => {
   it('round-trips what was saved', () => {
     vi.stubGlobal('localStorage', fakeStorage())
     const chosen = {
-      paths: false, labels: true, moons: false,
+      paths: false, labels: true, moons: false, sky: true,
       starDensity: 0.9, starBright: 0.2, nebula: 'violet', exposure: 0.7,
       pauseOnHover: true,
     } as const
@@ -77,7 +77,7 @@ describe('loadDisplay', () => {
     store.map.set('little-worlds.display', JSON.stringify({ paths: false }))
     vi.stubGlobal('localStorage', store)
     expect(loadDisplay()).toEqual({
-      paths: false, labels: false, moons: true,
+      paths: false, labels: false, moons: true, sky: false,
       starDensity: 0.5, starBright: 0.5, nebula: 'none', exposure: 0.5,
       pauseOnHover: false,
     })

@@ -52,6 +52,13 @@ export interface PlanetParams {
   showLabels?: boolean
   /** Off skips building moons entirely, which is a performance lever. */
   showMoons?: boolean
+  /**
+   * Draw the real sky in the single-world view: the star this world orbits and
+   * the other planets of its system, in the directions and at the angular sizes
+   * they truly have from here. Only means anything for a world that is a body
+   * of the loaded system — a sculpted world is nowhere in particular.
+   */
+  sky?: boolean
   /** Universe appearance, 0..1 each with 0.5 the look the app always drew. */
   starDensity?: number
   starBright?: number
