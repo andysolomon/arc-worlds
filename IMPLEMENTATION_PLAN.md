@@ -123,10 +123,10 @@ invented, like Andromeda.
       built, then dropped at Andrew's request on 2026-07-29. Removed whole —
       presets, palettes, profiles, system and specs — rather than left
       unreferenced.
-- [ ] Avatar's Pandora is a moon of the gas giant Polyphemus. It first shipped
+- [x] Avatar's Pandora is a moon of the gas giant Polyphemus. It first shipped
       on its own orbit because moons only render in the single-world view;
-      superseded by the satellite-orbit work below, so it truly orbits its
-      planet while staying a visitable, scannable, sculptable world.
+      the satellite-orbit work superseded that, so she truly orbits her planet
+      while staying a visitable, scannable, sculptable world.
 - [x] Each world gets Scan-tab chemistry consistent with its fiction where the
       fiction says (Erid's thick atmosphere, Adrian's Astrophage-warmed orbit,
       Pandora's xenon-heavy unbreathable air). Profiles open with "Fiction:"
@@ -328,5 +328,11 @@ systems, particularly in Safari on high-density displays.
       and toggle behavior.
 - [x] Enforce ≤4 transition-added shader programs and ≤50 ms synchronous shader
       kickoff in `performance-budget.json`.
-- [ ] Repeat the phase-attributed benchmark in Safari on the original hardware
-      to validate the Metal/ANGLE driver hypothesis.
+- [x] Repeat the phase-attributed benchmark on the original hardware, done
+      2026-07-29 with `bun run perf:engines`. WebKit on Apple's GPU and
+      Chromium on Metal agree within 7 ms and neither stalls at all; the
+      driver hypothesis was wrong, and the long task belongs to headless
+      Chromium's software rasteriser. See PERFORMANCE_RESULTS.md.
+- [ ] Optional: the same run in Safari itself rather than its engine. Needs
+      `safaridriver --enable`, which wants an administrator and cannot run
+      headless. It would confirm rather than discover.

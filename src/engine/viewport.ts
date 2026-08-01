@@ -184,6 +184,8 @@ export class PlanetViewport {
   private planet: THREE.Mesh
   /** The planet a moon orbits, shown in the moon's own view. */
   private companion: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>
+  private companionRing: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>
+  private companionRingKey = ''
   private companionKey = ''
   private companionDist = 0
   private companionBakeId = 0
@@ -527,6 +529,13 @@ export class PlanetViewport {
     )
     this.companion.visible = false
     this.group.add(this.companion)
+
+    // Saturn without its rings is not Saturn. The companion carries its own,
+    // parented to it so they travel and tilt together.
+    this.companionRing = new THREE.Mesh(ringGeo(1.11, 2.32), ringMaterial())
+    this.companionRing.rotation.x = -Math.PI / 2
+    this.companionRing.visible = false
+    this.companion.add(this.companionRing)
 
     this.loop = this.loop.bind(this)
     this.bindPointer(cv)
@@ -1686,6 +1695,41 @@ export class PlanetViewport {
 
     if (parent.key === this.companionKey) return
     this.companionKey = parent.key
+
+    // The measured planets carry hand-built rings; an invented one derives
+    // its own from the params it was sculpted with.
+    const ring = REAL[parent.key]?.ring
+      ?? (parent.params?.rings
+        ? customRing(parent.params, PALETTES[parent.params.preset] ?? PALETTES.temperate)
+        : null)
+    const wasRing = this.companionRing.visible
+    this.companionRing.visible = !!ring
+    if (ring) {
+      const rk = `${ring.inner}:${ring.outer}:${ring.color}:${ring.opacity}:${ring.profile ?? 0}`
+      if (rk !== this.companionRingKey) {
+        this.companionRingKey = rk
+        this.companionRing.geometry.dispose()
+        this.companionRing.geometry = ringGeo(ring.inner, ring.outer)
+        const ru = this.companionRing.material.uniforms
+        ru.uColor.value.set(ring.color)
+        ru.uOpacity.value = ring.opacity
+        ru.uProfile.value = ring.profile || 0
+        ru.uHasMap.value = ring.map ? 1 : 0
+        ru.uMap.value = ring.map ? this.loadTex(ring.map) : null
+        ru.uBandCount.value = ring.bands ? ring.bands.length : 0
+        if (ring.bands) {
+          for (let i = 0; i < ring.bands.length; i++) {
+            const b = ring.bands[i]
+            ru.uBands.value[i].set(b[0], b[1], b[2], b[3])
+          }
+        }
+      }
+      // The shader shades the ring against the planet's own shadow, and that
+      // planet is the companion, so the light arrives in its local frame.
+      this.companionRing.material.uniforms.uL.value.copy(this.sunDir)
+      this.companionRing.material.uniforms.uFace.value = 1
+    }
+    if (!wasRing && this.companionRing.visible) this.compileNeeded = true
 
     const url = parent.texture ?? PARENT_MAP[parent.key]
     const mat = this.companion.material

@@ -5,6 +5,10 @@ const PORT = 4173
 
 export default defineConfig({
   testDir: './e2e',
+  // Visual baselines are per-platform and describe a real GPU, not the
+  // software rasteriser a hosted runner uses. They run via
+  // `bun run test:visual` instead — see playwright.visual.config.ts.
+  testIgnore: '**/visual/**',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,

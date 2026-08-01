@@ -15,6 +15,12 @@ playwright-report/
 # agent-browser scratch output
 .playwright-cli/
 
+# Visual baselines are per-GPU: a shot taken on Apple silicon does not match
+# one taken on another machine's driver, so a committed baseline would fail
+# for everybody who did not record it. Generate your own with
+# `bun run test:visual:update` — see playwright.visual.config.ts.
+e2e/visual/**/*-snapshots/
+
 # Local agent tooling — never part of the project
 .agents/
 .claude/

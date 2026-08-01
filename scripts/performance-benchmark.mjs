@@ -63,6 +63,12 @@ async function sample(browser, iteration) {
     await page.goto(url, { waitUntil: 'networkidle' })
     await page.getByRole('tab', { name: 'Systems' }).click()
     await page.getByRole('button', { name: 'New, empty' }).click()
+    // Build the system from the body list, because the click being timed below
+    // has to be the one that first builds the orbit scene. A new system now
+    // opens in orbit view, so leaving it there would build the scene a world
+    // at a time while the worlds are added, and the Orbit view button would
+    // then change nothing at all — no rebuild, no frame, nothing to measure.
+    await page.getByRole('button', { name: 'Body list' }).click()
     for (const type of worldTypes) {
       await page.getByRole('button', { name: type, exact: true }).click()
     }
