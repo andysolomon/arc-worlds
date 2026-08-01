@@ -92,6 +92,18 @@ export interface OrbitalClimate {
   /** Latitude at which persistent polar frost begins; 0 is global, 90 none. */
   readonly iceLineLatitudeDeg: number
   readonly tidalHeatingK: number
+  /**
+   * Axial tilt in degrees, carried so the terrain can decide which end of the
+   * world is cold. Past 54.7° a pole receives more light over a year than the
+   * equator does, and the usual arrangement of a planet inverts.
+   */
+  readonly axialTiltDeg: number
+  /**
+   * Sidereal day in hours, carried so the terrain can work out how many
+   * circulation cells fit between the equator and a pole — which is what
+   * decides where the dry belts are, and whether there are any.
+   */
+  readonly dayHours: number
   readonly habitableZoneInnerAU: number
   readonly habitableZoneOuterAU: number
   readonly inHabitableZone: boolean

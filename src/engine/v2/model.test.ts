@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { standaloneClimate } from '../climate'
 import { DEFAULT_PARAMS } from '../../lib/params'
 import { buildCanonicalGraph, graphVertexCount } from './graph'
 import {
@@ -89,6 +90,11 @@ describe('the canonical v2 terrain model', () => {
       surfaceIce: params.ice * 0.25,
       vegetationPotential: 1,
       iceLineLatitudeDeg: 90 - params.ice * 25,
+      // Tilt and rotation are geography too: they decide which end of the
+      // world is cold and where the dry belts fall, so a world re-tilted or
+      // re-timed is a different terrain and has to compile again.
+      axialTiltDeg: 23.44,
+      dayHours: 23.934,
     })
 
     const frozen = createTerrainV2Model({
@@ -98,6 +104,7 @@ describe('the canonical v2 terrain model', () => {
         stellarFlux: 0.04, equilibriumTemperatureK: 115, meanSurfaceTemperatureK: 148,
         perihelionTemperatureK: 149, aphelionTemperatureK: 147, liquidWater: 0,
         surfaceIce: 1, vegetationPotential: 0, iceLineLatitudeDeg: 0, tidalHeatingK: 0,
+        axialTiltDeg: 23.44, dayHours: 23.934,
         habitableZoneInnerAU: 0.97, habitableZoneOuterAU: 1.67,
         inHabitableZone: false, regime: 'frozen',
       },
@@ -266,5 +273,90 @@ describe('the canonical v2 terrain model', () => {
 
     expect(yields).toBe(1)
     expect(events).toEqual(['macro:start', 'macro:complete'])
+  })
+})
+
+describe('circulation shows up in the compiled terrain', () => {
+  /** Mean of a field over the land in a latitude band, in degrees. */
+  const landMean = (model: TerrainV2Model, field: Float32Array, lo: number, hi: number) => {
+    const { graph } = model
+    let sum = 0
+    let n = 0
+    for (let i = 0; i < graphVertexCount(graph); i++) {
+      if (model.elevation[i] <= model.seaLevel) continue
+      const deg = (Math.asin(Math.min(1, Math.abs(graph.positions[i * 3 + 1]))) * 180) / Math.PI
+      if (deg < lo || deg > hi) continue
+      sum += field[i]
+      n++
+    }
+    return n > 0 ? sum / n : NaN
+  }
+
+  // A big graph, because a latitude band needs enough land in it to average.
+  const BAND_GRAPH = buildCanonicalGraph(5)
+  const earthlike = {
+    ...DEFAULT_PARAMS, seed: 4242, preset: 'temperate' as const,
+    water: 0.6, mountains: 0.45, roughness: 0.5, ice: 0.2,
+  }
+
+  it('leaves a dry belt where the cells come back down', () => {
+    // Earth's three cells rise at the equator and at 60° and sink at 30° and
+    // at the pole. Nothing in the code names 30°: it is where the cosine puts
+    // the descending air, and the descending air is why the Sahara is there.
+    const model = createTerrainV2Model(earthlike, { graph: BAND_GRAPH })
+    const equator = landMean(model, model.moisture, 0, 15)
+    const belt = landMean(model, model.moisture, 25, 35)
+    const midlatitude = landMean(model, model.moisture, 50, 70)
+    expect(belt).toBeLessThan(equator)
+    expect(belt).toBeLessThan(midlatitude)
+  })
+
+  it('gives a slowly turning world no belt to be dry in', () => {
+    // One cell from equator to pole, drying the whole way, so the 30° band is
+    // no drier than the tropics next to it — there is nothing descending there.
+    const slow = {
+      ...earthlike,
+      climate: { ...standaloneClimate(earthlike), dayHours: -5832.5 },
+    }
+    const model = createTerrainV2Model(slow, { graph: BAND_GRAPH })
+    const equator = landMean(model, model.moisture, 0, 15)
+    const belt = landMean(model, model.moisture, 25, 35)
+    const fast = createTerrainV2Model(earthlike, { graph: BAND_GRAPH })
+    const fastDrop = landMean(fast, fast.moisture, 0, 15) - landMean(fast, fast.moisture, 25, 35)
+    expect(equator - belt).toBeLessThan(fastDrop)
+  })
+
+  it('warms the poles of a world lying on its side', () => {
+    // Uranus's 98° tilt puts more light on a pole over a year than on the
+    // equator. A monotonic pole gradient cannot express that; this one can.
+    const sideways = {
+      ...earthlike,
+      climate: { ...standaloneClimate(earthlike), axialTiltDeg: 97.77 },
+    }
+    const model = createTerrainV2Model(sideways, { graph: BAND_GRAPH })
+    expect(landMean(model, model.temperature, 60, 90))
+      .toBeGreaterThan(landMean(model, model.temperature, 0, 20))
+
+    // And an ordinary world is still coldest at its poles.
+    const upright = createTerrainV2Model(earthlike, { graph: BAND_GRAPH })
+    expect(landMean(upright, upright.temperature, 60, 90))
+      .toBeLessThan(landMean(upright, upright.temperature, 0, 20))
+  })
+
+  it('recompiles a world that has been re-tilted or re-timed', () => {
+    // Both are geography now, so both belong in the identity that decides
+    // whether a cached terrain can be reused.
+    const base = terrainV2CanonicalKey(earthlike, BAND_GRAPH)
+    const tilted = terrainV2CanonicalKey(
+      { ...earthlike, climate: { ...standaloneClimate(earthlike), axialTiltDeg: 60 } },
+      BAND_GRAPH,
+    )
+    const slowed = terrainV2CanonicalKey(
+      { ...earthlike, climate: { ...standaloneClimate(earthlike), dayHours: 900 } },
+      BAND_GRAPH,
+    )
+    expect(tilted).not.toBe(base)
+    expect(slowed).not.toBe(base)
+    expect(tilted).not.toBe(slowed)
   })
 })

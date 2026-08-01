@@ -52,6 +52,64 @@ const PROFILES: Partial<Record<PresetKey, SurfaceProfile>> = {
 }
 
 const clamp = (v: number, lo = 0, hi = 1) => Math.min(hi, Math.max(lo, v))
+
+/** The second Legendre polynomial, which is the shape of a lit sphere. */
+const legendre2 = (x: number) => (3 * x * x - 1) / 2
+
+/**
+ * How strongly the poles are starved of light relative to the equator, from
+ * the axial tilt alone — the coefficient of the second Legendre term in the
+ * annual mean.
+ *
+ * Earth's 23.44° gives -0.477, the textbook figure. It reaches zero at 54.7°,
+ * where the annual totals are flat from equator to pole, and turns positive
+ * beyond: Uranus, lying on its side at 98°, is warmest at its poles and
+ * coldest at its equator. One expression covers all of it, which is the reason
+ * to use the real relation rather than something monotonic that cannot.
+ */
+export function obliquityTerm(tiltDeg: number): number {
+  const c = Math.cos((tiltDeg * Math.PI) / 180)
+  return -(5 / 8) * legendre2(c)
+}
+
+/**
+ * How many circulation cells fit between the equator and a pole.
+ *
+ * A Hadley cell reaches as far as the rotation lets it, and the Held–Hou
+ * scaling puts that width at Ω^-½: turn faster and the cells are narrower, so
+ * more of them fit. Earth's day gives three — Hadley, Ferrel, polar — which is
+ * what Earth has. Venus, turning once in 117 days, gets one, which is what
+ * Venus has: a single cell from equator to pole, and no dry belt anywhere to
+ * put a desert in. Jupiter at ten hours gets five, and Jupiter is banded.
+ */
+/**
+ * Earth's own value, which the terrain divides by so that an Earth-tilted
+ * world comes out at exactly -1 and is drawn exactly as it was before any of
+ * this existed. The textbook prints -0.477; this is that number unrounded, and
+ * using it rather than the printed one is the difference between "unchanged"
+ * and "unchanged to within a tenth of a per cent".
+ */
+export const EARTH_OBLIQUITY_TERM = obliquityTerm(23.44)
+
+export function circulationCells(dayHours: number): number {
+  const n = 3 * Math.sqrt(23.934 / Math.max(0.5, Math.abs(dayHours)))
+  return Math.max(1, Math.min(6, Math.round(n)))
+}
+
+/**
+ * How wet a latitude is before anything else is counted, 0 to 1.
+ *
+ * Air rises at the equatorward edge of a cell and comes back down at its
+ * poleward edge, dried out by the trip; the next cell repeats it the other way
+ * up. So wet and dry alternate every 90/n degrees, which for Earth's three
+ * cells is a wet equator, a dry belt at 30°, a wet band at 60° and a parched
+ * pole. That dry belt is the Sahara, the Arabian, the Kalahari, the Atacama
+ * and the Australian, all of them, and it falls out of the cosine rather than
+ * being put there by hand.
+ */
+export function circulationMoisture(latitudeDeg: number, cells: number): number {
+  return 0.5 + 0.5 * Math.cos((cells * Math.PI * Math.abs(latitudeDeg)) / 90)
+}
 const smoothstep = (lo: number, hi: number, v: number) => {
   const t = clamp((v - lo) / Math.max(1e-9, hi - lo))
   return t * t * (3 - 2 * t)
@@ -163,6 +221,8 @@ export function climateForBody(system: SystemDef, body: SystemBody): OrbitalClim
     vegetationPotential,
     iceLineLatitudeDeg,
     tidalHeatingK: tidal,
+    axialTiltDeg: body.tilt,
+    dayHours: body.day,
     habitableZoneInnerAU: hz.innerAU,
     habitableZoneOuterAU: hz.outerAU,
     inHabitableZone: meanDistance >= hz.innerAU && meanDistance <= hz.outerAU,

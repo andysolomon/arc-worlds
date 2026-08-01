@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { CURRENT_GENERATOR_VERSION, type PlanetParams, type SystemBody, type SystemDef } from './types'
-import { climateForBody, habitableZoneFor, standaloneClimate, stellarLuminosity } from './climate'
+import {
+  circulationCells, circulationMoisture, climateForBody, EARTH_OBLIQUITY_TERM,
+  habitableZoneFor,
+  obliquityTerm, standaloneClimate, stellarLuminosity,
+} from './climate'
 import { DEFAULT_PARAMS } from '../lib/params'
 
 const earthParams: PlanetParams = {
@@ -70,5 +74,68 @@ describe('orbital climate', () => {
     expect(stellarLuminosity({ mass: 1 })).toBe(1)
     expect(habitableZoneFor({ mass: 1 }).innerAU).toBeLessThan(1)
     expect(habitableZoneFor({ mass: 1 }).outerAU).toBeGreaterThan(1)
+  })
+})
+
+describe('which end of the world is cold', () => {
+  it('reproduces the textbook coefficient for Earth', () => {
+    // The second Legendre coefficient of annual-mean insolation. Earth's tilt
+    // gives -0.477 in every textbook that prints it.
+    expect(obliquityTerm(23.44)).toBeCloseTo(-0.477, 3)
+  })
+
+  it('flattens at 54.7 degrees and turns over beyond it', () => {
+    // Past this tilt a pole receives more light over a year than the equator,
+    // so the ordinary arrangement of a planet inverts. A monotonic pole
+    // gradient cannot express that, and Uranus is the world that needs it.
+    expect(obliquityTerm(54.7356)).toBeCloseTo(0, 4)
+    expect(obliquityTerm(97.77)).toBeGreaterThan(0)
+    expect(obliquityTerm(0)).toBeCloseTo(-0.625, 3)
+  })
+
+  it('leaves an ordinary tilt drawing exactly as it did', () => {
+    // The terrain scales its gradient by this over Earth's own value, so an
+    // Earth-tilted world comes out at exactly 1 and changes by nothing at all.
+    expect(obliquityTerm(23.44) / EARTH_OBLIQUITY_TERM).toBe(1)
+  })
+})
+
+describe('how many circulation cells fit', () => {
+  it('gives Earth three, Venus one and Jupiter five', () => {
+    // Held-Hou: a Hadley cell's width goes as the inverse square root of the
+    // rotation rate. These are the counts those worlds actually have.
+    expect(circulationCells(23.934)).toBe(3)
+    expect(circulationCells(-5832.5)).toBe(1)
+    expect(circulationCells(9.925)).toBe(5)
+  })
+
+  it('puts Earth’s dry belt at thirty degrees', () => {
+    // Nowhere is this number written down: it is where three cells come back
+    // down. It is also the Sahara, the Arabian, the Kalahari, the Atacama and
+    // the Australian, which is the whole argument for deriving it.
+    const at = (lat: number) => circulationMoisture(lat, 3)
+    expect(at(0)).toBeCloseTo(1, 6)
+    expect(at(30)).toBeCloseTo(0, 6)
+    expect(at(60)).toBeCloseTo(1, 6)
+    expect(at(90)).toBeCloseTo(0, 6)
+    // A belt, not a line: the whole subtropics are dry.
+    expect(at(20)).toBeLessThan(0.3)
+    expect(at(40)).toBeLessThan(0.3)
+  })
+
+  it('leaves a slow world with no dry belt to put a desert in', () => {
+    // One cell from equator to pole, drying all the way, and no belt anywhere.
+    const venus = (lat: number) => circulationMoisture(lat, circulationCells(-5832.5))
+    for (let lat = 0; lat < 90; lat += 5) {
+      expect(venus(lat), `${lat}°`).toBeGreaterThan(venus(lat + 5))
+    }
+  })
+
+  it('carries the tilt and the day into the climate a body is given', () => {
+    // The terrain reads both off the climate rather than being plumbed them
+    // separately, so they have to survive the trip.
+    const climate = standaloneClimate({ ...DEFAULT_PARAMS })
+    expect(climate.axialTiltDeg).toBeCloseTo(23.44, 6)
+    expect(climate.dayHours).toBeCloseTo(23.934, 6)
   })
 })
