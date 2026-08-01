@@ -875,3 +875,103 @@ WORTH KNOWING
   time forward until it is in reach before clicking. Landing on a moon
   often puts you in the gap — the planet arrives shortly, or a drag
   brings it round.
+
+2026-08-01 the Moon, properly
+
+DONE
+- A moon is never drawn smaller than it is. The sub-linear size curve
+  is now only a floor, which is all it was ever for — Phobos and
+  Deimos are subpixels at their true size — and above it the number is
+  the measurement. Our Moon goes from 0.09 of Earth to its real 0.273;
+  Charon from a pebble to the half of Pluto it actually is.
+- The single-world camera frames the whole moon orbit, derived from
+  the field of view. The old rule multiplied the orbit by 1.32, which
+  bears no relation to a 45-degree view: at a distance d you see 0.41d
+  either side of the middle, so two thirds of every orbit was off
+  screen and the Moon was mostly not there. Earth is smaller in frame
+  for it. That is the trade, and it is the right way round.
+- In the orbit view a moon's year is tied to its planet's rather than
+  to the wall clock. Each planet's moons share one factor, slowed
+  together until the fastest of them is watchable, so the ratios
+  inside a family stay exact. The Moon now laps Earth about eleven
+  times a year against a true thirteen. It used to manage one lap
+  every four Earth years, which is what "not orbiting" looked like.
+- Tidal lock in the orbit view. Every satellite in the tables is
+  locked and says so — sidereal day equals orbital period — so the
+  drawn spin is read off the drawn orbit instead of running on a
+  second clock. The two are compressed differently, so the old
+  independent spin drifted: the Moon showed Earth every face it has,
+  several times a lap.
+- The lock is now visible, which on a plain grey sphere it never was.
+  The Moon wears the measured albedo difference — anorthosite
+  highlands at 13 per cent against basalt seas at 7 — turned toward us
+  and held there. Iapetus's dark half moves to its leading hemisphere,
+  which is where it comes from.
+- Moons cast shadows. A moon between the sun and its world drops a
+  real one on it, and the orbital node precesses, which is the reason
+  eclipses arrive in seasons instead of once an orbit. Measured over
+  50 lunar orbits: about one eclipse every two, from a graze at the
+  limb to dead centre.
+
+WORTH KNOWING
+- The deep part of an eclipse is brief, and that is the geometry
+  rather than a setting. The Moon is drawn 4.25 radii out, so the
+  window where its shadow lands anywhere on the disc is 27 degrees of
+  the orbit, and the part where the shadow is well inside the disc
+  rather than grazing the limb is half of that — about two seconds of
+  a 57-second lap. Come in at 4x or 20x if you want to watch one
+  cross; at 1x it is a thing you catch, which is the right feeling.
+- Only the moons cast. The world casting back would be a lunar
+  eclipse and worth having, but the world is the tens of thousands of
+  triangles in this scene and a shadow map means drawing every caster
+  a second time each frame. A moon is a 22-segment sphere.
+- Gas giants do not receive. Their bands come from a hand-written
+  shader that samples no shadow map, so Io's shadow does not cross
+  Jupiter. That is a shader to be written, not a decision taken.
+- Not PCFSoftShadowMap. Three deprecated it: asking for it earns a
+  console warning and a silent swap to PCFShadowMap on the first
+  shadow render, and that swap recompiles every material in the scene
+  mid-frame. It left the cloud shell sampling a shadow map that was
+  being replaced underneath it and painted Earth's weather black.
+- Moon distance stays compressed and always will be. The Moon is 60
+  Earth radii away; drawn there it is off screen with Earth a dot.
+  Everything else about the pair is now the measurement — size ratio,
+  period ratio, lock, shadow — but the gap between them is a frame
+  constraint, not a number.
+- The eclipse signal published for tests counts events rather than
+  reporting the current state: an eclipse is over inside a tenth of an
+  orbit, so anything sampling on a timer would mostly find nothing and
+  conclude that shadows never fall.
+
+FIXED IN PASSING
+- Every regeneration after the first — a time scale, a toggle, a
+  slider — slammed the single-world camera back to 3.15 whenever the
+  world had moons. The framing branch only runs when the set of moons
+  changes; every later pass fell through to the else and reset. A moon
+  system framed itself once and lost it at the next keystroke.
+- A moon's ascending node did nothing. Rotation order applies X last,
+  so the node was the inner rotation of the two and only shifted the
+  moon's phase inside a plane every moon of that planet shared. It
+  turns the plane now, which is what makes precession mean anything.
+
+VERIFIED
+- bun run typecheck
+- bun run lint
+- bun run test: 135 passed
+- bun run build
+- bun run size:check: passed, entry 244416 of 256000 gzip
+- bun run perf:smoke: passed, activeRendererFps 23.3 — the same number the
+  unmodified engine measures on this machine
+- bun run test:e2e: 33 passed, including the new eclipse test
+- Watched by hand: Earth with the Moon in frame for the whole orbit, the
+  Moon in the orbit view lapping Earth eleven times a year, and a shadow
+  on the Pacific with the clock stopped inside it.
+
+WORTH KNOWING (a test, not this work)
+- "holding on hover stops the clock" is marginal under load. It compares a
+  frame counter published every tenth frame across a 900 ms window, which
+  at ~20 fps is fewer than two ticks, so a busy machine flips it. Seen
+  failing on unmodified main too, at six parallel workers — which
+  playwright.config already calls oversubscribing the GPU. Passes at the
+  worker counts the project actually uses, CI included: 12 of 12 at one
+  worker, and the full suite twice.

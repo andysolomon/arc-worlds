@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { ORBITS, parentOf } from './planets'
-import { TRAPPIST } from '../data/systems'
+import { ORBITS, parentOf, REAL } from './planets'
+import { MILKY_WAY, TRAPPIST } from '../data/systems'
 import { MOONS } from '../data/presets'
 import {
   kepler, moonDist, moonPeriodSec, moonRad, sameDist, satMult, satRadii,
-  satRank, sizeMap, systemStretch, tempoFor, visDist,
+  satRank, satTempo, sizeMap, systemStretch, tempoFor, visDist,
 } from './scale'
 
 describe('visDist', () => {
@@ -119,6 +119,20 @@ describe('moon scaling', () => {
     // Deimos is the smallest body rendered anywhere in the app.
     expect(moonRad(0.00183)).toBeGreaterThanOrEqual(0.01)
     expect(moonRad(0.2727)).toBeGreaterThan(moonRad(0.00183))
+    // …and the floor is the only thing it does. Deimos is lifted eight times
+    // its true size to stay on screen; a moon big enough not to need that is
+    // drawn at the measurement, which is the whole point of the Earth–Moon
+    // pair. Charon is over half of Pluto, and drawing it a fifth of that was
+    // the difference between a double world and a pebble.
+    expect(moonRad(0.00183)).toBeGreaterThan(0.00183)
+    expect(moonRad(0.2727)).toBeCloseTo(0.2727, 10)
+    expect(moonRad(0.512)).toBeCloseTo(0.512, 10)
+    // Never smaller than life, whatever the moon.
+    for (const key of Object.keys(REAL)) {
+      for (const m of REAL[key].moons) {
+        expect(moonRad(m.r), `${key}/${m.n}`).toBeGreaterThanOrEqual(m.r)
+      }
+    }
   })
 
   it('eases long periods so distant moons still move', () => {
@@ -178,6 +192,42 @@ describe('satellite orbits', () => {
     for (const room of [-1, 0.4, 5]) {
       expect(satMult(inner, 1.524, room)).toBeLessThan(satMult(outer, 1.524, room))
     }
+  })
+
+  it('carries every satellite into the system as a tidally locked one', () => {
+    // The orbit view reads the lock off the data rather than being told about
+    // it: a satellite whose sidereal day is its orbital period gets its spin
+    // from its orbit, so the same face stays inward however the two clocks are
+    // compressed. That inference is only sound while the tables agree, and
+    // every satellite drawn in a system is a real moon, and every real moon
+    // large enough to be here is locked.
+    const sats = MILKY_WAY.bodies.filter((b) => b.orbits)
+    expect(sats.length).toBeGreaterThan(0)
+    for (const b of sats) {
+      expect(Math.abs(b.day) / 24, b.name).toBeCloseTo(b.period * 365.25, 6)
+    }
+  })
+
+  it('keeps a moon’s year tied to its planet’s, not to the wall clock', () => {
+    // The Moon takes 27.32 days against Earth's 365.25, so a drawn Earth year
+    // has to contain something close to thirteen drawn lunar months. The old
+    // easing gave it one every four years, which is why it read as standing
+    // still. A factor of 1.2 is all our own Moon needs.
+    const moon = 27.322 / 365.25
+    const K = satTempo(moon)
+    expect(K).toBeLessThan(1.25)
+    expect(1 / (moon * K)).toBeGreaterThan(10)
+
+    // Jupiter's family needs a real slowing — Io's 1.77 days is 68 ms at the
+    // system's pace — but the ratios inside it survive exactly.
+    const io = 1.769 / 365.25
+    const europa = 3.551 / 365.25
+    const J = satTempo(io)
+    expect(J).toBeGreaterThan(10)
+    expect((europa * J) / (io * J)).toBeCloseTo(europa / io, 12)
+    // Every family is slowed to the same fastest orbit, so no moon anywhere
+    // is a blur and none of them is slower than it has to be.
+    expect(io * J).toBeCloseTo(moon * K, 12)
   })
 
   it('converts a satellite distance into its planet’s radii', () => {

@@ -16,7 +16,14 @@ export const REAL: Record<string, RealBody> = {
 
   temperate: {
     f: 0.00335, ob: 23.44, day: 23.934,
-    moons: [{ n: 'Moon', r: 0.2727, a: 60.34, P: 27.322, inc: 23.4, c: 0x9a9490, world: { preset: 'luna', seed: 1969 } }],
+    // The maria are on the near side, and the near side is the only one anyone
+    // saw until 1959: the tone pair is the measured albedo difference — pale
+    // anorthosite highlands at 13%, dark basalt seas at 7% — and `mark` turns
+    // that difference toward us, where the lock holds it.
+    moons: [{
+      n: 'Moon', r: 0.2727, a: 60.34, P: 27.322, inc: 23.4, c: 0x9a9490,
+      tone: [0xa9a39b, 0x565049], mark: Math.PI, world: { preset: 'luna', seed: 1969 },
+    }],
   },
 
   mars: {
@@ -47,7 +54,9 @@ export const REAL: Record<string, RealBody> = {
       { n: 'Dione', r: 0.00964, a: 6.48, P: 2.737, inc: 0.02, c: 0xcfcabf },
       { n: 'Rhea', r: 0.01312, a: 9.05, P: 4.518, inc: 0.35, c: 0xc6c0b5 },
       { n: 'Titan', r: 0.04422, a: 20.98, P: 15.945, inc: 0.33, c: 0xd9a054, world: { preset: 'titan', seed: 1655 } },
-      { n: 'Iapetus', r: 0.01261, a: 61.15, P: 79.32, inc: 15.47, c: 0xffffff, tone: [0xb9ae96, 0x2e2620] },
+      // Cassini Regio faces the way Iapetus is going: it is dark because of
+      // what it sweeps up, so the mark belongs on the leading hemisphere.
+      { n: 'Iapetus', r: 0.01261, a: 61.15, P: 79.32, inc: 15.47, c: 0xffffff, tone: [0xb9ae96, 0x2e2620], mark: -Math.PI / 2 },
     ],
   },
 
