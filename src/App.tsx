@@ -4,8 +4,9 @@ import { SculptPanel } from './components/SculptPanel'
 import { SystemsPanel } from './components/SystemsPanel'
 import { Viewport } from './components/Viewport'
 import { WorldsPanel } from './components/WorldsPanel'
-import { MOONS, PRESETS, typeOf, type AncientWorld } from './data/presets'
+import { MOONS, PRESETS, SOLAR, typeOf, type AncientWorld } from './data/presets'
 import { MILKY_WAY } from './data/systems'
+import { parentOf } from './engine/planets'
 import {
   loadDisplay, nebulaCss, saveDisplay, type DisplayOptions, type TierChoice,
 } from './lib/display'
@@ -230,8 +231,57 @@ export default function App() {
   const chooseSystem = useCallback((def: SystemDef) => {
     setSystem(def)
     setSavedSystemSlug(null)
+    // Choosing a system means wanting to look at it, not at whichever single
+    // world happened to be on screen beforehand.
+    setView('system')
     if (window.location.pathname.startsWith('/s/')) window.history.replaceState(null, '', '/')
   }, [])
+
+  /**
+   * Where going back leads from whatever is on screen.
+   *
+   * Derived rather than remembered, so it cannot disagree with what is being
+   * shown: a moon returns to the planet it orbits, a planet to the system it
+   * belongs to, and a world of your own — which is not in any system yet —
+   * offers to join one instead.
+   */
+  const back = useMemo(() => {
+    if (view === 'system') return null
+    const measured = parentOf(params)
+    if (measured) {
+      const host = SOLAR.find((x) => x.key === measured.key)
+      if (host) return { kind: 'planet' as const, label: host.name, host }
+    }
+    const mine = system.bodies.find(
+      (b) => b.orbits && b.params.preset === params.preset && b.params.seed === params.seed,
+    )
+    const invented = mine && system.bodies.find((b) => b.name === mine.orbits)
+    if (invented) return { kind: 'body' as const, label: invented.name, body: invented }
+    const inSystem = system.bodies.some(
+      (b) => b.params.preset === params.preset && b.params.seed === params.seed,
+    )
+    if (inSystem) return { kind: 'system' as const, label: system.name }
+    return { kind: 'orphan' as const, label: system.name }
+  }, [view, params, system])
+
+  const goBack = useCallback(() => {
+    if (!back) return
+    if (back.kind === 'planet') {
+      setParams({ ...DEFAULT_PARAMS, ...back.host.params, preset: back.host.key })
+      setName(back.host.name)
+      setScan(null)
+      setSavedSlug(null)
+      return
+    }
+    if (back.kind === 'body') {
+      setParams(sanitize(back.body.params))
+      setName(back.body.name)
+      setScan(null)
+      setSavedSlug(null)
+      return
+    }
+    setView('system')
+  }, [back])
 
   /** Visit one of the bodies in the current system. */
   const visitBody = useCallback(
@@ -445,6 +495,11 @@ export default function App() {
           />
 
           <div className="view-title">
+            {back && (
+              <button className="btn-back" type="button" onClick={goBack}>
+                ‹ {back.kind === 'orphan' ? `Add to ${back.label}` : back.label}
+              </button>
+            )}
             <h2>{view === 'system' ? system.name : name}</h2>
             <p>{subtitle}</p>
           </div>
