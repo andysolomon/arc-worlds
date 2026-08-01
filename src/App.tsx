@@ -12,7 +12,7 @@ import {
 } from './lib/display'
 import { DEFAULT_PARAMS, sanitize, surprise } from './lib/params'
 import {
-  addMoon, addRolledWorld, addWorld, duplicateBody, sanitizeSystem,
+  addMoon, addRolledWorld, addWorld, duplicateBody, editableCopy, hasRoom, sanitizeSystem,
 } from './lib/systems'
 import { computeScan, type ScanResult } from './lib/scan'
 import {
@@ -89,6 +89,7 @@ export default function App() {
       showPaths: display.paths,
       showLabels: display.labels,
       showMoons: display.moons,
+      pauseOnHover: display.pauseOnHover,
       tier: display.tier === 'auto' ? undefined : display.tier,
       starDensity: display.starDensity,
       starBright: display.starBright,
@@ -238,6 +239,15 @@ export default function App() {
   }, [])
 
   /**
+   * Whether the system on screen would take another world.
+   *
+   * Adding to a read-only system means adding to a copy of it, so the question
+   * is really about the copy — which is what `addWorld` builds, and the same
+   * test it applies before it will take anything.
+   */
+  const systemTakesAnother = useMemo(() => hasRoom(editableCopy(system)), [system])
+
+  /**
    * Where going back leads from whatever is on screen.
    *
    * Derived rather than remembered, so it cannot disagree with what is being
@@ -261,8 +271,12 @@ export default function App() {
       (b) => b.params.preset === params.preset && b.params.seed === params.seed,
     )
     if (inSystem) return { kind: 'system' as const, label: system.name }
+    // Only offer to join a system that will actually take the world. A full
+    // one can still be looked at, and says so instead of promising a place it
+    // has no room for.
+    if (!systemTakesAnother) return { kind: 'system' as const, label: system.name }
     return { kind: 'orphan' as const, label: system.name }
-  }, [view, params, system])
+  }, [view, params, system, systemTakesAnother])
 
   const goBack = useCallback(() => {
     if (!back) return
@@ -280,8 +294,28 @@ export default function App() {
       setSavedSlug(null)
       return
     }
+    if (back.kind === 'orphan') {
+      // The button offers to put this world into the system, so the click has
+      // to do it rather than merely show where it would have gone. Adding
+      // first means the orbit that opens is the one it has just taken, and the
+      // panel comes along so the new world is in the list as well as the sky.
+      setSystem((s) => addWorld(s, name, params))
+      setSavedSystemSlug(null)
+      setTab('solar')
+    }
     setView('system')
-  }, [back])
+  }, [back, name, params])
+
+  /**
+   * Clicking the planet in a moon's sky travels to it.
+   *
+   * The same journey the back button makes, because it is the same journey:
+   * the planet up there and the planet named on the button are one body, and
+   * two ways of reaching it that disagreed would be a bug waiting to happen.
+   */
+  const visitParent = useCallback(() => {
+    if (back?.kind === 'planet' || back?.kind === 'body') goBack()
+  }, [back, goBack])
 
   /** Visit one of the bodies in the current system. */
   const visitBody = useCallback(
@@ -482,6 +516,23 @@ export default function App() {
                 {label}
               </button>
             ))}
+            <span className="time-sep" aria-hidden="true" />
+            {/*
+              Called "Hold on hover" rather than "Pause on hover" because the
+              speed beside it is already called Pause, and one button's name
+              must never be contained in another's — tests and the performance
+              benchmark find these by their accessible name alone.
+            */}
+            <button
+              className="time-btn"
+              data-on={display.pauseOnHover}
+              aria-pressed={display.pauseOnHover}
+              title="Stop time while the pointer rests on a planet or a moon"
+              type="button"
+              onClick={() => setDisplayField('pauseOnHover', !display.pauseOnHover)}
+            >
+              Hold on hover
+            </button>
           </div>
 
           <Viewport
@@ -491,6 +542,7 @@ export default function App() {
             resetNonce={resetNonce}
             onPick={visitBody}
             onPickMoon={visitMoon}
+            onPickParent={visitParent}
             background={nebulaCss(display.nebula)}
           />
 

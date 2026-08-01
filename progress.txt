@@ -837,3 +837,41 @@ CHASED AND DISMISSED
   cause is a feature: screenshot tests of this app need a window big
   enough to keep the canvas on screen, or they will capture a suspended
   frame.
+
+2026-07-31 three ways around, and a way to stand still
+
+DONE
+- The back button's "Add to {system}" now adds. It goes through the
+  same addWorld every other route uses, so a read-only system is
+  copied rather than edited in place, and the Systems tab comes along
+  so the world is in the list as well as in the sky. A full system
+  offers a look instead of a place it has not got.
+- The planet in a moon's sky is clickable, and goes where the back
+  button goes — the same function, so the two cannot drift apart.
+  Hit-tested as a sphere rather than against geometry: cheap enough to
+  run on every pointer move, and exact, because it is a ball.
+- "Hold on hover" in the time bar stops the clock while the pointer
+  rests on a planet or a moon. The same stop Pause makes, so rotation,
+  orbits, water, cloud and lava all freeze together and the loop goes
+  idle. Remembered between visits. Called Hold rather than Pause
+  because Playwright matches an accessible name by substring, and a
+  second button containing "Pause" would have broken every test and
+  the perf benchmark that clicks the first one.
+
+FIXED IN PASSING
+- The viewport could freeze until reload. Three polls its shader
+  programs for readiness on its own timer, and that poll reads
+  material state a rebuild can free underneath it — clicking through
+  to a moon while the orbit view is still warming up does it. It
+  throws in the timer, the promise never settles, and the frame loop,
+  which waits on that promise before drawing, stops for good.
+  Reproduced on main about one run in six, so it predates this work. A
+  3-second deadline on the wait turns it into one late frame.
+
+WORTH KNOWING
+- The parent planet is off the side of the view for part of every
+  turn: it sits 4.6 radii out with the camera 8.5 back, so at its
+  widest it is just outside the frame. That is why the new test winds
+  time forward until it is in reach before clicking. Landing on a moon
+  often puts you in the gap — the planet arrives shortly, or a drag
+  brings it round.

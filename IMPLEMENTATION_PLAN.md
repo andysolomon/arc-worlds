@@ -239,6 +239,33 @@ Promoted set — the ones with real character: **the Moon**, **Io**, **Europa**,
       there, and a distance measured from a planet is re-derived rather than
       carried over when a world changes what it orbits.
 
+### 12. Getting around, and holding still (delivered 2026-07-31)
+
+- [x] The back button's offer to put a world into a system is one it keeps.
+      Adding goes through the same `addWorld` every other route uses, so a
+      read-only system is copied rather than edited, and the Systems tab comes
+      along so the new world is in the list as well as in the sky. A system
+      with no room left offers a look instead of a place it cannot give.
+- [x] The planet in a moon's sky can be clicked to travel to it — the same
+      journey the back button makes, and deliberately the same code, so the
+      two can never disagree. Hit-tested as the sphere it is rather than
+      against its geometry, which is both the cheap answer and the exact one.
+      Its rings are left out: clicking Saturn should mean clicking Saturn.
+- [x] "Hold on hover" in the time bar stops the clock while the pointer rests
+      on a planet or a moon, and starts it again when the pointer moves off.
+      It is the same stop the Pause button makes, so everything riding on the
+      clock freezes together — rotation, orbits, water, cloud, lava — and the
+      render loop goes idle exactly as it does when paused. Remembered between
+      visits, unlike the speeds, because it is a habit rather than a speed.
+      Named "Hold", not "Pause", because no button's accessible name may
+      contain another's.
+- [x] Fixed along the way: three's shader-readiness poll reads material state
+      that a rebuild can free underneath it — travelling to a moon while the
+      orbit view is still warming up is enough — and when it throws in its own
+      timer the promise never settles and the frame loop waits on it forever.
+      Reproduced on `main` roughly one run in six. A deadline on the wait turns
+      a viewport frozen until reload into one late frame.
+
 ### Removed scope
 
 - The dedicated Venus field trip was removed on 2026-07-29 after product

@@ -50,6 +50,24 @@ const COMPANION_DIST = 4.6
 /** How far back to sit when a moon has a planet to show beside it. */
 const COMPANION_CAM = 8.5
 
+/**
+ * The sphere the world in the single view is hit-tested against.
+ *
+ * Slightly wider than the unit sphere it is drawn on, to cover displaced
+ * mountains. Deliberately not the geometry: hit-testing runs on every pointer
+ * move, that geometry carries tens of thousands of triangles, and the body is
+ * a ball — so the analytic answer is both the cheap one and the exact one.
+ */
+const WORLD_HIT_R = 1.06
+
+/**
+ * How long to wait for shader compilation before drawing anyway.
+ *
+ * Well past any real compile — the whole orbit view, build and warmup
+ * together, is budgeted at a second — so this only ever fires when the
+ * promise has been abandoned rather than merely slow.
+ */
+const COMPILE_DEADLINE = 3000
 
 /** The photographic map for a parent, where the file name differs from the key. */
 const PARENT_MAP: Record<string, string> = {
@@ -248,6 +266,7 @@ export class PlanetViewport {
   private lastPublishedSunScale = Number.NaN
   private lastPublishedLines = -1
   private lastPublishedPoints = -1
+  private lastPublishedParent = ''
   private orbitFirstRenderPending = false
   private orbitMaxRenderMs = 0
 
@@ -274,6 +293,10 @@ export class PlanetViewport {
   private showLabels = false
   private showMoons = true
   private hoverIndex = -1
+  /** Stop the clock while the pointer rests on a body; a time-menu option. */
+  private pauseOnHover = false
+  /** Whether it is resting on one now. Only consulted while the option is on. */
+  private overBody = false
   private pathAnim = false
   private sysLabelKey = ''
 
@@ -329,11 +352,17 @@ export class PlanetViewport {
   private m3g = new THREE.Matrix3()
   private ray = new THREE.Raycaster()
   private v2 = new THREE.Vector2()
+  private hitSphere = new THREE.Sphere()
+  /** The canvas size in CSS pixels, kept so the loop never measures layout. */
+  private cssW = 0
+  private cssH = 0
 
   /** Fired when a planet is clicked in the orbit view. */
   onPick: ((index: number) => void) | null = null
   /** Fired when a moon that is a world is clicked in the single-world view. */
   onPickMoon: ((world: { preset: PresetKey; seed: number }) => void) | null = null
+  /** Fired when the planet in a moon's sky is clicked, to travel to it. */
+  onPickParent: (() => void) | null = null
 
   constructor(container: HTMLElement) {
     this.container = container
@@ -647,14 +676,11 @@ export class PlanetViewport {
     cv.addEventListener('pointermove', (e) => {
       const p = this.ptrs.get(e.pointerId)
       if (!p) {
-        // No button down: this is a hover, which only means something when the
-        // orbit view is hiding its paths and one can be glimpsed.
-        if (this.sys?.visible && !this.showPaths && !this.dragging) {
-          this.setHover(this.planetAt(e))
-        } else if (!this.sys?.visible && !this.dragging) {
-          // A moon you can visit should say so before you click it.
-          cv.style.cursor = this.moonAt(e) ? 'pointer' : 'grab'
-        }
+        // No button down: this is a hover, which means something when the orbit
+        // view is hiding its paths and one can be glimpsed, when what is under
+        // the pointer can be clicked — and, with the option on, always, since
+        // resting on a body is what stops the clock.
+        if (!this.dragging) this.readHover(e, cv)
         return
       }
       const dx = e.clientX - p.x
@@ -686,14 +712,23 @@ export class PlanetViewport {
           else {
             const m = this.moonAt(e)
             if (m?.world) this.onPickMoon?.(m.world)
+            // The planet in a moon's sky is a place, not scenery: clicking it
+            // travels there, which is the trip the back button also makes.
+            else if (this.companionAt(e)) this.onPickParent?.()
           }
         }
+        // The pointer is still wherever the drag left it, and it may be resting
+        // on something — worth knowing, since that is what holds the clock.
+        this.readHover(e, cv)
       }
       this.invalidate()
     }
     cv.addEventListener('pointerup', up)
     cv.addEventListener('pointercancel', up)
-    cv.addEventListener('pointerleave', () => this.setHover(-1))
+    cv.addEventListener('pointerleave', () => {
+      this.setHover(-1)
+      this.setOverBody(false)
+    })
 
     cv.addEventListener(
       'wheel',
@@ -712,30 +747,85 @@ export class PlanetViewport {
     return this.p?.mode === 'system' ? Math.max(260, this.fitScale * 3) : 9
   }
 
-  /** Which planet is under this pointer event, or -1. */
-  private planetAt(e: PointerEvent): number {
+  /** Point the shared raycaster at whatever is under this pointer event. */
+  private aim(e: PointerEvent) {
     const r = this.renderer.domElement.getBoundingClientRect()
     this.v2.set(
       ((e.clientX - r.left) / Math.max(1, r.width)) * 2 - 1,
       -((e.clientY - r.top) / Math.max(1, r.height)) * 2 + 1,
     )
     this.ray.setFromCamera(this.v2, this.camera)
+  }
+
+  /** Which planet is under this pointer event, or -1. */
+  private planetAt(e: PointerEvent): number {
+    this.aim(e)
     const hits = this.ray.intersectObjects(this.sysPlanets, false)
     return hits.length ? (hits[0].object.userData as SysNode).index : -1
   }
 
-  /** The world-moon under the pointer in the single-world view, if any. */
+  /**
+   * The moon under the pointer in the single-world view, if any.
+   *
+   * Every moon counts, not only the ones that are worlds: a moon you cannot
+   * visit is still a moon you can rest the pointer on. Callers that need a
+   * destination check `world` themselves.
+   */
   private moonAt(e: PointerEvent): MoonInstance | null {
-    if (!this.moons.length || this.sys?.visible) return null
-    const r = this.renderer.domElement.getBoundingClientRect()
-    this.v2.set(
-      ((e.clientX - r.left) / Math.max(1, r.width)) * 2 - 1,
-      -((e.clientY - r.top) / Math.max(1, r.height)) * 2 + 1,
-    )
-    this.ray.setFromCamera(this.v2, this.camera)
+    if (!this.moons.length || this.sys?.visible || !this.moonRoot.visible) return null
+    this.aim(e)
     const hits = this.ray.intersectObjects(this.moons.map((m) => m.mesh), false)
     if (!hits.length) return null
-    return this.moons.find((m) => m.mesh === hits[0].object && m.world) ?? null
+    return this.moons.find((m) => m.mesh === hits[0].object) ?? null
+  }
+
+  /**
+   * True when the pointer is over the planet a moon orbits.
+   *
+   * The companion is a plain ball, so it is tested as the sphere it is. Its
+   * rings are left out on purpose: clicking Saturn should mean clicking Saturn,
+   * not clicking the sixty degrees of empty sky its rings sweep through.
+   */
+  private companionAt(e: PointerEvent): boolean {
+    if (!this.companion.visible) return false
+    this.aim(e)
+    this.companion.getWorldPosition(this.hitSphere.center)
+    this.hitSphere.radius = this.companion.scale.x
+    return this.ray.ray.intersectsSphere(this.hitSphere)
+  }
+
+  /** True when the pointer is over the world the single view is showing. */
+  private worldAt(e: PointerEvent): boolean {
+    if (this.sys?.visible) return false
+    this.aim(e)
+    this.hitSphere.center.set(0, 0, 0)
+    this.hitSphere.radius = WORLD_HIT_R
+    return this.ray.ray.intersectsSphere(this.hitSphere)
+  }
+
+  /**
+   * What the pointer is resting on, and what that means.
+   *
+   * Three answers come out of one read: which orbit path to reveal, whether
+   * the cursor should offer a click, and whether a body is under the pointer
+   * at all — which is what stops the clock when that option is on. Each test
+   * is skipped when nothing would use its answer, so a plain hover over the
+   * orbit view with paths shown still costs nothing.
+   */
+  private readHover(e: PointerEvent, cv: HTMLCanvasElement) {
+    if (this.sys?.visible) {
+      if (this.showPaths && !this.pauseOnHover) return
+      const i = this.planetAt(e)
+      if (!this.showPaths) this.setHover(i)
+      this.setOverBody(i >= 0)
+      return
+    }
+    // A moon you can visit should say so before you click it, and so should
+    // the planet it belongs to.
+    const moon = this.moonAt(e)
+    const parent = !moon && this.companionAt(e)
+    cv.style.cursor = moon?.world || parent ? 'pointer' : 'grab'
+    if (this.pauseOnHover) this.setOverBody(!!moon || parent || this.worldAt(e))
   }
 
   private pick(e: PointerEvent) {
@@ -750,9 +840,20 @@ export class PlanetViewport {
     this.invalidate()
   }
 
+  /** Note whether a body is under the pointer, and wake the loop if it matters. */
+  private setOverBody(over: boolean) {
+    if (over === this.overBody) return
+    this.overBody = over
+    // Stopping needs a frame as much as starting does: the loop has to run
+    // once more to notice it should not run again.
+    if (this.pauseOnHover) this.invalidate()
+  }
+
   private resize() {
     const w = this.container.clientWidth || 300
     const h = this.container.clientHeight || 300
+    this.cssW = w
+    this.cssH = h
     this.renderer.setSize(w, h, false)
     this.camera.aspect = w / h
     this.camera.updateProjectionMatrix()
@@ -1420,6 +1521,13 @@ export class PlanetViewport {
     this.showPaths = P.showPaths !== false
     this.showLabels = P.showLabels === true
     this.showMoons = P.showMoons !== false
+
+    // A hover must not outlive what it was over. Switching views, or turning
+    // the option off, would otherwise leave the clock held by a body that is
+    // no longer under the pointer — or no longer on screen at all.
+    const wantedMode = P.mode === 'system' ? 'system' : 'single'
+    this.pauseOnHover = P.pauseOnHover === true
+    if (!this.pauseOnHover || wantedMode !== this.mode) this.overBody = false
 
     // Universe appearance: cheap uniforms and a draw range, applied in both
     // views. Every default is the exact look the app has always had.
@@ -2168,8 +2276,20 @@ export class PlanetViewport {
     this.scheduleFrame()
   }
 
+  /**
+   * Whether the clock should advance.
+   *
+   * Two ways to stop it: the time bar, and — with the option on — the pointer
+   * resting on a planet or a moon. They are the same stop, so everything that
+   * rides on `t` freezes together: rotation, orbits, water, cloud, lava.
+   */
+  private isRunning() {
+    if (this.p && this.p.autoRotate === false) return false
+    return !(this.pauseOnHover && this.overBody)
+  }
+
   private shouldContinue() {
-    const running = !this.p || this.p.autoRotate !== false
+    const running = this.isRunning()
     return (
       running ||
       this.dirty ||
@@ -2200,7 +2320,20 @@ export class PlanetViewport {
     ).then(() => undefined, () => undefined)
     recordOrbitMeasure('shader-kickoff', compileStart)
     this.compiling = job
+    // A deadline, because this promise is not always kept. Three polls the
+    // programs for readiness on its own timer, and that poll reads material
+    // state a rebuild can free underneath it — travelling to a moon while the
+    // orbit view is still warming up is enough. When it throws in there the
+    // promise never settles, and the frame loop, which waits on it before
+    // drawing anything, stops for good. Giving up after a while turns a
+    // viewport frozen until reload into one late frame.
+    const giveUp = window.setTimeout(() => {
+      if (this.compiling !== job) return
+      this.compiling = null
+      this.invalidate()
+    }, COMPILE_DEADLINE)
     job.finally(() => {
+      window.clearTimeout(giveUp)
       if (this.compiling === job) this.compiling = null
       recordOrbitMeasure('shader-ready', compileStart)
       const canvas = this.renderer.domElement
@@ -2209,6 +2342,20 @@ export class PlanetViewport {
       this.invalidate()
     })
     return true
+  }
+
+  /**
+   * The parent planet's centre in canvas pixels, or '' while it is behind us.
+   *
+   * Rounded to whole pixels so a planet drifting a hundredth of a pixel does
+   * not write to the DOM on every frame.
+   */
+  private projectCompanion(): string {
+    this.companion.getWorldPosition(this.tmpV).project(this.camera)
+    if (this.tmpV.z > 1) return ''
+    const x = Math.round(((this.tmpV.x + 1) / 2) * this.cssW)
+    const y = Math.round(((1 - this.tmpV.y) / 2) * this.cssH)
+    return `${x},${y}`
   }
 
   private adaptQuality(frameGap: number) {
@@ -2226,7 +2373,7 @@ export class PlanetViewport {
     this.raf = 0
     if (this.stopped || document.hidden || !this.inView) return
 
-    const running = !this.p || this.p.autoRotate !== false
+    const running = this.isRunning()
     const urgent =
       this.forceRender ||
       this.dirty ||
@@ -2455,6 +2602,17 @@ export class PlanetViewport {
     if (sunScale !== this.lastPublishedSunScale) {
       this.lastPublishedSunScale = sunScale
       cv.dataset.sunScale = String(sunScale)
+    }
+    // Where the parent planet landed on screen, in canvas pixels, for the same
+    // reason as everything above: the frame cannot be read back, and this one
+    // is a place you can click. It wanders — a moon carries its planet around
+    // the sky as it turns — so nothing outside the engine can work out where
+    // it is without doing the engine's arithmetic over again.
+    const parentXY = this.companion.visible ? this.projectCompanion() : ''
+    if (parentXY !== this.lastPublishedParent) {
+      this.lastPublishedParent = parentXY
+      if (parentXY) cv.dataset.parent = parentXY
+      else delete cv.dataset.parent
     }
 
     const frameGap = this.lastRender ? now - this.lastRender : 0

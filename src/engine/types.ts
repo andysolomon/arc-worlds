@@ -34,6 +34,8 @@ export interface PlanetParams {
   stars?: boolean
   autoRotate?: boolean
   timeScale?: number
+  /** Stop the clock while the pointer rests on a planet or a moon. */
+  pauseOnHover?: boolean
   /** Orbit paths for planets and moons. Hidden paths still show on hover. */
   showPaths?: boolean
   /** Planet names in the orbit view. */
