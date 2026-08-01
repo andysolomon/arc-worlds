@@ -227,6 +227,9 @@ test('adding a world never edits a read-only system in place', async ({ page }) 
 
   // The original is still there, still measured, still nine bodies.
   await page.getByRole('button', { name: 'The Solar System', exact: true }).click()
+  // Choosing a system now opens the orbit view; its provenance and body list
+  // both live one click away.
+  await page.getByRole('button', { name: 'Body list' }).click()
   await expect(page.getByText(/every number measured/)).toBeVisible()
   // Nine planets, plus the seven moons that are worlds in their own right.
   await expect(page.getByRole('button', { name: /Visit/ })).toHaveCount(16)
@@ -239,6 +242,9 @@ test('an imagined system is never presented as a measured one', async ({ page })
   await expect(page.getByText(/every number measured/)).toBeVisible()
 
   await page.getByRole('button', { name: 'Andromeda' }).click()
+  // Choosing a system now opens the orbit view; its provenance is stated on
+  // the body list, which is a click away.
+  await page.getByRole('button', { name: 'Body list' }).click()
   await expect(page.getByText(/not a measured system/)).toBeVisible()
   await page.getByRole('button', { name: 'Orbit view' }).click()
   await awaitGeometry(page)
@@ -516,6 +522,8 @@ test('TRAPPIST-1 wears measured orbits on imagined worlds', async ({ page }) => 
   await page.goto('/')
   await page.getByRole('tab', { name: 'Systems' }).click()
   await page.getByRole('button', { name: 'TRAPPIST-1' }).click()
+  // Choosing a system now opens the orbit view; the body list is a click away.
+  await page.getByRole('button', { name: 'Body list' }).click()
 
   // The honest split is stated up front, and all seven planets are here.
   await expect(page.getByText(/nobody has seen these surfaces/)).toBeVisible()
@@ -551,6 +559,8 @@ test('Pandora orbits Polyphemus, and is still a whole world', async ({ page }) =
   await page.goto('/')
   await page.getByRole('tab', { name: 'Systems' }).click()
   await page.getByRole('button', { name: 'Alpha Centauri A' }).click()
+  // Choosing a system now opens the orbit view; the body list is a click away.
+  await page.getByRole('button', { name: 'Body list' }).click()
   await expect(page.getByText(/Pandora and the giant it orbits/)).toBeVisible()
   await expect(page.getByRole('button', { name: /Visit/ })).toHaveCount(2)
 
