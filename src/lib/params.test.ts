@@ -32,7 +32,8 @@ describe('sanitize', () => {
       stellarFlux: 1, equilibriumTemperatureK: 255, meanSurfaceTemperatureK: 288,
       perihelionTemperatureK: 290, aphelionTemperatureK: 286, liquidWater: 1,
       surfaceIce: 0.03, vegetationPotential: 1, iceLineLatitudeDeg: 70,
-      tidalHeatingK: 0, habitableZoneInnerAU: 0.97, habitableZoneOuterAU: 1.67,
+      tidalHeatingK: 0, axialTiltDeg: 23.44, dayHours: 23.934,
+      habitableZoneInnerAU: 0.97, habitableZoneOuterAU: 1.67,
       inHabitableZone: true, regime: 'temperate' as const,
     }
     expect(sanitize({ ...CURRENT_PARAMS, climate }).climate).toBeUndefined()

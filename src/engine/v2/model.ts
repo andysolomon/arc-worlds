@@ -6,6 +6,9 @@
  * models and derives render buffers from it; callers should not transfer the
  * canonical typed arrays out of that worker.
  */
+import {
+  circulationCells, circulationMoisture, EARTH_OBLIQUITY_TERM, obliquityTerm,
+} from '../climate.js'
 import { isGas, PALETTES } from '../palettes.js'
 import type { PlanetParams, PresetKey } from '../types.js'
 import {
@@ -95,6 +98,10 @@ export interface TerrainV2GeographyParams {
   readonly surfaceIce: number
   readonly vegetationPotential: number
   readonly iceLineLatitudeDeg: number
+  /** Which end of the world is cold, and by how much. */
+  readonly axialTiltDeg: number
+  /** How many circulation cells fit, and so where the dry belts fall. */
+  readonly dayHours: number
 }
 
 /**
@@ -202,6 +209,8 @@ function snapshotGeography(params: PlanetParams): TerrainV2GeographyParams {
     surfaceIce: climate?.surfaceIce ?? geographyValue(params.ice) * 0.25,
     vegetationPotential: climate?.vegetationPotential ?? 1,
     iceLineLatitudeDeg: climate?.iceLineLatitudeDeg ?? 90 - geographyValue(params.ice) * 25,
+    axialTiltDeg: climate?.axialTiltDeg ?? 23.44,
+    dayHours: climate?.dayHours ?? 23.934,
   }
 }
 
@@ -490,22 +499,31 @@ function buildClimate(
   const moisture = new Float32Array(count)
   const next = new Float32Array(count)
   const temperature = new Float32Array(count)
+  // How wet each latitude is before anything is carried there. Computed once
+  // and reused by every transport pass: it depends only on where a vertex is.
+  const band = new Float32Array(count)
   const bias = climateBias(params.preset)
   const poleGradientK = 42
+  // Which way the gradient runs, and how steeply, from the tilt alone. Earth's
+  // 23.44° gives exactly -1 here, so an ordinary world is unchanged; past 54.7°
+  // it turns positive and the poles become the warm end, as Uranus's are.
+  const gradientSign = obliquityTerm(params.axialTiltDeg) / EARTH_OBLIQUITY_TERM * -1
+  const cells = circulationCells(params.dayHours)
 
   for (let index = 0; index < count; index++) {
     const offset = index * 3
     const y = graph.positions[offset + 1]
     const latitude = Math.abs(y)
     const ocean = gas || elevation[index] <= seaLevel
+    band[index] = circulationMoisture((Math.asin(Math.min(1, latitude)) * 180) / Math.PI, cells)
     // Warm equators and low ground hold more water vapour. The explicit
     // latitude term makes polar climate stable even on a rotated graph.
     const localTemperatureK = params.meanSurfaceTemperatureK + 12
-      - poleGradientK * Math.pow(latitude, 1.35)
+      + poleGradientK * gradientSign * Math.pow(latitude, 1.35)
       - Math.max(0, elevation[index] - seaLevel) * 24
     temperature[index] = clamp((localTemperatureK - 230) / 90 + bias.temperature * 0.15)
     const evaporation = 0.08 + params.liquidWater * 0.92
-    moisture[index] = clamp(((ocean ? 0.68 : 0.07) + (1 - latitude) * 0.1 + bias.moisture) * evaporation)
+    moisture[index] = clamp(((ocean ? 0.68 : 0.07) + band[index] * 0.14 + bias.moisture) * evaporation)
   }
 
   // Eight Jacobi passes are bounded and deterministic. Wind follows latitude
@@ -539,10 +557,14 @@ function buildClimate(
       }
       const ocean = gas || elevation[index] <= seaLevel
       const evaporation = 0.08 + params.liquidWater * 0.92
-      const source = ((ocean ? 0.56 : 0.025) + (1 - latitude) * 0.045 + bias.moisture * 0.2) * evaporation
+      const source = ((ocean ? 0.56 : 0.025) + band[index] * 0.09 + bias.moisture * 0.2) * evaporation
       const carried = incomingCount > 0 ? incoming / incomingCount : moisture[index]
       const rainShadow = incomingCount > 0 ? lift / incomingCount * (0.72 + params.mountains * 0.58) : 0
-      next[index] = clamp(source + carried * 0.79 - rainShadow)
+      // Where a cell comes back down, the air is sinking and warming, and what
+      // it carries stops falling as rain. That is the whole reason a desert
+      // belt exists at all, and without it the bands only ever add water.
+      const subsidence = 0.56 + 0.44 * band[index]
+      next[index] = clamp(source + carried * 0.79 * subsidence - rainShadow)
     }
     moisture.set(next)
   }
@@ -650,6 +672,8 @@ export function terrainV2CanonicalKey(params: PlanetParams, graph = CANONICAL_GR
     valueKey(snapshot.surfaceIce),
     valueKey(snapshot.vegetationPotential),
     valueKey(snapshot.iceLineLatitudeDeg / 90),
+    valueKey(snapshot.axialTiltDeg / 180),
+    valueKey(Math.min(1, Math.abs(snapshot.dayHours) / 10000)),
   ].join(':')
 }
 

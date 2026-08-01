@@ -1391,3 +1391,51 @@ VERIFIED
 - bun run test:e2e: 35 passed
 - By hand: duplicate the Solar System, roll a world in, and the body list
   says 2.82 AU · 4.7 year orbit where it used to say 67.1 AU · 550 years.
+
+2026-08-01 latitude bands: obliquity and circulation
+
+CONTEXT
+- The v2 terrain generator landed with its own climate model, and it is
+  the better one: per-preset albedo, greenhouse, atmosphere, biosphere
+  and frost point for 22 worlds, eccentricity, tidal heating for moons,
+  a habitable zone, and a piecewise mass-luminosity relation. A parallel
+  climate module written here was discarded rather than merged; it would
+  have clobbered better work with worse.
+- What v2 was missing was the two things that decide latitude structure,
+  and those are ported onto it here rather than alongside it.
+
+DONE
+- Obliquity that can invert. The pole gradient was 42 K scaled by
+  sin(tilt), which is monotonic and can never make a Uranus. It is now
+  scaled by the second Legendre coefficient of annual-mean insolation
+  over Earth's own value: exactly 1 for an Earth-tilted world, so an
+  ordinary world is drawn exactly as it was, zero at 54.7 degrees, and
+  negative beyond, where a pole receives more light over a year than the
+  equator and the arrangement of a planet inverts.
+- Circulation cells from the rotation rate, off the Held-Hou scaling for
+  the width of a Hadley cell. Earth's day gives three, Venus's 117 days
+  gives one, Jupiter's ten hours gives five. Moisture alternates every
+  90/n degrees, so the dry belt lands at 30 degrees.
+- Descending air now suppresses rain as well as failing to source it: a
+  belt keeps only 56 per cent of what the wind carries into it. Without
+  that the bands could only ever add water, and a belt that is merely
+  less wet is not a desert.
+- Tilt and day ride on OrbitalClimate, which is already threaded
+  everywhere, so nothing new had to be plumbed. Both are in the canonical
+  key: they are geography now, and a re-tilted or re-timed world compiles
+  again rather than reusing a cached terrain that assumed otherwise.
+
+WORTH KNOWING
+- The dry belt is asserted in the compiled terrain, not just in the
+  helper: land moisture in the 25-35 degree band comes out lower than at
+  the equator and lower than at 50-70. A slow world's belt disappears, as
+  it should, and a world on its side comes out warmest at its poles while
+  an upright one stays coldest there.
+- Nothing in the code names 30 degrees. It is where three cells put the
+  descending air, and it is the Sahara, the Arabian, the Kalahari, the
+  Atacama and the Australian.
+
+VERIFIED
+- bun run typecheck, lint
+- bun run test: 200 passed, 11 of them new
+- bun run test:e2e: 36 passed
