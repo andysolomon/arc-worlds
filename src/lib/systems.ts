@@ -262,15 +262,45 @@ export function isGasBody(b: SystemBody): boolean {
 
 /** Where a newly added body should go: comfortably outside everything else. */
 export function nextDistance(def: SystemDef): number {
-  const outer = def.bodies.reduce((m, b) => Math.max(m, b.a), 0)
+  // Satellites are measured from their planet, not the star, so their
+  // distances are a different quantity and have no place in this reckoning.
+  const orbits = def.bodies.filter((b) => !b.orbits).map((b) => b.a).sort((x, y) => x - y)
+  const outer = orbits.length ? orbits[orbits.length - 1] : 0
   if (!outer) return 0.6
+
   // Geometric spacing runs out of room before the world limit does — at 1.7×
   // a step, the eleventh world is already past the outer edge — and clamping
   // would stack the last few at exactly the same distance. Past that point
   // each new world closes half the remaining gap instead, so every orbit stays
   // distinct however full the system gets.
   const next = outer * 1.7
-  return next <= A_MAX ? next : outer + (A_MAX - outer) / 2
+  let where = next <= A_MAX ? next : outer + (A_MAX - outer) / 2
+  let widest = where / outer
+
+  // But outside everything is only the right answer while it is the emptiest
+  // place there is. Dropped on the end of a system that already reaches Pluto,
+  // a new world lands at 67 AU with a 550-year year — which is Kepler being
+  // right and the placement being useless, since at fourteen seconds to the
+  // drawn year that is one lap every two hours and reads as not moving at all.
+  // So the widest gap wins, measured as a ratio because orbits are spaced
+  // geometrically, and the new world lands at its geometric middle. In the
+  // Solar System that is the belt between Mars and Jupiter, which is both
+  // watchable and the obvious place a missing planet goes.
+  //
+  // A gap has to beat the outward slot by a clear margin to win it, not by a
+  // hair: a system grown by this very function has every gap at exactly 1.7,
+  // and asking which of two identical numbers is larger is answered by
+  // floating-point noise. Outside stays the default, so building a system up
+  // from nothing works exactly as it always did.
+  const CLEARLY_WIDER = 1.02
+  for (let i = 1; i < orbits.length; i++) {
+    const ratio = orbits[i] / orbits[i - 1]
+    if (ratio > widest * CLEARLY_WIDER) {
+      widest = ratio
+      where = Math.sqrt(orbits[i - 1] * orbits[i])
+    }
+  }
+  return where
 }
 
 /** True while the system will still take another world. */

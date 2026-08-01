@@ -384,8 +384,16 @@ describe('adding a world', () => {
     const out = addWorld(MILKY_WAY, 'Peachmoss', DEFAULT_PARAMS)
     expect(out.origin).toBe('custom')
     expect(out.bodies).toHaveLength(MILKY_WAY.bodies.length + 1)
-    expect(out.bodies.at(-1)?.name).toBe('Peachmoss')
-    expect(out.bodies.at(-1)!.a).toBeGreaterThan(MILKY_WAY.bodies.at(-1)!.a)
+    // Not on the end any more: a new world goes to the emptiest gap there is,
+    // which in this system is the belt, so it sorts in between Mars and
+    // Jupiter rather than past Pluto. What has to hold is that it arrived,
+    // with an orbit of its own that no other body already occupies.
+    const added = out.bodies.find((b) => b.name === 'Peachmoss')!
+    expect(added).toBeDefined()
+    expect(added.a).toBeGreaterThan(0)
+    for (const b of out.bodies) {
+      if (b !== added && !b.orbits) expect(b.a, b.name).not.toBeCloseTo(added.a, 6)
+    }
 
     // The original is untouched: nine planets and their moons, as before.
     expect(MILKY_WAY.origin).toBe('measured')
@@ -548,5 +556,46 @@ describe('building your own moons', () => {
     const moon = out.bodies.find((b) => b.orbits)!
     expect(moon.orbits).toBeTruthy()
     expect(out.bodies.some((b) => b.name === moon.orbits)).toBe(true)
+  })
+})
+
+describe('where a new world goes', () => {
+  it('fills the emptiest gap rather than the far end of everything', () => {
+    // The bug: dropped outside a system that already reaches Pluto, a new
+    // world landed at 67 AU with a 550-year year. Kepler was right and the
+    // placement was useless — at fourteen seconds to the drawn year that is
+    // one lap every two hours, which reads as a planet that does not move.
+    const a = nextDistance(MILKY_WAY)
+    expect(a).toBeGreaterThan(1.6)
+    expect(a).toBeLessThan(5.2)
+    // The belt between Mars and Jupiter, which is where it belongs.
+    expect(a).toBeCloseTo(Math.sqrt(1.5237 * 5.2029), 4)
+    // And a year somebody can watch go round, rather than one they cannot.
+    expect(periodFor(a, 1)).toBeLessThan(6)
+  })
+
+  it('still grows outward while outside is the emptiest place there is', () => {
+    // A system being built from nothing must behave exactly as it always did:
+    // each world outside the last, 1.7× out, none of them stacked.
+    let def = emptySystem(1)
+    const placed: number[] = []
+    for (let i = 0; i < 5; i++) {
+      const a = nextDistance(def)
+      placed.push(a)
+      def = { ...def, bodies: sortByDistance([...def.bodies, bodyFromWorld(`w${i}`, DEFAULT_PARAMS, a, 1)]) }
+    }
+    expect(placed[0]).toBeCloseTo(0.6, 6)
+    for (let i = 1; i < placed.length; i++) {
+      expect(placed[i], `world ${i}`).toBeCloseTo(placed[i - 1] * 1.7, 6)
+    }
+  })
+
+  it('ignores moons, which are measured from somewhere else entirely', () => {
+    // A satellite's distance is in AU from its planet, so it is not a rung on
+    // this ladder at all — reading it as one would put a new world between two
+    // orbits that were never next to each other.
+    const withMoons = MILKY_WAY
+    const withoutMoons = { ...MILKY_WAY, bodies: MILKY_WAY.bodies.filter((b) => !b.orbits) }
+    expect(nextDistance(withMoons)).toBeCloseTo(nextDistance(withoutMoons), 9)
   })
 })

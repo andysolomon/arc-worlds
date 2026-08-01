@@ -1051,3 +1051,31 @@ VERIFIED
   named. The sun's published angle from every planet matches the
   textbook: 1.734 from Mercury, 0.534 from Earth, 0.098 from Jupiter,
   0.018 from Neptune, 0.017 from Pluto.
+
+2026-08-01 a new world lands where there is room
+
+FIXED
+- A world added to a system already reaching Pluto was put at 67 AU with
+  a 550-year year. Kepler was right and the placement was useless: at
+  fourteen seconds to the drawn year that is one lap every two hours, so
+  it read as a planet that does not orbit at all. Reported as exactly
+  that, and it was the only reasonable reading of what was on screen.
+- New worlds now go to the emptiest gap there is, measured as a ratio
+  because orbits are spaced geometrically, and land at its geometric
+  middle. In the Solar System that is the belt between Mars and Jupiter:
+  2.82 AU, a 4.7-year year, a lap every 66 seconds. Watchable, and the
+  obvious place for a missing planet.
+- Outside everything stays the default and has to be clearly beaten — by
+  two per cent — before an inner gap wins it. A system grown by this same
+  function has every gap at exactly 1.7, and asking which of two equal
+  numbers is larger is answered by floating-point noise: the first
+  attempt filled its own gaps and stopped growing outward at all.
+- Satellite distances are measured from their planet, not the star, so
+  they are no longer read as rungs on this ladder.
+
+VERIFIED
+- bun run typecheck, lint
+- bun run test: 148 passed, 3 of them new
+- bun run test:e2e: 35 passed
+- By hand: duplicate the Solar System, roll a world in, and the body list
+  says 2.82 AU · 4.7 year orbit where it used to say 67.1 AU · 550 years.
