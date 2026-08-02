@@ -8,7 +8,12 @@
 import { isGas, PALETTES } from '../palettes.js'
 import { fbm, makeNoise, type Noise3 } from '../noise.js'
 import { ecosystemStyleFor, type EcosystemStyle } from './ecosystems.js'
-import { v2CloudCoverage, v2CloudMask } from './clouds.js'
+import {
+  createV2CloudField,
+  sampleV2CloudMask,
+  v2CloudCoverage,
+  v2CloudLayerOpacity,
+} from './clouds.js'
 import {
   TerrainBiome,
   type MutableTerrainV2Sample,
@@ -24,6 +29,8 @@ export const V2_DETAIL_WIDTH_SEGMENTS = 150
 export const V2_DETAIL_HEIGHT_SEGMENTS = 104
 export const V2_DETAIL_MAP_WIDTH = 256
 export const V2_DETAIL_MAP_HEIGHT = 128
+const V2_ORBIT_CLOUD_WIDTH = 64
+const V2_ORBIT_CLOUD_HEIGHT = 32
 
 export interface MutableV2Direction {
   x: number
@@ -35,6 +42,28 @@ export interface MutableV2Color {
   r: number
   g: number
   b: number
+}
+
+function sampleWrappedRaster(
+  raster: Float32Array,
+  width: number,
+  height: number,
+  u: number,
+  v: number,
+): number {
+  const px = u * width - 0.5
+  const py = v * height - 0.5
+  const x0 = Math.floor(px)
+  const rawY0 = Math.floor(py)
+  const y0 = Math.max(0, Math.min(height - 1, rawY0))
+  const x1 = ((x0 + 1) % width + width) % width
+  const wrappedX0 = (x0 % width + width) % width
+  const y1 = Math.max(0, Math.min(height - 1, rawY0 + 1))
+  const tx = px - Math.floor(px)
+  const ty = Math.max(0, Math.min(1, py - Math.floor(py)))
+  const top = raster[y0 * width + wrappedX0] * (1 - tx) + raster[y0 * width + x1] * tx
+  const bottom = raster[y1 * width + wrappedX0] * (1 - tx) + raster[y1 * width + x1] * tx
+  return top * (1 - ty) + bottom * ty
 }
 
 export interface MutableV2Surface {
@@ -196,9 +225,10 @@ export function sampleV2SurfaceInto(
   const fine = fbm(noise.fine, x * 10.5 - 5.9, y * 10.5 + 3.7, z * 10.5 - 8.1, 4)
   const ridgeNoise = fbm(noise.broad, x * 5.7 - 11.3, y * 5.7 + 6.2, z * 5.7 + 1.9, 3)
   const ridged = Math.pow(1 - Math.abs(ridgeNoise), 3) - 0.2
-  // Greenheck's reference gets its craggy character by sharpening a fractal
-  // field instead of displaying raw fBm. Apply that idea as an off-thread
-  // detail layer, centred so it enriches rather than replaces canonical land.
+  // Sharpen the broad fractal field into an off-thread terrain-detail layer,
+  // centred so it enriches rather than replaces canonical land. This is one
+  // of the surface concepts retained from the visual research; clouds,
+  // lighting, and atmosphere remain separate Arc Worlds systems.
   const sculpted = Math.pow(clamp(broad * 0.5 + 0.5), 2.6) - 0.17
   const detail = sculpted * (0.32 + roughness * 0.28)
     + fine * (0.035 + roughness * 0.055)
@@ -425,7 +455,7 @@ export function terrainV2FlatArtifactKey(
   const cloudSeed = Number.isFinite(options.cloudSeed) ? Math.floor(Math.abs(options.cloudSeed!)) : model.params.seed
   return [
     model.canonicalKey,
-    'flat-v2-2',
+    'flat-v2-3',
     Math.max(1, Math.floor(width)),
     Math.max(1, Math.floor(height)),
     Math.round(clouds * 1_000_000),
@@ -455,9 +485,23 @@ export function deriveV2FlatArtifact(
   )
   const cloudSeed = Number.isFinite(options.cloudSeed) ? Math.floor(Math.abs(options.cloudSeed!)) : model.params.seed
   const cloudy = !isGas(palette) && cloudCoverage > 0.04
+  const cloudField = cloudy ? createV2CloudField(cloudSeed) : null
+  const cloudWidth = Math.min(safeWidth, V2_ORBIT_CLOUD_WIDTH)
+  const cloudHeight = Math.min(safeHeight, V2_ORBIT_CLOUD_HEIGHT)
+  const cloudRaster = cloudy ? new Float32Array(cloudWidth * cloudHeight) : null
+  if (cloudRaster) {
+    for (let row = 0; row < cloudHeight; row++) {
+      for (let column = 0; column < cloudWidth; column++) {
+        directionForV2EquirectangularPixel(cloudWidth, cloudHeight, column, row, direction)
+        cloudRaster[row * cloudWidth + column] = sampleV2CloudMask(
+          cloudField!, cloudCoverage, direction.x, direction.y, direction.z,
+        )
+      }
+    }
+  }
   const cloudHex = !isGas(palette) ? palette.cloudTint ?? 0xffffff : 0xffffff
   const cloudOpacity = !isGas(palette)
-    ? palette.cloudO * (model.params.preset === 'temperate' ? 0.58 : 235 / 255)
+    ? v2CloudLayerOpacity(palette.cloudO, model.params.preset === 'temperate')
     : 0
   for (let row = 0; row < safeHeight; row++) {
     for (let column = 0; column < safeWidth; column++) {
@@ -467,9 +511,13 @@ export function deriveV2FlatArtifact(
         model, surfaceNoise, direction.x, direction.y, direction.z, sample.elevation, surface,
       )
       colorTerrainV2Into(model, sample, color, surface.elevation, surface.detail)
-      if (cloudy) {
-        const alpha = v2CloudMask(
-          cloudSeed, cloudCoverage, direction.x, direction.y, direction.z,
+      if (cloudRaster) {
+        const alpha = sampleWrappedRaster(
+          cloudRaster,
+          cloudWidth,
+          cloudHeight,
+          (column + 0.5) / safeWidth,
+          (row + 0.5) / safeHeight,
         ) * cloudOpacity
         if (alpha > 0) mixColor(color, cloudHex, alpha)
       }

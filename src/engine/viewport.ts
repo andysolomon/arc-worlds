@@ -17,6 +17,7 @@ import type { Moon, PlanetParams, PresetKey, RingConfig, SystemBody, SystemDef }
 import { V2TerrainClient } from './v2/client'
 import type { V2WorkerResponse } from './v2/protocol'
 import { ecosystemStyleFor } from './v2/ecosystems'
+import { v2CloudLayerOpacity } from './v2/clouds'
 
 interface MoonInstance {
   orbit: THREE.Group
@@ -614,7 +615,7 @@ export class PlanetViewport {
 
     this.clouds = new THREE.Mesh(
       new THREE.SphereGeometry(1, 80, 56),
-      new THREE.MeshBasicMaterial({
+      new THREE.MeshLambertMaterial({
         map: solidTexture(0xffffff, 0),
         transparent: true,
         opacity: 0.95,
@@ -2353,14 +2354,14 @@ export class PlanetViewport {
 
     const ct = P.cloudTexture || null
     if (ct !== this.cloudTexUrl) {
-      const mat = this.clouds.material as THREE.MeshBasicMaterial
+      const mat = this.clouds.material as THREE.MeshLambertMaterial
       if (!this.cloudTexUrl && mat.map) mat.map.dispose()
       this.cloudTexUrl = ct
       mat.map = ct ? this.loadTex(ct) : solidTexture(0xffffff, 0)
       mat.alphaMap = null
       this.cloudKey = ''
     }
-    const cmat = this.clouds.material as THREE.MeshBasicMaterial
+    const cmat = this.clouds.material as THREE.MeshLambertMaterial
     const showClouds = !!ct && (P.clouds || 0) > 0.04
     if (showClouds && !this.clouds.visible) this.compileNeeded = true
     this.clouds.visible = showClouds
@@ -2692,7 +2693,7 @@ export class PlanetViewport {
 
     // Clouds get their own shell, which is the visible gain over the flat
     // view: they sit above the ground and drift at their own rate.
-    const cmat = this.clouds.material as THREE.MeshBasicMaterial
+    const cmat = this.clouds.material as THREE.MeshLambertMaterial
     const ct = P.cloudTexture || null
     if (ct !== this.cloudTexUrl) {
       if (!this.cloudTexUrl && cmat.map) cmat.map.dispose()
@@ -2748,7 +2749,7 @@ export class PlanetViewport {
     }
     this.clouds.scale.setScalar(livingV2 ? 1.035 : 1.025)
 
-    const cmat = this.clouds.material as THREE.MeshBasicMaterial
+    const cmat = this.clouds.material as THREE.MeshLambertMaterial
     if (this.cloudTexUrl) {
       this.cloudTexUrl = null
       cmat.map = solidTexture(0xffffff, 0)
@@ -2840,9 +2841,9 @@ export class PlanetViewport {
     if (showClouds && !this.clouds.visible) this.compileNeeded = true
     this.clouds.visible = showClouds
     const waterCloudFactor = 'emissive' in pal && pal.emissive ? 1 : 0.12 + liquidWater * 0.88
-    const v2CloudOpacity = P.preset === 'temperate'
-      ? (pal.cloudO ?? 0.9) * 0.58
-      : (pal.cloudO ?? 0.9) * (235 / 255)
+    const v2CloudOpacity = v2CloudLayerOpacity(
+      pal.cloudO ?? 0.9, P.preset === 'temperate',
+    )
     cmat.opacity = P.generatorVersion === 2
       ? v2CloudOpacity
       : (pal.cloudO ?? 0.9) * waterCloudFactor
@@ -2996,7 +2997,7 @@ export class PlanetViewport {
         this.p?.texture
       ) return
 
-      const mat = this.clouds.material as THREE.MeshBasicMaterial
+      const mat = this.clouds.material as THREE.MeshLambertMaterial
       mat.map?.dispose()
       mat.map = dataTexture(new Uint8Array(response.pixels), response.width, response.height)
       mat.map.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy())

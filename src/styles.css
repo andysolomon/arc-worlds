@@ -114,6 +114,13 @@ a:hover { color: #d95f3f; }
 }
 .panel-scroll { overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 16px; }
 
+.world-builder-fields {
+  display: flex; flex-direction: column; gap: 16px;
+  min-width: 0; margin: 0; padding: 0; border: 0;
+}
+.world-builder-fields:disabled { opacity: 0.62; }
+.world-lock .btn-primary { margin-top: 12px; }
+
 .tabs { display: flex; gap: 6px; padding: 16px 18px 0; flex: none; }
 .tab {
   flex: 1; font-family: 'Quicksand', sans-serif; font-weight: 700; font-size: 13.5px;
@@ -173,8 +180,8 @@ input[type='text']:focus, input[type='number']:focus, select:focus { outline: 2p
 .slider-head .val { font-size: 12.5px; font-weight: 700; color: var(--accent); }
 
 input[type='range'] { width: 100%; -webkit-appearance: none; appearance: none; background: transparent; height: 20px; }
-input[type='range']::-webkit-slider-runnable-track { height: 6px; border-radius: 999px; background: #e6d9c6; }
-input[type='range']::-moz-range-track { height: 6px; border-radius: 999px; background: #e6d9c6; }
+input[type='range']::-webkit-slider-runnable-track { height: 6px; border-radius: 999px; background: var(--range-track, #e6d9c6); }
+input[type='range']::-moz-range-track { height: 6px; border-radius: 999px; background: var(--range-track, #e6d9c6); }
 input[type='range']::-webkit-slider-thumb {
   -webkit-appearance: none; width: 17px; height: 17px; border-radius: 50%;
   background: var(--accent); border: 2.5px solid #fff8ee; margin-top: -5.5px;
@@ -185,6 +192,14 @@ input[type='range']::-moz-range-thumb {
   border: 2.5px solid #fff8ee; cursor: pointer;
 }
 input[type='range']:disabled { opacity: 0.42; }
+.range-legend {
+  display: flex; align-items: center; gap: 6px; margin-top: -2px;
+  color: #657b6f; font-size: 11.5px; line-height: 1.35;
+}
+.range-legend-dot {
+  width: 9px; height: 9px; flex: none; border-radius: 999px; background: #74cfa5;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 12%);
+}
 
 .note {
   background: var(--panel-2); border: 1.5px solid var(--line);

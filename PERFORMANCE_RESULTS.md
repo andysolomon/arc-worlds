@@ -404,3 +404,59 @@ kept 55,920 triangles and measured 38 ms in WebKit / Apple GPU and 50 ms in
 headed Chromium / Apple GPU, with zero frames over 50 ms in both. Headless
 Chromium's documented software renderer measured 562 ms and 29 frames over
 50 ms; it is reported separately and did not alter a budget.
+
+## Natural terrestrial cloud systems (2026-08-01)
+
+The detailed v2 cloud field now evaluates multi-scale domain-warped simplex
+weather rather than four smooth sine waves. A focused shell retains its full
+512×256 alpha map. Orbit previews, where bodies are only tens of pixels wide,
+sample the identical continuous field into a 64×32 raster and bilinearly
+composite it into the 256×128 terrain artifact. The lower orbit sampling rate
+avoids spending detailed-shell work on subpixel features and changes neither
+the canonical terrain model nor transferred artifact size.
+
+| V2 stress metric | Previous phase | Natural clouds | Change |
+| --- | ---: | ---: | ---: |
+| 24 flat previews, median | 896.0 ms | **907.3 ms** | +1.3% |
+| Original research baseline | 862.9 ms | **907.3 ms** | +5.1% |
+| Focused v2 detail, median | 108.7 ms | **109.6 ms** | +0.8% |
+| Worker artifact work, total | 988.4 ms | 1,051.2 ms | +6.4% |
+| Longest synchronous artifact | 52.9 ms | 57.1 ms | +7.9% |
+| Longest canonical phase | 1.1 ms | 1.3 ms | +0.2 ms |
+| Main-thread long task | 0 ms | **0 ms** | unchanged |
+
+All 24-world stress gates passed. Preview settlement remained far below the
+3,000 ms limit; focused detail remained below 1,000 ms; phase and replacement
+cancellation stayed below 50/100 ms; accepted stale artifacts and worker/page
+errors remained zero. Transfer/cache accounting was unchanged at 5,442,152 B
+and 12 models / 231,120 B. The three-run result is stored locally at
+`.artifacts/performance/v2-terrain-natural-clouds.json`; no budget was loosened.
+
+## Consolidated Worlds workspace (2026-08-01)
+
+Moving Build, Analyze, and Saved behind one Worlds destination changes only
+React panel state and CSS. It introduces no render loop, texture invalidation,
+worker request, material variant, or additional canvas layer. The immutable
+reference check is constant-size data lookup performed only when a world is
+opened or a back-navigation resolves. Habitable-zone bands are CSS gradients
+on existing distance inputs; climate and v2 invalidation remain the same
+distance-driven paths measured in the orbital-climate phase.
+
+| Metric | Natural clouds | Worlds workspace | Change |
+| --- | ---: | ---: | ---: |
+| Entry bundle, gzip | 252,252 B | **252,987 B** | +0.3% |
+| Bake worker, raw | 93,835 B | **93,835 B** | unchanged |
+| V2 worker, raw | 36,480 B | **36,480 B** | unchanged |
+| First Orbit frame, headless | — | **279 ms** | ≤1,000 ms |
+| Interaction duration | — | **32 ms** | ≤200 ms |
+| Longest headless task | — | **221 ms** | ≤600 ms |
+| Transition-added programs | — | **2** | ≤4 |
+| Passive cadence | — | **23.3 fps** | 20–32 fps |
+| Paused frames / task time | — | **0 / 0 ms** | exact / ≤25 ms |
+
+The one-run browser smoke passed every absolute budget with zero errors. On
+real hardware, the same Orbit transition measured 38 ms in WebKit / Apple GPU
+and 44 ms in headed Chromium / Apple GPU, with zero frames over 50 ms and the
+same 55,920 triangles in both. Headless Chromium's documented software path
+measured 547 ms and 27 frames over 50 ms; it remains separately identified and
+does not describe visitor hardware. No performance budget changed.

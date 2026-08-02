@@ -14,7 +14,7 @@ export type NebulaKey = 'none' | 'ember' | 'teal' | 'violet' | 'rose'
 
 export const NEBULAE: Array<{ key: NebulaKey; label: string; dot: string | undefined }> = [
   { key: 'none', label: 'None', dot: undefined },
-  // Labelled Dawn, not Ember: the Sculpt tab already has an Ember chip, and
+  // Labelled Dawn, not Ember: the Worlds builder already has an Ember chip, and
   // two buttons must never answer to the same name — the perf benchmark and
   // the tests address chips by their accessible name alone.
   { key: 'ember', label: 'Dawn', dot: '#ff8a5f' },

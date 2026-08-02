@@ -13,7 +13,9 @@ Choose the generation architecture that best improves Arc Worlds' planet style a
 This is an architecture choice, not a library popularity contest. The candidates solve different layers:
 
 1. **Mapgen4**: map-scale land shape, coast, drainage, climate, and biome logic on a planar irregular mesh.
-2. **threejs-procedural-planets**: globe rendering and visual treatment in Three.js, especially shader-driven terrain/atmosphere/cloud presentation.
+2. **threejs-procedural-planets**: a visual reference for exactly three surface
+   concepts — Terrain, elevation Layers, and Bump Mapping. Its clouds, lighting,
+   atmosphere, bloom, shaders, and render loop are explicitly out of scope.
 3. **prolearner/procedural-planet**: another complete procedural globe implementation whose useful value must be separated into algorithms, rendering ideas, licensing, and maintenance quality.
 4. **Current Arc Worlds engine**: a compact deterministic direction sampler, worker-baked maps, two rendering tiers, and mature performance lifecycle.
 

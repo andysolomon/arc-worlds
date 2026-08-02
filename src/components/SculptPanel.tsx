@@ -18,11 +18,14 @@ interface Props {
   onSave: () => void
   saving: boolean
   saved: boolean
+  /** Little Worlds originals are references; clone before changing them. */
+  locked: boolean
+  onClone: () => void
 }
 
 export function SculptPanel({
   params: P, name, onVisitMoon, onName, onParam, onPreset, onAncient, onReshape,
-  onSave, saving, saved,
+  onSave, saving, saved, locked, onClone,
 }: Props) {
   // Moons that are worlds in their own right, on the body being shown. They
   // are visibly in orbit and clickable on the canvas, but a few pixels of
@@ -40,6 +43,34 @@ export function SculptPanel({
 
   return (
     <>
+      {locked && (
+        <div className="note world-lock" role="status">
+          <strong>{name} is a Little Worlds original.</strong> You can explore and analyze it, but
+          the reference world cannot be changed. Clone its world type into a new procedural seed
+          to start building your own version.
+          <button className="btn-primary" type="button" onClick={onClone}>
+            Clone {name} to build
+          </button>
+        </div>
+      )}
+
+      {moonWorlds.length > 0 && (
+        <Field label="Moons you can visit">
+          <div className="chips">
+            {moonWorlds.map((m) => (
+              <Chip key={m.moon} on={false} dot={m.dot} onClick={() => onVisitMoon(m.world)}>
+                {m.moon}
+              </Chip>
+            ))}
+          </div>
+          <div className="note" style={{ marginTop: 10 }}>
+            Worlds in their own right, measured like the planets and scanning as themselves. You
+            can also click one where it orbits.
+          </div>
+        </Field>
+      )}
+
+      <fieldset className="world-builder-fields" disabled={locked}>
       <div className="row">
         <div style={{ flex: 1 }}>
           <Field label="Name">
@@ -95,26 +126,10 @@ export function SculptPanel({
         </div>
         <div className="note" style={{ marginTop: 10 }}>
           Worlds we know existed, rebuilt from evidence — the spectrometer reads them as
-          reconstructions and says so. Still yours to sculpt; change the seed and one becomes an
+          reconstructions and says so. Still yours to shape; change the seed and one becomes an
           ordinary world of its kind.
         </div>
       </Field>
-
-      {moonWorlds.length > 0 && (
-        <Field label="Moons you can visit">
-          <div className="chips">
-            {moonWorlds.map((m) => (
-              <Chip key={m.moon} on={false} dot={m.dot} onClick={() => onVisitMoon(m.world)}>
-                {m.moon}
-              </Chip>
-            ))}
-          </div>
-          <div className="note" style={{ marginTop: 10 }}>
-            Worlds in their own right, measured like the planets and scanning as themselves. You
-            can also click one where it orbits.
-          </div>
-        </Field>
-      )}
 
       {landLocked && (
         <div className="note" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -214,6 +229,7 @@ export function SculptPanel({
       <button className="btn-save" type="button" onClick={onSave} disabled={saving}>
         {saving ? 'Saving…' : saved ? 'Saved — link copied' : 'Save & get a link'}
       </button>
+      </fieldset>
     </>
   )
 }

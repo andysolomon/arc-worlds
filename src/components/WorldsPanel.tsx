@@ -44,8 +44,8 @@ export function WorldsPanel(props: Props) {
       <p className="empty">
         Nothing here yet.
         <br />
-        Sculpt a world and save it — you&rsquo;ll get a link you can send to anyone, and it will
-        show up here.
+        Build a world here, save it, and it will appear in this collection with a link you can
+        send to anyone.
       </p>
     )
   }
@@ -89,7 +89,7 @@ export function WorldsPanel(props: Props) {
             setConfirmSlug(null)
           }}
         >
-          <option value="">{system.name} — on the Systems tab now</option>
+          <option value="">{system.name} — open in Systems now</option>
           {systems.map((s) => (
             <option key={s.slug} value={s.slug}>
               {s.name}
@@ -107,7 +107,7 @@ export function WorldsPanel(props: Props) {
           ? `${targetName} is read-only, so you will get an editable copy of it to keep.`
           : full
             ? `That system is full — ${MAX_BODIES} worlds is the limit.`
-            : 'The Systems tab is where you then move it about.'}
+            : 'Open Systems when you want to move it between orbits.'}
       </div>
 
       {worlds.map((w) => (

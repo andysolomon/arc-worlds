@@ -113,3 +113,12 @@ export function typeOf(key: string): Preset | SolarBody | AncientWorld {
     PRESETS[0]
   )
 }
+
+/** True for a canonical world shipped with the app, even inside a system copy. */
+export function isLittleWorldsOriginal(
+  params: Pick<PlanetParams, 'preset' | 'seed'>,
+): boolean {
+  return [...SOLAR, ...ANCIENT, ...FICTION, ...MOONS].some(
+    (world) => world.key === params.preset && world.params.seed === params.seed,
+  )
+}

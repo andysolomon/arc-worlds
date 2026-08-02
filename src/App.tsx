@@ -4,7 +4,10 @@ import { SculptPanel } from './components/SculptPanel'
 import { SystemsPanel } from './components/SystemsPanel'
 import { Viewport } from './components/Viewport'
 import { WorldsPanel } from './components/WorldsPanel'
-import { MOONS, PRESETS, SOLAR, typeOf, type AncientWorld } from './data/presets'
+import { Segmented } from './components/ui'
+import {
+  MOONS, PRESETS, SOLAR, isLittleWorldsOriginal, typeOf, type AncientWorld,
+} from './data/presets'
 import { MILKY_WAY } from './data/systems'
 import { climateForBody, standaloneClimate, withSystemClimates } from './engine/climate'
 import { parentOf } from './engine/planets'
@@ -21,13 +24,18 @@ import {
 import { CURRENT_GENERATOR_VERSION, type PlanetParams, type PresetKey, type SystemDef } from './engine/types'
 import './styles.css'
 
-type Tab = 'sculpt' | 'scan' | 'solar' | 'worlds'
+type Tab = 'solar' | 'worlds'
+type WorldsView = 'build' | 'analyze' | 'saved'
 
 const TABS: Array<[Tab, string]> = [
-  ['sculpt', 'Sculpt'],
-  ['scan', 'Scan'],
-  ['solar', 'Systems'],
   ['worlds', 'Worlds'],
+  ['solar', 'Systems'],
+]
+
+const WORLD_VIEWS: Array<[WorldsView, string]> = [
+  ['build', 'Build'],
+  ['analyze', 'Analyze'],
+  ['saved', 'Saved'],
 ]
 
 const SPEEDS: Array<[number, string]> = [
@@ -45,9 +53,11 @@ function routeFromLocation(): { kind: 'w' | 's'; slug: string } | null {
 }
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>('sculpt')
+  const [tab, setTab] = useState<Tab>('worlds')
+  const [worldsView, setWorldsView] = useState<WorldsView>('build')
   const [name, setName] = useState('Peachmoss')
   const [params, setParams] = useState<PlanetParams>(CURRENT_PARAMS)
+  const [worldLocked, setWorldLocked] = useState(false)
   const [system, setSystem] = useState<SystemDef>(MILKY_WAY)
   const [selectedBodyIndex, setSelectedBodyIndex] = useState<number | null>(null)
   const [view, setView] = useState<'single' | 'system'>('single')
@@ -75,6 +85,7 @@ export default function App() {
   const [savedSystemSlug, setSavedSystemSlug] = useState<string | null>(null)
 
   const scanTimer = useRef<number | null>(null)
+  const panelScroll = useRef<HTMLDivElement | null>(null)
 
   // Params handed to the engine. `view`, `timeScale` and the display toggles
   // are render concerns, not part of the world's identity, so they are merged
@@ -128,13 +139,20 @@ export default function App() {
   // Persisted outside the updater, which must stay pure under StrictMode.
   useEffect(() => saveDisplay(display), [display])
 
+  // Each destination starts at its first decision. Keeping the scroll offset
+  // from a long Systems editor used to open a newly visited reference world
+  // halfway down its disabled sliders, hiding the explanation and Clone action.
+  useEffect(() => {
+    if (panelScroll.current) panelScroll.current.scrollTop = 0
+  }, [tab, worldsView, selectedBodyIndex, worldLocked])
+
   /* --- share links ------------------------------------------------------ */
 
   useEffect(() => {
     const route = routeFromLocation()
     if (!route) return
     // A dead link should still leave a usable app, so every failure falls back
-    // to the plain sculptor rather than an error page.
+    // to the world builder rather than an error page.
     const clear = () => window.history.replaceState(null, '', '/')
 
     if (route.kind === 'w') {
@@ -143,6 +161,9 @@ export default function App() {
           setParams(sanitize(w.params))
           setName(w.name)
           setSavedSlug(w.slug)
+          setWorldLocked(false)
+          setTab('worlds')
+          setWorldsView('build')
         })
         .catch(clear)
     } else {
@@ -189,6 +210,7 @@ export default function App() {
   /* --- editing ---------------------------------------------------------- */
 
   const setParam = useCallback(<K extends keyof PlanetParams>(k: K, v: PlanetParams[K]) => {
+    if (worldLocked) return
     // Changing the seed means this is no longer the real planet, so drop its
     // photographic map and fall back to procedural terrain. It also starts a
     // fresh world, so it is an explicit opt-in to the current generator; an
@@ -203,7 +225,7 @@ export default function App() {
     setScan(null)
     setSavedSlug(null)
     setSelectedBodyIndex(null)
-  }, [])
+  }, [worldLocked])
 
   const applyPreset = useCallback((key: PresetKey) => {
     const p = PRESETS.find((x) => x.key === key)
@@ -218,6 +240,7 @@ export default function App() {
     setScan(null)
     setSavedSlug(null)
     setSelectedBodyIndex(null)
+    setWorldLocked(false)
   }, [])
 
   /** Load an ancient world whole — canonical seed, sliders, name and all. */
@@ -227,6 +250,7 @@ export default function App() {
     setScan(null)
     setSavedSlug(null)
     setSelectedBodyIndex(null)
+    setWorldLocked(true)
   }, [])
 
   /** Clicking a moon that is a world visits it, the way a planet card does. */
@@ -237,13 +261,16 @@ export default function App() {
     setName(m.name)
     setScan(null)
     setSavedSlug(null)
+    setWorldLocked(true)
     setSelectedBodyIndex(system.bodies.findIndex((body) =>
       body.params.preset === w.preset && body.params.seed === w.seed))
     setView('single')
-    setTab('sculpt')
+    setTab('worlds')
+    setWorldsView('build')
   }, [system])
 
   const reshape = useCallback(() => {
+    if (worldLocked) return
     setParams((s) => ({
       ...s,
       generatorVersion: CURRENT_GENERATOR_VERSION,
@@ -252,7 +279,7 @@ export default function App() {
     }))
     setScan(null)
     setSelectedBodyIndex(null)
-  }, [])
+  }, [worldLocked])
 
   const onSurprise = useCallback(() => {
     const { params: next, name: nextName } = surprise()
@@ -261,8 +288,10 @@ export default function App() {
     setScan(null)
     setSavedSlug(null)
     setSelectedBodyIndex(null)
+    setWorldLocked(false)
     setView('single')
-    setTab('sculpt')
+    setTab('worlds')
+    setWorldsView('build')
   }, [])
 
   /* --- systems ---------------------------------------------------------- */
@@ -330,6 +359,7 @@ export default function App() {
       setName(back.host.name)
       setScan(null)
       setSavedSlug(null)
+      setWorldLocked(true)
       return
     }
     if (back.kind === 'body') {
@@ -338,6 +368,7 @@ export default function App() {
       setName(back.body.name)
       setScan(null)
       setSavedSlug(null)
+      setWorldLocked(isLittleWorldsOriginal(back.body.params) || !!back.body.params.texture)
       return
     }
     if (back.kind === 'orphan') {
@@ -373,11 +404,38 @@ export default function App() {
       setName(b.name)
       setScan(null)
       setSavedSlug(null)
+      setWorldLocked(isLittleWorldsOriginal(b.params) || !!b.params.texture)
       setView('single')
-      setTab('sculpt')
+      setTab('worlds')
+      setWorldsView('build')
     },
     [climateSystem],
   )
+
+  /** Turn any reference world into a new editable member of the same family. */
+  const cloneIntoWorlds = useCallback((sourceName: string, source: PlanetParams) => {
+    const nextSeed = (Math.random() * 99_999) | 0
+    setParams({
+      ...sanitize(source),
+      seed: nextSeed,
+      generatorVersion: CURRENT_GENERATOR_VERSION,
+      texture: null,
+      cloudTexture: null,
+    })
+    setName(`${sourceName} Clone`)
+    setScan(null)
+    setSavedSlug(null)
+    setSelectedBodyIndex(null)
+    setWorldLocked(false)
+    setView('single')
+    setTab('worlds')
+    setWorldsView('build')
+    if (window.location.pathname.startsWith('/w/')) window.history.replaceState(null, '', '/')
+  }, [])
+
+  const cloneCurrentWorld = useCallback(() => {
+    cloneIntoWorlds(name, params)
+  }, [cloneIntoWorlds, name, params])
 
   /*
    * Four ways in, one destination. Adding no longer forces the view to change:
@@ -387,11 +445,12 @@ export default function App() {
    * the saved system no longer matches the one on screen.
    */
 
-  /** Drop the world currently in the sculptor into the system. */
+  /** Drop the world currently in the builder into the system. */
   const addCurrentWorld = useCallback(() => {
+    if (worldLocked) return
     setSystem((s) => addWorld(s, name, params))
     setSavedSystemSlug(null)
-  }, [name, params])
+  }, [name, params, worldLocked])
 
   /** Roll a new world of a given type — or of any type — straight into orbit. */
   const addRolled = useCallback((preset?: PresetKey) => {
@@ -487,6 +546,7 @@ export default function App() {
   /* --- saving ----------------------------------------------------------- */
 
   const onSave = useCallback(async () => {
+    if (worldLocked) return
     setSaving(true)
     try {
       const w = await saveWorld(name.trim() || 'Untitled world', params)
@@ -501,18 +561,21 @@ export default function App() {
     } catch (e) {
       setGalleryError((e as Error).message)
       setTab('worlds')
+      setWorldsView('saved')
     } finally {
       setSaving(false)
     }
-  }, [name, params])
+  }, [name, params, worldLocked])
 
   const openWorld = useCallback((w: SavedWorld) => {
     setParams(sanitize(w.params))
     setSelectedBodyIndex(null)
     setName(w.name)
     setSavedSlug(w.slug)
+    setWorldLocked(false)
     setView('single')
-    setTab('sculpt')
+    setTab('worlds')
+    setWorldsView('build')
     window.history.replaceState(null, '', `/w/${w.slug}`)
   }, [])
 
@@ -541,7 +604,7 @@ export default function App() {
           <div className="brand-dot" />
           <div>
             <div className="brand-name">Little Worlds</div>
-            <div className="brand-sub">sculpt a planet, then see who lives there</div>
+            <div className="brand-sub">build a planet, then discover what lives there</div>
           </div>
         </div>
         <button className="btn-surprise" type="button" onClick={onSurprise}>
@@ -631,27 +694,7 @@ export default function App() {
             ))}
           </div>
 
-          <div className="panel-scroll">
-            {tab === 'sculpt' && (
-              <SculptPanel
-                params={params}
-                name={name}
-                onVisitMoon={visitMoon}
-                onName={setName}
-                onParam={setParam}
-                onPreset={applyPreset}
-                onAncient={applyAncient}
-                onReshape={reshape}
-                onSave={onSave}
-                saving={saving}
-                saved={!!savedSlug}
-              />
-            )}
-
-            {tab === 'scan' && (
-              <ScanPanel worldName={name} scan={scan} scanning={scanning} onScan={runScan} />
-            )}
-
+          <div className="panel-scroll" ref={panelScroll}>
             {tab === 'solar' && (
               <SystemsPanel
                 system={system}
@@ -670,6 +713,7 @@ export default function App() {
                 onAddMoon={addMoonTo}
                 onDuplicate={duplicateWorld}
                 currentWorld={name}
+                canAddCurrent={!worldLocked}
                 worlds={worlds}
                 worldsError={galleryError}
                 onSave={onSaveSystem}
@@ -683,18 +727,49 @@ export default function App() {
             )}
 
             {tab === 'worlds' && (
-              <WorldsPanel
-                worlds={worlds}
-                loading={galleryLoading}
-                error={galleryError}
-                onOpen={openWorld}
-                onCopyLink={copyLink}
-                copiedSlug={copiedSlug}
-                system={system}
-                systems={systems}
-                onAdd={addSavedWorld}
-                addedSlug={addedSlug}
-              />
+              <>
+                <div>
+                  <div className="field-label">World workspace</div>
+                  <Segmented options={WORLD_VIEWS} value={worldsView} onChange={setWorldsView} />
+                </div>
+
+                {worldsView === 'build' && (
+                  <SculptPanel
+                    params={params}
+                    name={name}
+                    onVisitMoon={visitMoon}
+                    onName={setName}
+                    onParam={setParam}
+                    onPreset={applyPreset}
+                    onAncient={applyAncient}
+                    onReshape={reshape}
+                    onSave={onSave}
+                    saving={saving}
+                    saved={!!savedSlug}
+                    locked={worldLocked}
+                    onClone={cloneCurrentWorld}
+                  />
+                )}
+
+                {worldsView === 'analyze' && (
+                  <ScanPanel worldName={name} scan={scan} scanning={scanning} onScan={runScan} />
+                )}
+
+                {worldsView === 'saved' && (
+                  <WorldsPanel
+                    worlds={worlds}
+                    loading={galleryLoading}
+                    error={galleryError}
+                    onOpen={openWorld}
+                    onCopyLink={copyLink}
+                    copiedSlug={copiedSlug}
+                    system={system}
+                    systems={systems}
+                    onAdd={addSavedWorld}
+                    addedSlug={addedSlug}
+                  />
+                )}
+              </>
             )}
           </div>
         </aside>
