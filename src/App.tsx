@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ScanPanel } from './components/ScanPanel'
-import { SculptPanel } from './components/SculptPanel'
 import { SystemsPanel } from './components/SystemsPanel'
 import { Viewport } from './components/Viewport'
 import { WorldsPanel } from './components/WorldsPanel'
@@ -23,6 +22,15 @@ import {
 } from './lib/api'
 import { CURRENT_GENERATOR_VERSION, type PlanetParams, type PresetKey, type SystemDef } from './engine/types'
 import './styles.css'
+
+// The builder is the densest panel and is only needed in Worlds → Build. Keep
+// it out of the first-load entry so the initial scene and Systems view retain
+// headroom under the checked-in gzip budget. Vite emits this as a lazy chunk;
+// React starts loading it immediately when Build is the active destination.
+const SculptPanel = lazy(async () => {
+  const module = await import('./components/SculptPanel')
+  return { default: module.SculptPanel }
+})
 
 type Tab = 'solar' | 'worlds'
 type WorldsView = 'build' | 'analyze' | 'saved'
@@ -741,21 +749,23 @@ export default function App() {
                 </div>
 
                 {worldsView === 'build' && (
-                  <SculptPanel
-                    params={params}
-                    name={name}
-                    onVisitMoon={visitMoon}
-                    onName={setName}
-                    onParam={setParam}
-                    onPreset={applyPreset}
-                    onAncient={applyAncient}
-                    onReshape={reshape}
-                    onSave={onSave}
-                    saving={saving}
-                    saved={!!savedSlug}
-                    locked={worldLocked}
-                    onClone={cloneCurrentWorld}
-                  />
+                  <Suspense fallback={<div className="note">Loading builder…</div>}>
+                    <SculptPanel
+                      params={params}
+                      name={name}
+                      onVisitMoon={visitMoon}
+                      onName={setName}
+                      onParam={setParam}
+                      onPreset={applyPreset}
+                      onAncient={applyAncient}
+                      onReshape={reshape}
+                      onSave={onSave}
+                      saving={saving}
+                      saved={!!savedSlug}
+                      locked={worldLocked}
+                      onClone={cloneCurrentWorld}
+                    />
+                  </Suspense>
                 )}
 
                 {worldsView === 'analyze' && (

@@ -1591,6 +1591,9 @@ CHANGED
   mapping system children into the existing Kepler moon integrator.
 - Updated the terrain-generation exploration notes so the v1/v2 worker boundary
   and the expanded invalidation keys match the implementation.
+- After CI exposed a compressor-sensitive entry overage, split the dense Worlds
+  builder into a lazy chunk. The entry now measures 252,669 B gzip locally and
+  the builder chunk 3,084 B gzip, both inside their checked-in budgets.
 
 VERIFIED
 - bun run typecheck
@@ -1606,3 +1609,6 @@ VERIFIED
 - bun run perf:terrain: three runs passed every worker/artifact gate; median
   preview settlement 1,021.9 ms, focused settlement 120.7 ms, zero main-thread
   long-task time, and no obsolete artifact accepted
+- Focused Playwright navigation/control/orbit checks: 3 passed
+- Follow-up bun run perf:smoke: passed with 3 orbit shader programs, 0 paused
+  frames, and 0 renderer errors

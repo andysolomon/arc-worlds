@@ -534,6 +534,9 @@ terrain/artifact workers.
 - [x] Preserve parent-relative satellite motion when a system body is opened in
       Worlds. System children are mapped to the same Kepler moon integrator used
       by single-world views, with browser coverage for both presentations.
+- [x] Keep the dense Worlds builder panel in a lazy chunk so the initial entry
+      stays below the gzip budget without hiding any authoring controls once
+      Worlds → Build is opened.
 - [x] Verify fine controls, navigation, and satellite motion in Playwright;
       keep the established renderer and worker performance budgets green.
 
