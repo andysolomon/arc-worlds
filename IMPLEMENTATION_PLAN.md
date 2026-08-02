@@ -508,6 +508,35 @@ visitor-facing route, and must remain outside the application entry bundle.
 - [x] Update research, implementation, and source documentation so later work
       cannot mistake visual reference scope for an upstream runtime dependency.
 
+### 22. Fine procedural surface authoring and world navigation (delivered 2026-08-01)
+
+The Worlds builder now exposes the useful authoring depth of the external
+procedural-planet reference without importing its presentation choices. A
+world's scientific v2 geography remains the source of truth; the controls are
+part of that world's serialized identity and are evaluated by the existing
+terrain/artifact workers.
+
+- [x] Add Terrain controls for fractal, ridged, and plate-like relief, with
+      amplitude, sharpness, offset, period, persistence, lacunarity, and octave
+      controls. Values are sanitized and bounded before they reach a worker.
+- [x] Add five elevation Layers with transition, blend, colour, and RGB
+      controls. Layers tint the biome/climate result after the scientific pass;
+      they do not replace water, temperature, moisture, or polar-ice modelling.
+- [x] Add Bump Mapping strength and offset controls. Bump data is baked into the
+      detailed normal map and the material normal scale, while the canonical
+      coastlines and climate fields stay stable.
+- [x] Keep clouds, lighting, and atmosphere native to Arc Worlds. No external
+      cloud shader, bloom, atmosphere, material, or unconditional render loop
+      was added.
+- [x] Remove the global Surprise me action and let the Worlds panel occupy the
+      full desktop sidebar height. Add an explicit Worlds home action so a
+      planet opened from a gallery or system can return to the collection.
+- [x] Preserve parent-relative satellite motion when a system body is opened in
+      Worlds. System children are mapped to the same Kepler moon integrator used
+      by single-world views, with browser coverage for both presentations.
+- [x] Verify fine controls, navigation, and satellite motion in Playwright;
+      keep the established renderer and worker performance budgets green.
+
 ### 14. The sky from where you are standing (delivered 2026-08-01)
 
 - [x] A display option, `Sky`, draws the real sky in the single-world view:

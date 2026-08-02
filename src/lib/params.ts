@@ -52,6 +52,23 @@ export const DEFAULT_PARAMS: PlanetParams = {
   atmoColor: null,
   texture: null,
   cloudTexture: null,
+  terrainType: 'fractal',
+  terrainAmplitude: 1,
+  terrainSharpness: 2.6,
+  terrainOffset: 0,
+  terrainPeriod: 0.6,
+  terrainPersistence: 0.48,
+  terrainLacunarity: 1.8,
+  terrainOctaves: 6,
+  terrainLayers: [
+    { transition: 0, blend: 0.2, color: 0x123a61 },
+    { transition: 0.22, blend: 0.3, color: 0x2b7f7d },
+    { transition: 0.46, blend: 0.36, color: 0x78ad58 },
+    { transition: 0.68, blend: 0.26, color: 0x8d8069 },
+    { transition: 0.86, blend: 0.2, color: 0xe6ebe2 },
+  ],
+  bumpStrength: 0.72,
+  bumpOffset: 0.001,
 }
 
 /** Baseline for every new/bundled world; DEFAULT_PARAMS remains the v1 loader fallback. */
@@ -65,6 +82,26 @@ const UNIT_KEYS = [
   'lightAz', 'lightEl', 'spinSpeed', 'ringInner', 'ringTilt',
   'ringWidth', 'ringGap', 'ringOpacity',
 ] as const
+
+const TERRAIN_TYPES = new Set(['fractal', 'ridged', 'plates'])
+
+function finiteIn(value: unknown, fallback: number, min: number, max: number): number {
+  const n = typeof value === 'number' && Number.isFinite(value) ? value : fallback
+  return Math.min(max, Math.max(min, n))
+}
+
+function sanitizeLayers(input: unknown): NonNullable<PlanetParams['terrainLayers']> {
+  const source = Array.isArray(input) ? input : []
+  const defaults = DEFAULT_PARAMS.terrainLayers!
+  return defaults.map((fallback, index) => {
+    const raw = (source[index] ?? {}) as Record<string, unknown>
+    return {
+      transition: finiteIn(raw.transition, fallback.transition, 0, 1),
+      blend: finiteIn(raw.blend, fallback.blend, 0, 1),
+      color: Math.round(finiteIn(raw.color, fallback.color, 0, 0xffffff)),
+    }
+  })
+}
 
 const PRESET_KEYS = new Set<string>([
   ...PRESETS.map((p) => p.key),
@@ -105,6 +142,20 @@ export function sanitize(input: unknown): PlanetParams {
     : DEFAULT_PARAMS.preset) as PresetKey
 
   for (const k of UNIT_KEYS) out[k] = clamp01(raw[k], DEFAULT_PARAMS[k])
+
+  out.terrainType = TERRAIN_TYPES.has(raw.terrainType as string)
+    ? raw.terrainType as NonNullable<PlanetParams['terrainType']>
+    : DEFAULT_PARAMS.terrainType
+  out.terrainAmplitude = finiteIn(raw.terrainAmplitude, DEFAULT_PARAMS.terrainAmplitude!, 0, 2)
+  out.terrainSharpness = finiteIn(raw.terrainSharpness, DEFAULT_PARAMS.terrainSharpness!, 0.1, 6)
+  out.terrainOffset = finiteIn(raw.terrainOffset, DEFAULT_PARAMS.terrainOffset!, -1, 1)
+  out.terrainPeriod = finiteIn(raw.terrainPeriod, DEFAULT_PARAMS.terrainPeriod!, 0.08, 3)
+  out.terrainPersistence = finiteIn(raw.terrainPersistence, DEFAULT_PARAMS.terrainPersistence!, 0.05, 1)
+  out.terrainLacunarity = finiteIn(raw.terrainLacunarity, DEFAULT_PARAMS.terrainLacunarity!, 1, 4)
+  out.terrainOctaves = Math.round(finiteIn(raw.terrainOctaves, DEFAULT_PARAMS.terrainOctaves!, 1, 10))
+  out.terrainLayers = sanitizeLayers(raw.terrainLayers)
+  out.bumpStrength = finiteIn(raw.bumpStrength, DEFAULT_PARAMS.bumpStrength!, 0, 2)
+  out.bumpOffset = finiteIn(raw.bumpOffset, DEFAULT_PARAMS.bumpOffset!, 0, 0.2)
 
   out.spinDir = raw.spinDir === -1 ? -1 : 1
   out.rings = raw.rings === true

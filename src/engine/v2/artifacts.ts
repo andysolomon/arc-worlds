@@ -221,21 +221,57 @@ export function sampleV2SurfaceInto(
 
   const roughness = clamp(model.params.roughness)
   const mountains = clamp(model.params.mountains)
-  const broad = fbm(noise.broad, x / 0.6 + 7.1, y / 0.6 - 2.7, z / 0.6 + 4.3, 7)
-  const fine = fbm(noise.fine, x * 10.5 - 5.9, y * 10.5 + 3.7, z * 10.5 - 8.1, 4)
-  const ridgeNoise = fbm(noise.broad, x * 5.7 - 11.3, y * 5.7 + 6.2, z * 5.7 + 1.9, 3)
+  const period = Math.max(0.08, model.params.terrainPeriod)
+  const octaves = Math.max(1, Math.min(10, Math.round(model.params.terrainOctaves)))
+  const broad = fbm(noise.broad, x / period + 7.1, y / period - 2.7, z / period + 4.3, octaves)
+  const fine = fbm(noise.fine, x * (7 + octaves) - 5.9, y * (7 + octaves) + 3.7, z * (7 + octaves) - 8.1, Math.min(5, octaves))
+  const ridgeNoise = fbm(noise.broad, x * (3.5 + model.params.terrainLacunarity) - 11.3, y * (3.5 + model.params.terrainLacunarity) + 6.2, z * (3.5 + model.params.terrainLacunarity) + 1.9, Math.min(5, octaves))
   const ridged = Math.pow(1 - Math.abs(ridgeNoise), 3) - 0.2
   // Sharpen the broad fractal field into an off-thread terrain-detail layer,
   // centred so it enriches rather than replaces canonical land. This is one
   // of the surface concepts retained from the visual research; clouds,
   // lighting, and atmosphere remain separate Arc Worlds systems.
-  const sculpted = Math.pow(clamp(broad * 0.5 + 0.5), 2.6) - 0.17
-  const detail = sculpted * (0.32 + roughness * 0.28)
-    + fine * (0.035 + roughness * 0.055)
-    + ridged * mountains * (0.07 + roughness * 0.09)
+  const shaped = model.params.terrainType === 'ridged'
+    ? 1 - Math.abs(broad) * 2
+    : model.params.terrainType === 'plates'
+      ? Math.sign(broad) * Math.pow(Math.abs(broad), 0.35)
+      : broad
+  const sculpted = Math.sign(shaped) * Math.pow(Math.abs(shaped), 1 / Math.max(0.1, model.params.terrainSharpness))
+  const detail = (sculpted + model.params.terrainOffset * 0.12) * (0.24 + roughness * 0.22)
+    * (0.55 + model.params.terrainAmplitude * 0.45)
+    + fine * (0.025 + roughness * 0.045) * model.params.bumpStrength
+    + ridged * mountains * (0.05 + roughness * 0.08) * model.params.bumpStrength
+    + model.params.bumpOffset * 0.35
 
   out.elevation = canonicalElevation + detail
   out.detail = detail
+  return out
+}
+
+/** Apply the user-authored elevation ramp after the scientific biome pass. */
+function applyTerrainLayers(
+  model: TerrainV2Model,
+  elevation: number,
+  out: MutableV2Color,
+): MutableV2Color {
+  const layers = model.params.terrainLayers
+  if (!layers.length) return out
+  const level = clamp((elevation + 1.1) / 2.2)
+  let index = 0
+  for (let i = 1; i < layers.length; i++) {
+    if (level >= layers[i].transition) index = i
+  }
+  const left = layers[index]
+  const right = layers[Math.min(index + 1, layers.length - 1)]
+  const span = Math.max(1e-6, right.transition - left.transition)
+  const between = index === layers.length - 1
+    ? 0
+    : smoothstep(0, 1, (level - left.transition) / span)
+  const red = Math.round(((left.color >>> 16) & 0xff) * (1 - between) + ((right.color >>> 16) & 0xff) * between)
+  const green = Math.round(((left.color >>> 8) & 0xff) * (1 - between) + ((right.color >>> 8) & 0xff) * between)
+  const blue = Math.round((left.color & 0xff) * (1 - between) + (right.color & 0xff) * between)
+  const tint = Math.min(0.72, Math.max(0, left.blend * (1 - between) + right.blend * between))
+  mixColor(out, (red << 16) | (green << 8) | blue, tint)
   return out
 }
 
@@ -394,7 +430,10 @@ export function colorTerrainV2Into(
   }
 
   const ecosystem = ecosystemStyleFor(model.params.seed, model.params.preset)
-  if (ecosystem) return colorLivingWorldInto(model, sample, elevation, detail, ecosystem, out)
+  if (ecosystem) {
+    colorLivingWorldInto(model, sample, elevation, detail, ecosystem, out)
+    return applyTerrainLayers(model, elevation, out)
+  }
 
   const aboveSea = elevation - model.seaLevel
   switch (sample.biome) {
@@ -437,7 +476,7 @@ export function colorTerrainV2Into(
   if (aboveSea > 0.02 && sample.flow > 0.68 && model.params.liquidWater > 0.2) {
     mixColor(out, palette.water, (sample.flow - 0.68) * 0.19 * model.params.liquidWater)
   }
-  return out
+  return applyTerrainLayers(model, elevation, out)
 }
 
 /**

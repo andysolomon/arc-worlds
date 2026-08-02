@@ -10,7 +10,7 @@ import {
   circulationCells, circulationMoisture, EARTH_OBLIQUITY_TERM, obliquityTerm,
 } from '../climate.js'
 import { isGas, PALETTES } from '../palettes.js'
-import type { PlanetParams, PresetKey } from '../types.js'
+import type { PlanetParams, PresetKey, TerrainLayer, TerrainNoiseType } from '../types.js'
 import {
   CANONICAL_GRAPH,
   type CanonicalSphereGraph,
@@ -102,6 +102,18 @@ export interface TerrainV2GeographyParams {
   readonly axialTiltDeg: number
   /** How many circulation cells fit, and so where the dry belts fall. */
   readonly dayHours: number
+  /** Fine-grained terrain noise controls from the Worlds builder. */
+  readonly terrainType: TerrainNoiseType
+  readonly terrainAmplitude: number
+  readonly terrainSharpness: number
+  readonly terrainOffset: number
+  readonly terrainPeriod: number
+  readonly terrainPersistence: number
+  readonly terrainLacunarity: number
+  readonly terrainOctaves: number
+  readonly terrainLayers: readonly TerrainLayer[]
+  readonly bumpStrength: number
+  readonly bumpOffset: number
 }
 
 /**
@@ -195,6 +207,31 @@ function geographyValue(value: number): number {
   return Number.isFinite(value) ? clamp(value) : 0.5
 }
 
+const DEFAULT_TERRAIN_LAYERS: readonly TerrainLayer[] = [
+  { transition: 0, blend: 0.2, color: 0x123a61 },
+  { transition: 0.22, blend: 0.3, color: 0x2b7f7d },
+  { transition: 0.46, blend: 0.36, color: 0x78ad58 },
+  { transition: 0.68, blend: 0.26, color: 0x8d8069 },
+  { transition: 0.86, blend: 0.2, color: 0xe6ebe2 },
+]
+
+function terrainNumber(value: number | undefined, fallback: number, min: number, max: number): number {
+  const n = typeof value === 'number' && Number.isFinite(value) ? value : fallback
+  return Math.min(max, Math.max(min, n))
+}
+
+function terrainLayers(params: PlanetParams): readonly TerrainLayer[] {
+  const source = params.terrainLayers ?? DEFAULT_TERRAIN_LAYERS
+  return DEFAULT_TERRAIN_LAYERS.map((fallback, index) => {
+    const layer = source[index] ?? fallback
+    return {
+      transition: terrainNumber(layer.transition, fallback.transition, 0, 1),
+      blend: terrainNumber(layer.blend, fallback.blend, 0, 1),
+      color: Math.round(terrainNumber(layer.color, fallback.color, 0, 0xffffff)),
+    }
+  })
+}
+
 function snapshotGeography(params: PlanetParams): TerrainV2GeographyParams {
   const climate = params.climate
   return {
@@ -211,6 +248,19 @@ function snapshotGeography(params: PlanetParams): TerrainV2GeographyParams {
     iceLineLatitudeDeg: climate?.iceLineLatitudeDeg ?? 90 - geographyValue(params.ice) * 25,
     axialTiltDeg: climate?.axialTiltDeg ?? 23.44,
     dayHours: climate?.dayHours ?? 23.934,
+    terrainType: params.terrainType === 'ridged' || params.terrainType === 'plates'
+      ? params.terrainType
+      : 'fractal',
+    terrainAmplitude: terrainNumber(params.terrainAmplitude, 1, 0, 2),
+    terrainSharpness: terrainNumber(params.terrainSharpness, 2.6, 0.1, 6),
+    terrainOffset: terrainNumber(params.terrainOffset, 0, -1, 1),
+    terrainPeriod: terrainNumber(params.terrainPeriod, 0.6, 0.08, 3),
+    terrainPersistence: terrainNumber(params.terrainPersistence, 0.48, 0.05, 1),
+    terrainLacunarity: terrainNumber(params.terrainLacunarity, 1.8, 1, 4),
+    terrainOctaves: Math.round(terrainNumber(params.terrainOctaves, 6, 1, 10)),
+    terrainLayers: terrainLayers(params),
+    bumpStrength: terrainNumber(params.bumpStrength, 0.72, 0, 2),
+    bumpOffset: terrainNumber(params.bumpOffset, 0.001, 0, 0.2),
   }
 }
 
@@ -268,18 +318,26 @@ function plateAnchors(params: TerrainV2GeographyParams): PlateAnchor[] {
   return anchors
 }
 
-function lowFrequencyRelief(seed: number, x: number, y: number, z: number): number {
-  const random = mulberry32((seed ^ 0x68bc21eb) >>> 0)
+function terrainRelief(params: TerrainV2GeographyParams, x: number, y: number, z: number): number {
+  const random = mulberry32((params.seed ^ 0x68bc21eb) >>> 0)
   let total = 0
   let weight = 0
-  // Four fixed directional waves break up perfectly round anchor fields while
-  // remaining much broader than one canonical graph edge.
-  for (let octave = 0; octave < 4; octave++) {
+  let frequency = 2 / Math.max(0.08, params.terrainPeriod)
+  let amplitude = 1
+  // Directional waves stay seeded and worker-friendly while exposing the same
+  // controls artists expect from a fractal terrain generator.
+  for (let octave = 0; octave < params.terrainOctaves; octave++) {
     const [ax, ay, az] = randomUnit(random)
-    const frequency = 2 + octave * 1.37 + random() * 0.45
-    const amplitude = 1 / (1 + octave)
-    total += Math.sin((x * ax + y * ay + z * az) * frequency * Math.PI + random() * Math.PI * 2) * amplitude
+    const wave = Math.sin((x * ax + y * ay + z * az) * frequency * Math.PI + random() * Math.PI * 2)
+    const shaped = params.terrainType === 'ridged'
+      ? 1 - Math.abs(wave) * 2
+      : params.terrainType === 'plates'
+        ? Math.sign(wave) * Math.pow(Math.abs(wave), 0.35)
+        : wave
+    total += shaped * amplitude
     weight += amplitude
+    frequency *= params.terrainLacunarity
+    amplitude *= params.terrainPersistence
   }
   return total / weight
 }
@@ -298,8 +356,13 @@ function compileMacro(graph: CanonicalSphereGraph, params: TerrainV2GeographyPar
       const dot = x * anchor.x + y * anchor.y + z * anchor.z
       value += anchor.amplitude * Math.exp((dot - 1) / anchor.spread)
     }
-    // Roughness changes interior relief, not graph resolution or coast data.
-    value += lowFrequencyRelief(params.seed, x, y, z) * (0.025 + params.roughness * 0.09)
+    // Roughness remains the small-scale climate/geology control; the detailed
+    // terrain controls add a second, deliberately explicit relief field.
+    const relief = terrainRelief(params, x, y, z)
+    const sharpened = Math.sign(relief) * Math.pow(Math.abs(relief), 1 / params.terrainSharpness)
+    value += relief * (0.025 + params.roughness * 0.09)
+    value += sharpened * (0.1 + params.terrainAmplitude * 0.08)
+    value += params.terrainOffset * 0.18
     elevation[index] = clamp(value, -1.1, 1.1)
   }
   return elevation
@@ -674,6 +737,17 @@ export function terrainV2CanonicalKey(params: PlanetParams, graph = CANONICAL_GR
     valueKey(snapshot.iceLineLatitudeDeg / 90),
     valueKey(snapshot.axialTiltDeg / 180),
     valueKey(Math.min(1, Math.abs(snapshot.dayHours) / 10000)),
+    snapshot.terrainType,
+    valueKey(snapshot.terrainAmplitude / 2),
+    valueKey(snapshot.terrainSharpness / 6),
+    valueKey((snapshot.terrainOffset + 1) / 2),
+    valueKey(snapshot.terrainPeriod / 3),
+    valueKey(snapshot.terrainPersistence),
+    valueKey(snapshot.terrainLacunarity / 4),
+    snapshot.terrainOctaves,
+    JSON.stringify(snapshot.terrainLayers),
+    valueKey(snapshot.bumpStrength / 2),
+    valueKey(snapshot.bumpOffset / 0.2),
   ].join(':')
 }
 

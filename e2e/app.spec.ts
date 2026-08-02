@@ -66,6 +66,22 @@ test('Worlds is the single workspace for building, analysis, and saved worlds', 
   await expect(page.getByRole('button', { name: 'Saved', exact: true })).toBeVisible()
 })
 
+test('the Worlds builder exposes fine terrain, layer, and bump controls', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByText('Terrain detail', { exact: true })).toBeVisible()
+  await expect(page.getByText('Layers', { exact: true })).toBeVisible()
+  await expect(page.getByText('Bump Mapping', { exact: true })).toBeVisible()
+  await expect(page.getByLabel('Amplitude')).toBeVisible()
+  await expect(page.getByLabel('Octaves')).toBeVisible()
+  await expect(page.getByLabel('Transition point')).toHaveCount(5)
+  await expect(page.getByLabel('Red')).toHaveCount(5)
+
+  await page.getByRole('button', { name: 'Ridged', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Ridged', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await page.getByLabel('Bump strength').fill('1')
+  await expect(page.getByLabel('Bump strength')).toHaveValue('1')
+})
+
 test('pause lets the renderer go idle', async ({ page }) => {
   await page.goto('/')
   // The setup wants 10 rendered frames before pausing. Under full-suite
@@ -117,12 +133,11 @@ test('a Little Worlds original is read-only until it is cloned into Worlds', asy
   await expect(page.getByText('Earth is a Little Worlds original.')).toHaveCount(0)
 })
 
-test('surprise me produces a different world', async ({ page }) => {
+test('the header leaves the full-height Worlds sidebar unobstructed', async ({ page }) => {
   await page.goto('/')
-  const seed = page.getByLabel('Seed', { exact: true })
-  const before = await seed.inputValue()
-  await page.getByRole('button', { name: 'Surprise me' }).click()
-  await expect(seed).not.toHaveValue(before)
+  await expect(page.getByRole('button', { name: 'Surprise me' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Worlds home' })).toBeVisible()
+  await expect(page.locator('.panel')).toHaveCSS('margin-top', '0px')
 })
 
 test('the spectrometer reports a real planet with its measured profile', async ({ page }) => {
@@ -199,7 +214,9 @@ test('a system built from your own worlds renders in orbit', async ({ page }) =>
 
   for (let i = 0; i < 3; i++) {
     await page.getByRole('button', { name: /^\+ Add/ }).click()
-    await page.getByRole('button', { name: 'Surprise me' }).click()
+    await page.getByRole('tab', { name: 'Worlds' }).click()
+    await page.getByRole('button', { name: 'Build', exact: true }).click()
+    await page.getByRole('button', { name: 'Random seed' }).click()
     await page.getByRole('tab', { name: 'Systems' }).click()
   }
 
@@ -651,6 +668,34 @@ test('Pandora orbits Polyphemus, and is still a whole world', async ({ page }) =
 
   await page.getByRole('button', { name: 'Surface & water' }).click()
   await expect(page.getByText('Strong — and networked')).toBeVisible()
+})
+
+test('satellites keep moving in orbit view and in the Worlds parent view', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Systems' }).click()
+  await page.getByRole('button', { name: 'Alpha Centauri A' }).click()
+  await page.getByRole('button', { name: 'Orbit view' }).click()
+  await awaitGeometry(page)
+
+  const orbitPosition = () => page.evaluate(() => document.querySelector('canvas')?.dataset.satelliteOrbit ?? '')
+  await expect.poll(orbitPosition).not.toBe('')
+  const firstOrbitPosition = await orbitPosition()
+  await page.waitForTimeout(450)
+  expect(await orbitPosition()).not.toBe(firstOrbitPosition)
+
+  await page.getByRole('button', { name: 'Body list' }).click()
+  await page.getByRole('button', { name: /Polyphemus/ }).click()
+  await expect(page.getByRole('heading', { name: 'Polyphemus' })).toBeVisible()
+  await awaitGeometry(page)
+
+  const moonPosition = () => page.evaluate(() => document.querySelector('canvas')?.dataset.moonOrbit ?? '')
+  await expect.poll(moonPosition).not.toBe('')
+  const firstMoonPosition = await moonPosition()
+  await page.waitForTimeout(450)
+  expect(await moonPosition()).not.toBe(firstMoonPosition)
+
+  await page.getByRole('button', { name: 'Worlds home' }).click()
+  await expect(page.getByRole('button', { name: 'Saved', exact: true })).toHaveAttribute('aria-pressed', 'true')
 })
 
 test('the moons toggle drops every satellite from the orbit view', async ({ page }) => {

@@ -1573,3 +1573,36 @@ DELIVERED
   The stable production alias is https://little-worlds-delta.vercel.app.
 - The branch remains local because this request authorized build, commit, and
   deployment but did not request a GitHub push.
+
+2026-08-01 Fine procedural surface controls and Worlds navigation
+
+CHANGED
+- Added a detailed Terrain section to Worlds → Build with selectable fractal,
+  ridged, and plate-like relief plus amplitude, sharpness, offset, period,
+  persistence, lacunarity, and octave controls.
+- Added five editable elevation Layers (transition, blend, colour, and RGB)
+  and Bump Mapping strength/offset controls. All values are sanitized, included
+  in v2 worker/material invalidation keys, and remain separate from the native
+  cloud, lighting, and atmosphere systems.
+- Removed the global Surprise me button, made the desktop Worlds sidebar full
+  height, and added a Worlds home action that returns from a planet editor to
+  the collection.
+- Kept system satellites moving when their parent is opened in Worlds by
+  mapping system children into the existing Kepler moon integrator.
+- Updated the terrain-generation exploration notes so the v1/v2 worker boundary
+  and the expanded invalidation keys match the implementation.
+
+VERIFIED
+- bun run typecheck
+- bun run lint
+- bun run test: 203 passed across 19 files
+- bun run build
+- bun run size:check: passed; entry 254,997 B gzip, terrain worker 39,632 B,
+  bake worker 93,835 B
+- bun run test:e2e: 40 passed, including fine controls, Worlds home, and
+  satellite motion in orbit and parent-world views
+- bun run perf:smoke: passed local browser budgets (three orbit shader
+  programs, zero paused work, zero renderer errors)
+- bun run perf:terrain: three runs passed every worker/artifact gate; median
+  preview settlement 1,021.9 ms, focused settlement 120.7 ms, zero main-thread
+  long-task time, and no obsolete artifact accepted

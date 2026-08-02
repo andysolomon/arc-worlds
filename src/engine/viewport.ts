@@ -192,6 +192,15 @@ function climateKey(p: PlanetParams): string {
   ].map((value) => Math.round(value * 1000)).join(',')
 }
 
+/** Fine surface controls are part of every worker/material invalidation key. */
+function terrainDetailKey(p: PlanetParams): string {
+  return JSON.stringify([
+    p.terrainType, p.terrainAmplitude, p.terrainSharpness, p.terrainOffset,
+    p.terrainPeriod, p.terrainPersistence, p.terrainLacunarity, p.terrainOctaves,
+    p.terrainLayers, p.bumpStrength, p.bumpOffset,
+  ])
+}
+
 /**
  * Identity of the expensive, baked part of a body's appearance. Lighting,
  * animation and labels deliberately do not belong here: changing one of those
@@ -201,7 +210,7 @@ function bodyKey(b: SystemBody): string {
   const p = b.params
   const baked = [
     p.generatorVersion, p.seed, p.preset, p.mountains, p.water, p.roughness, p.ice, p.clouds,
-    climateKey(p),
+    climateKey(p), terrainDetailKey(p),
   ].join(':')
   const ring = b.ring ?? (p.rings
     ? [p.ringN, p.ringInner, p.ringTilt, p.ringWidth, p.ringGap, p.ringOpacity, p.ringColor]
@@ -215,7 +224,7 @@ function bodyKey(b: SystemBody): string {
 function surfaceKey(p: PlanetParams, detail: string): string {
   return [
     p.generatorVersion, detail, p.seed, p.preset, p.mountains, p.water, p.roughness, p.ice,
-    climateKey(p),
+    climateKey(p), terrainDetailKey(p),
   ].join(':')
 }
 
@@ -1756,7 +1765,8 @@ export class PlanetViewport {
     this.v2NormalMap?.dispose()
     this.v2NormalMap = nextNormalMap
     material.normalMap = nextNormalMap
-    material.normalScale.setScalar(ecosystemStyleFor(P.seed, P.preset) ? 0.85 : 0.55)
+    const bump = Math.max(0, Math.min(2, P.bumpStrength ?? 0.72)) / 0.72
+    material.normalScale.setScalar((ecosystemStyleFor(P.seed, P.preset) ? 0.85 : 0.55) * bump)
     material.color.set(0xffffff)
     this.v2SeaRadius = artifact.seaRadius
     this.water.scale.setScalar(Math.max(0.88, artifact.seaRadius))
@@ -2253,7 +2263,18 @@ export class PlanetViewport {
     const atmosphereScale = meadowV2 ? 0.88 : 1
     this.atmo.scale.set(atmosphereScale, flat * atmosphereScale, atmosphereScale)
 
-    if (R) {
+    const systemMoons = this.systemMoonsFor(P)
+    if (systemMoons) {
+      const md = this.setMoons(this.showMoons ? systemMoons : [])
+      if (this.moons.length) {
+        const want = this.frameForMoons(this.moonSpan)
+        this.fitZ = want
+        if (md && Math.abs(want - this.camZ) > 0.05 && !this.dragging) this.camZ = want
+      } else {
+        this.fitZ = 3.15
+        if (this.camZ > 4) this.camZ = 3.15
+      }
+    } else if (R) {
       // Moons off skips building them at all — Saturn carries six and Jupiter
       // four, and their meshes and per-frame Kepler work are the cost.
       // `md` is only non-zero when the set of moons actually changed, which is
@@ -2469,6 +2490,39 @@ export class PlanetViewport {
   }
 
   /**
+   * Convert the active system's children into the single-world moon shape.
+   * Entering Worlds from a system must not make a parent planet lose its
+   * satellites: Pandora still circles Polyphemus, and the Moon still circles
+   * Earth, wherever the parent is being viewed.
+   */
+  private systemMoonsFor(P: PlanetParams): Moon[] | null {
+    const def = this.sysDef
+    if (!def || P.mode === 'system') return null
+    const host = def.bodies.find((body) =>
+      body.params.preset === P.preset &&
+      body.params.seed === P.seed &&
+      body.params.generatorVersion === P.generatorVersion,
+    )
+    if (!host) return null
+    return def.bodies
+      .filter((body) => body.orbits === host.name)
+      .map((body) => {
+        const palette = PALETTES[body.params.preset]
+        const color = palette && 'mid' in palette ? palette.mid : 0xb8b0b2
+        return {
+          n: body.name,
+          r: body.radius / Math.max(1e-6, host.radius),
+          a: satRadii(body.a, host.radius),
+          P: body.period * 365.25 * (body.day < 0 ? -1 : 1),
+          inc: body.inc,
+          c: color,
+          e: body.e,
+          world: { preset: body.params.preset, seed: body.params.seed },
+        }
+      })
+  }
+
+  /**
    * Show the planet a moon belongs to, in the moon's own view.
    *
    * A moon on its own says nothing about being a moon. The camera has to stay
@@ -2552,7 +2606,7 @@ export class PlanetViewport {
         const q = parent.params
         const key = [
           q.generatorVersion, q.seed, q.preset, q.mountains, q.water, q.roughness, q.ice, q.clouds,
-          climateKey(q),
+          climateKey(q), terrainDetailKey(q),
         ].join(':')
         if (key === this.companionMapKey && this.companionMap) {
           // Already painted this world: leaving and coming back should not
@@ -3404,6 +3458,26 @@ export class PlanetViewport {
       this.lastPublishedParent = parentXY
       if (parentXY) cv.dataset.parent = parentXY
       else delete cv.dataset.parent
+    }
+    // Truthful motion diagnostics for the two satellite presentations. The
+    // values are rounded so they do not become a per-frame DOM write storm,
+    // but a browser test can still prove that a child changes position while
+    // its parent remains the same scene node.
+    if (this.sys?.visible) {
+      delete cv.dataset.moonOrbit
+      const satellite = this.sysNodes.find((node) => node.parent >= 0)
+      if (satellite) {
+        satellite.node.getWorldPosition(this.tmpV)
+        cv.dataset.satelliteOrbit = [this.tmpV.x, this.tmpV.y, this.tmpV.z]
+          .map((value) => value.toFixed(3)).join(',')
+      } else delete cv.dataset.satelliteOrbit
+    } else {
+      delete cv.dataset.satelliteOrbit
+      if (this.moons.length) {
+      this.moons[0].mesh.getWorldPosition(this.tmpV)
+      cv.dataset.moonOrbit = [this.tmpV.x, this.tmpV.y, this.tmpV.z]
+        .map((value) => value.toFixed(3)).join(',')
+      } else delete cv.dataset.moonOrbit
     }
     // What is in the sky and how wide its sun is, in degrees. The angle is the
     // claim worth checking from outside: half a degree from Earth and a

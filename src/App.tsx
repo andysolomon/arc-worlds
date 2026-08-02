@@ -12,7 +12,7 @@ import { MILKY_WAY } from './data/systems'
 import { climateForBody, standaloneClimate, withSystemClimates } from './engine/climate'
 import { parentOf } from './engine/planets'
 import { loadDisplay, nebulaCss, saveDisplay, type DisplayOptions } from './lib/display'
-import { CURRENT_PARAMS, sanitize, surprise } from './lib/params'
+import { CURRENT_PARAMS, sanitize } from './lib/params'
 import {
   addMoon, addRolledWorld, addWorld, duplicateBody, editableCopy, hasRoom, sanitizeSystem,
 } from './lib/systems'
@@ -45,6 +45,12 @@ const SPEEDS: Array<[number, string]> = [
   [4, '4×'],
   [20, '20×'],
 ]
+
+const FINE_TERRAIN_KEYS = new Set<keyof PlanetParams>([
+  'terrainType', 'terrainAmplitude', 'terrainSharpness', 'terrainOffset',
+  'terrainPeriod', 'terrainPersistence', 'terrainLacunarity', 'terrainOctaves',
+  'terrainLayers', 'bumpStrength', 'bumpOffset',
+])
 
 /** Read a share link out of the address bar: /w/:slug for a world, /s/:slug for a system. */
 function routeFromLocation(): { kind: 'w' | 's'; slug: string } | null {
@@ -218,7 +224,7 @@ export default function App() {
     setParams((s) => ({
       ...s,
       [k]: v,
-      ...(k === 'seed'
+      ...(k === 'seed' || FINE_TERRAIN_KEYS.has(k)
         ? { generatorVersion: CURRENT_GENERATOR_VERSION, texture: null, cloudTexture: null }
         : null),
     }))
@@ -280,19 +286,6 @@ export default function App() {
     setScan(null)
     setSelectedBodyIndex(null)
   }, [worldLocked])
-
-  const onSurprise = useCallback(() => {
-    const { params: next, name: nextName } = surprise()
-    setParams(next)
-    setName(nextName)
-    setScan(null)
-    setSavedSlug(null)
-    setSelectedBodyIndex(null)
-    setWorldLocked(false)
-    setView('single')
-    setTab('worlds')
-    setWorldsView('build')
-  }, [])
 
   /* --- systems ---------------------------------------------------------- */
 
@@ -589,6 +582,20 @@ export default function App() {
       .catch(() => {})
   }, [])
 
+  /**
+   * Return to the Worlds collection after opening a planet from a saved-world
+   * card or a system body. Keep the current world in memory so leaving and
+   * returning is non-destructive, but put the collection controls back in
+   * view instead of trapping the user inside the editor.
+   */
+  const goWorldsHome = useCallback(() => {
+    setTab('worlds')
+    setWorldsView('saved')
+    setSelectedBodyIndex(null)
+    setSavedSlug(null)
+    if (window.location.pathname.startsWith('/w/')) window.history.replaceState(null, '', '/')
+  }, [])
+
   /* --- render ----------------------------------------------------------- */
 
   const preset = typeOf(params.preset)
@@ -607,9 +614,6 @@ export default function App() {
             <div className="brand-sub">build a planet, then discover what lives there</div>
           </div>
         </div>
-        <button className="btn-surprise" type="button" onClick={onSurprise}>
-          Surprise me
-        </button>
       </header>
 
       <div className="main">
@@ -728,6 +732,9 @@ export default function App() {
 
             {tab === 'worlds' && (
               <>
+                <button className="workspace-home" type="button" onClick={goWorldsHome}>
+                  ‹ Worlds home
+                </button>
                 <div>
                   <div className="field-label">World workspace</div>
                   <Segmented options={WORLD_VIEWS} value={worldsView} onChange={setWorldsView} />
