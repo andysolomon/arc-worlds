@@ -346,10 +346,10 @@ the existing flat and detailed rendering tiers rather than replacing them.
 
 ### 15. V2 Meadow visual direction (delivered 2026-08-01)
 
-Bring generator-v2 Meadow worlds materially closer to the art direction of
-Dan Greenheck's `threejs-procedural-planets` demo without adopting its
-per-fragment multi-octave terrain shader, unconditional animation loop,
-particle-atmosphere cost, or full-frame bloom pass.
+Use Dan Greenheck's `threejs-procedural-planets` demo as a narrowly scoped
+surface reference for Terrain, elevation Layers, and Bump Mapping. Do not adapt
+its clouds, lighting, atmosphere, per-fragment multi-octave shader,
+unconditional animation loop, particle system, or full-frame bloom pass.
 
 - [x] Preserve the canonical graph as the source of continents, drainage, and
       climate while adding deterministic worker-side fractal surface detail at
@@ -441,6 +441,104 @@ visitor-facing route, and must remain outside the application entry bundle.
       orbit artifact now sample the same seamless weather function.
 - [x] Complete lint, browser, bundle-size, and real-GPU performance checks; add
       the final measurements to `progress.txt` before marking this phase done.
+
+### 19. Natural terrestrial cloud systems (delivered 2026-08-01)
+
+- [x] Replace the four-wave v2 mask that produced continent-sized white blobs
+      with a seed-stable, domain-warped 3D weather field combining synoptic,
+      billow, wisp, and weak circulation scales.
+- [x] Treat mask output as optical depth: retain translucent cloud margins,
+      sharply limit fully opaque plateaus, and keep climate-scaled coverage as
+      the threshold control rather than changing a seed's weather geography.
+- [x] Compile each seeded field once per worker bake. Sample the same field for
+      the 512×256 focused shell and a 64×32 filtered orbit weather raster, so
+      the systems agree while 24-body preview generation stays inside the 10%
+      performance regression rule.
+- [x] Replace the unlit cloud shell with a Lambert-lit transparent shell, so
+      atmospheric clouds receive the same star and ambient illumination as the
+      planet instead of glowing white across the night side.
+- [x] Share the v2 opacity policy across orbit compositing and the detailed
+      shell; add deterministic pixel parity, Pandora morphology, and focused
+      visual regression coverage.
+- [x] Complete type, lint, unit, production build, bundle, browser, v2-worker,
+      and real-GPU performance verification before delivery.
+
+### 20. Worlds workspace and immutable reference worlds (delivered 2026-08-01)
+
+- [x] Remove Sculpt and Scan as top-level destinations. Keep only Worlds and
+      Systems, with Worlds opening by default and organizing the complete
+      workflow as Build, Analyze, and Saved.
+- [x] Preserve every former sculpting control, the full spectrometer, saved
+      gallery, share/save flow, moon navigation, and system-add flow inside the
+      consolidated Worlds workspace. Reset panel scroll when destinations
+      change so the first relevant decision is never hidden.
+- [x] Treat measured planets, ancient reconstructions, fiction worlds, and
+      canonical moons shipped with Little Worlds as immutable references, even
+      inside an editable copy of their system. Disable name, seed, shape,
+      appearance, and save controls while retaining exploration and analysis.
+- [x] Add an explicit Clone-to-Build action. A clone keeps the source family
+      and physical controls, receives a new v2 procedural seed, drops canonical
+      photo/cloud maps, clears reference selection, and lands in Worlds → Build
+      as an editable standalone world.
+- [x] Keep editable worlds addable to the active system at any point; block a
+      reference original from being added until it is cloned. A read-only
+      system still becomes an editable copy before receiving the new world.
+- [x] Draw the star-specific conservative liquid-water habitable zone directly
+      on each stellar-distance slider. Continue recalculating flux,
+      equilibrium/surface temperature, seasonal bounds, liquid water, polar
+      ice, vegetation potential, and generated artifacts as the world moves.
+- [x] Add unit coverage for canonical-reference identity and Playwright coverage
+      for the two-tab workspace, immutable clone journey, visible habitable-zone
+      band, climate response at Jupiter distance, and moon clone/reseed flow.
+- [x] Complete type, lint, unit, production build, bundle, full browser,
+      targeted visual, worker-stress, and real-GPU performance verification
+      before delivery.
+
+### 21. External surface-reference boundary (delivered 2026-08-01)
+
+- [x] Limit the `threejs-procedural-planets` reference to three named surface
+      concepts: Terrain, smooth elevation Layers, and Bump Mapping.
+- [x] Keep those concepts in the existing v2 worker pipeline: canonical
+      geography plus local relief, climate/ecosystem-aware blended colour
+      layers, and a transferred precomputed normal map on `MeshStandardMaterial`.
+- [x] Explicitly exclude the demo's clouds, lighting, atmosphere, bloom,
+      complete shader material, and continuous render loop from Arc Worlds.
+- [x] Retain Arc Worlds' independently authored, seed-stable, climate-driven
+      weather field and its own star lighting and atmosphere implementations.
+- [x] Update research, implementation, and source documentation so later work
+      cannot mistake visual reference scope for an upstream runtime dependency.
+
+### 22. Fine procedural surface authoring and world navigation (delivered 2026-08-01)
+
+The Worlds builder now exposes the useful authoring depth of the external
+procedural-planet reference without importing its presentation choices. A
+world's scientific v2 geography remains the source of truth; the controls are
+part of that world's serialized identity and are evaluated by the existing
+terrain/artifact workers.
+
+- [x] Add Terrain controls for fractal, ridged, and plate-like relief, with
+      amplitude, sharpness, offset, period, persistence, lacunarity, and octave
+      controls. Values are sanitized and bounded before they reach a worker.
+- [x] Add five elevation Layers with transition, blend, colour, and RGB
+      controls. Layers tint the biome/climate result after the scientific pass;
+      they do not replace water, temperature, moisture, or polar-ice modelling.
+- [x] Add Bump Mapping strength and offset controls. Bump data is baked into the
+      detailed normal map and the material normal scale, while the canonical
+      coastlines and climate fields stay stable.
+- [x] Keep clouds, lighting, and atmosphere native to Arc Worlds. No external
+      cloud shader, bloom, atmosphere, material, or unconditional render loop
+      was added.
+- [x] Remove the global Surprise me action and let the Worlds panel occupy the
+      full desktop sidebar height. Add an explicit Worlds home action so a
+      planet opened from a gallery or system can return to the collection.
+- [x] Preserve parent-relative satellite motion when a system body is opened in
+      Worlds. System children are mapped to the same Kepler moon integrator used
+      by single-world views, with browser coverage for both presentations.
+- [x] Keep the dense Worlds builder panel in a lazy chunk so the initial entry
+      stays below the gzip budget without hiding any authoring controls once
+      Worlds → Build is opened.
+- [x] Verify fine controls, navigation, and satellite motion in Playwright;
+      keep the established renderer and worker performance budgets green.
 
 ### 14. The sky from where you are standing (delivered 2026-08-01)
 

@@ -31,6 +31,12 @@ async function awaitGeometry(page: Page): Promise<void> {
   await expect.poll(() => hasDrawnGeometry(page), { timeout: 30_000 }).toBe(true)
 }
 
+/** Open one tool inside the consolidated Worlds workspace. */
+async function openWorldTool(page: Page, tool: 'Build' | 'Analyze' | 'Saved'): Promise<void> {
+  await page.getByRole('tab', { name: 'Worlds' }).click()
+  await page.getByRole('button', { name: tool, exact: true }).click()
+}
+
 test.beforeEach(async ({ page }) => {
   const errors: string[] = []
   page.on('console', (m) => {
@@ -46,6 +52,34 @@ test('renders a planet on first load', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Peachmoss' })).toBeVisible()
   await expect(page.locator('canvas')).toBeVisible()
   await awaitGeometry(page)
+})
+
+test('Worlds is the single workspace for building, analysis, and saved worlds', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByRole('tab')).toHaveCount(2)
+  await expect(page.getByRole('tab', { name: 'Worlds' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('tab', { name: 'Systems' })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Sculpt' })).toHaveCount(0)
+  await expect(page.getByRole('tab', { name: 'Scan' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Build', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: 'Analyze', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Saved', exact: true })).toBeVisible()
+})
+
+test('the Worlds builder exposes fine terrain, layer, and bump controls', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByText('Terrain detail', { exact: true })).toBeVisible()
+  await expect(page.getByText('Layers', { exact: true })).toBeVisible()
+  await expect(page.getByText('Bump Mapping', { exact: true })).toBeVisible()
+  await expect(page.getByLabel('Amplitude')).toBeVisible()
+  await expect(page.getByLabel('Octaves')).toBeVisible()
+  await expect(page.getByLabel('Transition point')).toHaveCount(5)
+  await expect(page.getByLabel('Red')).toHaveCount(5)
+
+  await page.getByRole('button', { name: 'Ridged', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Ridged', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await page.getByLabel('Bump strength').fill('1')
+  await expect(page.getByLabel('Bump strength')).toHaveValue('1')
 })
 
 test('pause lets the renderer go idle', async ({ page }) => {
@@ -69,7 +103,7 @@ test('pause lets the renderer go idle', async ({ page }) => {
   expect(after).toBe(settled)
 })
 
-test('sculpting a world updates its identity', async ({ page }) => {
+test('building a world updates its identity', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Ember' }).click()
   await expect(page.getByText(/ember world/)).toBeVisible()
@@ -78,12 +112,32 @@ test('sculpting a world updates its identity', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Cinder' })).toBeVisible()
 })
 
-test('surprise me produces a different world', async ({ page }) => {
+test('a Little Worlds original is read-only until it is cloned into Worlds', async ({ page }) => {
   await page.goto('/')
-  const seed = page.getByLabel('Seed', { exact: true })
-  const before = await seed.inputValue()
-  await page.getByRole('button', { name: 'Surprise me' }).click()
-  await expect(seed).not.toHaveValue(before)
+  await page.getByRole('tab', { name: 'Systems' }).click()
+  await page.getByRole('button', { name: 'Duplicate & edit' }).click()
+  await page.getByRole('button', { name: 'Body list' }).click()
+  await page.getByRole('button', { name: /^Earth/ }).click()
+
+  await expect(page.getByRole('tab', { name: 'Worlds' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByText('Earth is a Little Worlds original.')).toBeVisible()
+  await expect(page.getByLabel('World name')).toBeDisabled()
+  await expect(page.getByLabel('Seed', { exact: true })).toBeDisabled()
+
+  const canonicalSeed = await page.getByLabel('Seed', { exact: true }).inputValue()
+  await page.getByRole('button', { name: 'Clone Earth to build' }).click()
+  await expect(page.getByRole('heading', { name: 'Earth Clone' })).toBeVisible()
+  await expect(page.getByLabel('World name')).toBeEnabled()
+  await expect(page.getByLabel('Seed', { exact: true })).toBeEnabled()
+  await expect(page.getByLabel('Seed', { exact: true })).not.toHaveValue(canonicalSeed)
+  await expect(page.getByText('Earth is a Little Worlds original.')).toHaveCount(0)
+})
+
+test('the header leaves the full-height Worlds sidebar unobstructed', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByRole('button', { name: 'Surprise me' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Worlds home' })).toBeVisible()
+  await expect(page.locator('.panel')).toHaveCSS('margin-top', '0px')
 })
 
 test('the spectrometer reports a real planet with its measured profile', async ({ page }) => {
@@ -92,7 +146,7 @@ test('the spectrometer reports a real planet with its measured profile', async (
   await page.getByRole('button', { name: /Saturn/ }).click()
   await expect(page.getByRole('heading', { name: 'Saturn' })).toBeVisible()
 
-  await page.getByRole('tab', { name: 'Scan' }).click()
+  await openWorldTool(page, 'Analyze')
   await page.getByRole('button', { name: /Run spectrometer on Saturn/ }).click()
 
   // The sweep animation is deliberately ~2.1s before the reading lands.
@@ -160,7 +214,9 @@ test('a system built from your own worlds renders in orbit', async ({ page }) =>
 
   for (let i = 0; i < 3; i++) {
     await page.getByRole('button', { name: /^\+ Add/ }).click()
-    await page.getByRole('button', { name: 'Surprise me' }).click()
+    await page.getByRole('tab', { name: 'Worlds' }).click()
+    await page.getByRole('button', { name: 'Build', exact: true }).click()
+    await page.getByRole('button', { name: 'Random seed' }).click()
     await page.getByRole('tab', { name: 'Systems' }).click()
   }
 
@@ -246,6 +302,8 @@ test('moving Earth to the sixth-planet orbit freezes its water and biosphere', a
     has: page.getByLabel('Name of world 3'),
   })
   await expect(earthEditor.getByLabel('Name of world 3')).toHaveValue('Earth')
+  await expect(earthEditor.getByText(/Green band: modeled liquid-water zone/)).toBeVisible()
+  await expect(earthEditor.getByLabel('Distance')).toHaveAttribute('style', /linear-gradient/)
 
   // The logarithmic distance slider's 0.69 position is 5.33 AU, effectively
   // Jupiter's 5.20 AU sixth-planet orbit for this first-order climate model.
@@ -258,7 +316,7 @@ test('moving Earth to the sixth-planet orbit freezes its water and biosphere', a
   await expect(page.getByRole('heading', { name: 'Earth' })).toBeVisible()
   await awaitGeometry(page)
 
-  await page.getByRole('tab', { name: 'Scan' }).click()
+  await openWorldTool(page, 'Analyze')
   await page.getByRole('button', { name: /Run spectrometer on Earth/ }).click()
   await expect(page.getByText(/globally frozen/)).toBeVisible({ timeout: 15_000 })
   await page.getByRole('button', { name: 'Surface & water' }).click()
@@ -319,7 +377,7 @@ test('a heavier star is drawn as a bigger one', async ({ page }) => {
 test('the gallery degrades gracefully when the API is unavailable', async ({ page }) => {
   await page.route('**/api/worlds*', (r) => r.abort())
   await page.goto('/')
-  await page.getByRole('tab', { name: 'Worlds' }).click()
+  await openWorldTool(page, 'Saved')
   // It must say something useful rather than hanging on a spinner.
   await expect(page.getByText(/Could not reach the gallery|Nothing here yet/)).toBeVisible({
     timeout: 10_000,
@@ -344,7 +402,7 @@ test('each browser asks for its own gallery', async ({ browser }) => {
     })
 
     await page.goto('/')
-    await page.getByRole('tab', { name: 'Worlds' }).click()
+    await openWorldTool(page, 'Saved')
     await expect(page.getByText(/Nothing here yet/)).toBeVisible({ timeout: 10_000 })
 
     await context.close()
@@ -482,7 +540,7 @@ test('Pluto is there, odd orbit and all, and scans as itself', async ({ page }) 
 
   // No photographic map exists for it, so the procedural renderer carries it —
   // and its measured identity survives that, all the way into the spectrometer.
-  await page.getByRole('tab', { name: 'Scan' }).click()
+  await openWorldTool(page, 'Analyze')
   await page.getByRole('button', { name: /Run spectrometer on Pluto/ }).click()
   await expect(page.getByText('Thin nitrogen, seasonally alive')).toBeVisible({ timeout: 15_000 })
 
@@ -521,7 +579,7 @@ test('the Worlds tab aims Add at any saved system, and warns before a duplicate'
   await page.route('**/api/systems*', (r) => r.fulfill({ json: { systems: [fixture] } }))
 
   await page.goto('/')
-  await page.getByRole('tab', { name: 'Worlds' }).click()
+  await openWorldTool(page, 'Saved')
 
   // The default destination is whatever the Systems tab is showing — the
   // read-only Solar System, so Add promises an editable copy and delivers one.
@@ -534,7 +592,7 @@ test('the Worlds tab aims Add at any saved system, and warns before a duplicate'
 
   // Aim at the saved system instead. Testball already orbits there, so Add
   // warns; Cancel stands down.
-  await page.getByRole('tab', { name: 'Worlds' }).click()
+  await openWorldTool(page, 'Saved')
   await page.getByLabel('System to add worlds to').selectOption('stest')
   await page.getByRole('button', { name: 'Add Testball to Fixture System' }).click()
   await expect(page.getByText(/already orbiting in Fixture System/)).toBeVisible()
@@ -577,7 +635,7 @@ test('an ancient world loads whole and scans as a reconstruction', async ({ page
   await expect(page.getByText(/archean world/)).toBeVisible()
 
   // The reconstruction says it is one, in its first breath.
-  await page.getByRole('tab', { name: 'Scan' }).click()
+  await openWorldTool(page, 'Analyze')
   await page.getByRole('button', { name: /Run spectrometer on Archean Earth/ }).click()
   await expect(page.getByText('Reconstructed: anoxic, and orange')).toBeVisible({ timeout: 15_000 })
 
@@ -604,12 +662,40 @@ test('Pandora orbits Polyphemus, and is still a whole world', async ({ page }) =
   await page.getByRole('button', { name: /Pandora/ }).click()
   await expect(page.getByRole('heading', { name: 'Pandora' })).toBeVisible()
 
-  await page.getByRole('tab', { name: 'Scan' }).click()
+  await openWorldTool(page, 'Analyze')
   await page.getByRole('button', { name: /Run spectrometer on Pandora/ }).click()
   await expect(page.getByText('Fiction: rich air, wrong for us')).toBeVisible({ timeout: 15_000 })
 
   await page.getByRole('button', { name: 'Surface & water' }).click()
   await expect(page.getByText('Strong — and networked')).toBeVisible()
+})
+
+test('satellites keep moving in orbit view and in the Worlds parent view', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Systems' }).click()
+  await page.getByRole('button', { name: 'Alpha Centauri A' }).click()
+  await page.getByRole('button', { name: 'Orbit view' }).click()
+  await awaitGeometry(page)
+
+  const orbitPosition = () => page.evaluate(() => document.querySelector('canvas')?.dataset.satelliteOrbit ?? '')
+  await expect.poll(orbitPosition).not.toBe('')
+  const firstOrbitPosition = await orbitPosition()
+  await page.waitForTimeout(450)
+  expect(await orbitPosition()).not.toBe(firstOrbitPosition)
+
+  await page.getByRole('button', { name: 'Body list' }).click()
+  await page.getByRole('button', { name: /Polyphemus/ }).click()
+  await expect(page.getByRole('heading', { name: 'Polyphemus' })).toBeVisible()
+  await awaitGeometry(page)
+
+  const moonPosition = () => page.evaluate(() => document.querySelector('canvas')?.dataset.moonOrbit ?? '')
+  await expect.poll(moonPosition).not.toBe('')
+  const firstMoonPosition = await moonPosition()
+  await page.waitForTimeout(450)
+  expect(await moonPosition()).not.toBe(firstMoonPosition)
+
+  await page.getByRole('button', { name: 'Worlds home' }).click()
+  await expect(page.getByRole('button', { name: 'Saved', exact: true })).toHaveAttribute('aria-pressed', 'true')
 })
 
 test('the moons toggle drops every satellite from the orbit view', async ({ page }) => {
@@ -677,7 +763,7 @@ test('a moon is a world you can visit and scan', async ({ page }) => {
 
   // It arrives as a world in its own right, scanning from measured prose
   // rather than from the sliders.
-  await page.getByRole('tab', { name: 'Scan' }).click()
+  await openWorldTool(page, 'Analyze')
   await page.getByRole('button', { name: /Run spectrometer on Europa/ }).click()
   await expect(page.getByText('Thin oxygen, made by radiation')).toBeVisible({ timeout: 15_000 })
 
@@ -685,10 +771,12 @@ test('a moon is a world you can visit and scan', async ({ page }) => {
   await page.getByRole('button', { name: 'Surface & water' }).click()
   await expect(page.getByText('a global ocean, under the ice')).toBeVisible()
 
-  // Reseeding detaches it into an ordinary icy world, exactly like Pluto.
-  await page.getByRole('tab', { name: 'Sculpt' }).click()
+  // The measured moon stays immutable. Its clone is a new icy world that can
+  // be reseeded and no longer receives Europa's canonical reading.
+  await openWorldTool(page, 'Build')
+  await page.getByRole('button', { name: 'Clone Europa to build' }).click()
   await page.getByLabel('Seed', { exact: true }).fill('12345')
-  await page.getByRole('tab', { name: 'Scan' }).click()
+  await openWorldTool(page, 'Analyze')
   await page.getByRole('button', { name: /Run spectrometer on Europa/ }).click()
   await expect(page.getByText('Thin oxygen, made by radiation')).toHaveCount(0, { timeout: 15_000 })
 })

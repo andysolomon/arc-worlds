@@ -25,7 +25,7 @@ interface Props {
   onVisit: (index: number) => void
   /** Select or replace the active system. */
   onSystem: (def: SystemDef) => void
-  /** Drop the world currently in the sculptor into this system. */
+  /** Drop the world currently in the Worlds builder into this system. */
   onAddCurrent: () => void
   /** Roll a new world of a given type — or of any type — straight into orbit. */
   onAddRolled: (preset?: PresetKey) => void
@@ -36,6 +36,8 @@ interface Props {
   /** Another world like the one at this index, further out. */
   onDuplicate: (index: number) => void
   currentWorld: string
+  /** Built-in reference worlds must be cloned before entering a system. */
+  canAddCurrent: boolean
   worlds: SavedWorld[]
   worldsError: string | null
   onSave: () => void
@@ -109,6 +111,7 @@ export function SystemsPanel(props: Props) {
   const {
     system, view, sizeMode, display, onDisplay, onDisplaySet, onView, onSizeMode, onVisit,
     onSystem, onAddCurrent, onAddRolled, onAddSaved, onAddMoon, onDuplicate, currentWorld,
+    canAddCurrent,
     worlds, worldsError, onSave, saving, savedSlug, systems, systemsLoading,
     systemsError, onOpenSaved,
   } = props
@@ -431,7 +434,7 @@ export function SystemsPanel(props: Props) {
                 </div>
                 <div className="note" style={{ marginTop: 10 }}>
                   Each of these rolls a whole new world and puts it in orbit outside everything
-                  already here — no trip through the sculptor. Every world is still yours to
+                  already here — no trip through the builder. Every world is still yours to
                   reshape afterwards: click it in the body list to open it up.
                 </div>
               </>
@@ -439,8 +442,15 @@ export function SystemsPanel(props: Props) {
           </div>
 
           {!full && (
-            <button className="btn-primary" type="button" onClick={onAddCurrent}>
-              + Add “{currentWorld}” from the sculptor
+            <button
+              className="btn-primary"
+              type="button"
+              disabled={!canAddCurrent}
+              onClick={onAddCurrent}
+            >
+              {canAddCurrent
+                ? `+ Add “${currentWorld}” from Worlds`
+                : `Clone “${currentWorld}” in Worlds before adding`}
             </button>
           )}
 
@@ -451,7 +461,7 @@ export function SystemsPanel(props: Props) {
                 <p className="empty">Could not reach the gallery. {worldsError}</p>
               ) : worlds.length === 0 ? (
                 <p className="empty">
-                  Nothing saved yet. Save a world from the sculptor and it will show up here.
+                  Nothing saved yet. Save a world from Worlds and it will show up here.
                 </p>
               ) : (
                 worlds.map((w) => (
@@ -561,6 +571,11 @@ export function SystemsPanel(props: Props) {
                 <Slider
                   name={b.orbits ? `Distance from ${b.orbits}` : 'Distance'}
                   value={b.orbits ? SAT_DIST.to(b.a) : DIST.to(b.a)}
+                  band={b.orbits ? undefined : {
+                    start: DIST.to(climateForBody(system, b).habitableZoneInnerAU),
+                    end: DIST.to(climateForBody(system, b).habitableZoneOuterAU),
+                    label: `Green band: modeled liquid-water zone for ${system.star.name}`,
+                  }}
                   format={() =>
                     b.orbits
                       ? `${fmtMoonDist(b.a, parentOf(b)?.radius ?? 1)} · ${fmtPeriod(b.period)}`
@@ -572,7 +587,8 @@ export function SystemsPanel(props: Props) {
                   {formatClimate(climateForBody(system, b))} ·{' '}
                   {climateForBody(system, b).inHabitableZone ? 'inside' : 'outside'} habitable zone{' '}
                   {climateForBody(system, b).habitableZoneInnerAU.toFixed(2)}–
-                  {climateForBody(system, b).habitableZoneOuterAU.toFixed(2)} AU
+                  {climateForBody(system, b).habitableZoneOuterAU.toFixed(2)} AU. Moving the world
+                  recalculates stellar flux, temperature, liquid water, polar ice, and vegetation.
                 </div>
                 <Slider
                   name="Size"

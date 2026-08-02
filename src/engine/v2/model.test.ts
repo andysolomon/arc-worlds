@@ -95,6 +95,23 @@ describe('the canonical v2 terrain model', () => {
       // re-timed is a different terrain and has to compile again.
       axialTiltDeg: 23.44,
       dayHours: 23.934,
+      terrainType: 'fractal',
+      terrainAmplitude: 1,
+      terrainSharpness: 2.6,
+      terrainOffset: 0,
+      terrainPeriod: 0.6,
+      terrainPersistence: 0.48,
+      terrainLacunarity: 1.8,
+      terrainOctaves: 6,
+      terrainLayers: [
+        { transition: 0, blend: 0.2, color: 0x123a61 },
+        { transition: 0.22, blend: 0.3, color: 0x2b7f7d },
+        { transition: 0.46, blend: 0.36, color: 0x78ad58 },
+        { transition: 0.68, blend: 0.26, color: 0x8d8069 },
+        { transition: 0.86, blend: 0.2, color: 0xe6ebe2 },
+      ],
+      bumpStrength: 0.72,
+      bumpOffset: 0.001,
     })
 
     const frozen = createTerrainV2Model({

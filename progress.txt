@@ -1439,3 +1439,176 @@ VERIFIED
 - bun run typecheck, lint
 - bun run test: 200 passed, 11 of them new
 - bun run test:e2e: 36 passed
+
+2026-08-01 natural terrestrial cloud systems
+
+FIXED
+- Pandora's cloud shell was being driven by only four low-frequency sine
+  waves. Their smooth lobes crossed the alpha threshold together and produced
+  the giant solid white islands in the reported screenshot.
+- V2 clouds now use a compiled, seed-stable 3D weather field: low-frequency
+  domain warping bends fronts; independent synoptic, billow, wisp, and weak
+  circulation layers break them into nested systems; a convex optical-depth
+  response keeps most margins translucent instead of turning them white.
+- The detailed shell and orbit artifact sample the same field and share the
+  same opacity policy. Orbit uses a filtered 64×32 weather raster because its
+  planets are only tens of pixels across; the focused shell keeps 512×256.
+- The cloud shell is Lambert-lit rather than unlit. Clouds now dim around the
+  terminator and across the night side instead of emitting uniform white.
+- Added a deterministic Pandora morphology contract: 30–70% visible weather,
+  over 35% translucent edge area, under 5% fully opaque area, and enough local
+  variation to prevent smooth continent-scale blobs. The existing exact sample
+  parity contract now exercises the compiled field directly.
+- Added a local Pandora visual regression scene and inspected its baseline:
+  terrain remains visible between broken fronts, and night-side systems fall
+  into shadow. The ignored per-GPU baseline is local by repository policy.
+
+PERFORMANCE
+- Sampling the expensive field at every 256×128 orbit texel initially moved
+  24-world preview settlement to 1,353.6 ms. Sampling that identical continuous
+  field at orbit-visible resolution brought the three-run median to 907.3 ms:
+  +1.3% from the immediately preceding 896.0 ms phase and +5.1% from the
+  original 862.9 ms research baseline, inside the 10% rule.
+- Focused detail settled in 109.6 ms, worker artifact work in 1,051.2 ms, and
+  the longest synchronous artifact in 57.1 ms. Main-thread long tasks stayed
+  at 0 ms; transfers, cache bytes, stale acceptance, and errors were unchanged.
+
+VERIFIED
+- bun run typecheck
+- bun run lint
+- focused Vitest: 11 artifact/bake tests passed
+- targeted Pandora visual regression: passed and inspected
+- bun run perf:terrain: all three runs passed every gate
+
+2026-08-01 Worlds is the world-building workspace
+
+CHANGED
+- The top level now has two destinations: Worlds and Systems. The former
+  Sculpt and Scan tabs are gone. Worlds opens by default and contains three
+  focused tools: Build, Analyze, and Saved.
+- Build contains every world-shaping control and save/share action that was in
+  Sculpt. Analyze contains the complete spectrometer and modeled orbital
+  climate. Saved contains the private world gallery and system destination
+  picker. World links, Surprise me, planet visits, moon visits, and gallery
+  opens all land in the appropriate Worlds tool.
+- Panel scroll resets when its destination or reference/edit state changes. A
+  planet visited from a long Systems editor now opens with its explanation and
+  primary action visible instead of inheriting a halfway-down scroll offset.
+
+REFERENCE WORLDS
+- Canonical Solar System planets, ancient reconstructions, fiction worlds, and
+  measured moons are now immutable Little Worlds originals. This remains true
+  after duplicating their system to move its orbits: changing the system does
+  not silently grant permission to rewrite Earth or Pandora.
+- A reference world can still be viewed, analyzed, and used to visit its moons.
+  Name, seed, type, terrain, atmosphere, spin, rings, and save controls are
+  disabled, and Systems refuses to add the un-cloned current reference.
+- Clone to build makes a new standalone member of the same planet family with
+  a new current-generation procedural seed and no canonical photo/cloud maps.
+  It immediately lands in Worlds → Build, editable and ready to save or add to
+  any system. The original remains byte-for-byte untouched.
+
+ORBITAL SCIENCE
+- Stellar distance sliders now paint the star-specific conservative
+  liquid-water habitable zone as a green interval and label what it means.
+  The adjacent reading states the actual zone edges and whether the planet is
+  inside or outside them.
+- Moving a body still recomputes its year through Kepler's law and feeds the
+  first-order astrophysics model: luminosity and eccentricity determine flux;
+  albedo and atmosphere determine equilibrium/greenhouse temperature; those
+  drive liquid water, polar frost, vegetation potential, cloud coverage, v2
+  surface artifacts, and spectrometer results. The UI now says this at the
+  control where the causal change is made.
+
+VERIFIED
+- bun run typecheck
+- bun run lint
+- bun run test: 192 passed across 19 files
+- bun run test:e2e: 38 passed, including the two-tab workspace, immutable Earth
+  clone (inside an editable Solar System copy), habitable-zone
+  band/Jupiter-distance freeze, spectrometer relocation, and Europa
+  clone/reseed
+- bun run build
+- bun run size:check: passed; entry 252,987 B gzip of 256,000 B, bake worker
+  93,835 B raw, v2 worker 36,480 B raw
+- Targeted Pandora visual regression: passed against the inspected natural-
+  cloud baseline
+- Browser captures inspected for Worlds → Build, reference Earth → Clone, and
+  the Earth distance/habitable-zone control
+- bun run perf:terrain: three-run 24-world median 907.3 ms, every gate passed
+- bun run perf:smoke: 279 ms first Orbit frame, 32 ms interaction, 221 ms
+  longest software task, 2 shader programs, 23.3 fps, zero paused work/errors
+- bun run perf:engines: WebKit / Apple GPU 38 ms and headed Chromium / Apple
+  GPU 44 ms, zero frames over 50 ms, 55,920 triangles in both
+
+2026-08-01 external procedural-planet reference boundary
+
+- Narrowed the `threejs-procedural-planets` influence to the three surface
+  systems selected in product review: Terrain, smooth elevation Layers, and
+  Bump Mapping.
+- Mapped those concepts to Arc Worlds' existing worker-owned v2 pipeline:
+  canonical scientific geography plus local fractal relief, blended
+  climate/ecosystem colour layers, and a precomputed normal map transferred to
+  the detailed `MeshStandardMaterial`.
+- Explicitly excluded that demo's clouds, lighting, atmosphere, bloom,
+  complete shader material, and continuous render loop. Arc Worlds' current
+  cloud field is independently authored, seed-stable, and climate-driven; its
+  lighting and atmosphere remain native systems that we will evolve ourselves.
+- This correction changes documentation and provenance boundaries only. It
+  adds no render loop, worker task, material variant, texture upload, or bundle
+  dependency, so the previously verified performance measurements are
+  unchanged.
+
+2026-08-01 Worlds and planetary-surfaces production release
+
+DELIVERED
+- Rebased the complete natural-cloud, Worlds workspace, immutable-reference,
+  habitable-zone, and procedural-surface-boundary change onto the current
+  `origin/main`, preserving the latitude-band climate work already merged.
+- Production verification passed: typecheck, lint, 203 unit tests, production
+  build, and bundle budgets. The post-rebase browser run passed 37 of 38 in
+  parallel; its one stale-diagnostic timing miss passed immediately in an
+  isolated rerun and had passed in the preceding clean full-suite run.
+- Deployed the release to the configured Vercel production project in `iad1`.
+  The stable production alias is https://little-worlds-delta.vercel.app.
+- The branch remains local because this request authorized build, commit, and
+  deployment but did not request a GitHub push.
+
+2026-08-01 Fine procedural surface controls and Worlds navigation
+
+CHANGED
+- Added a detailed Terrain section to Worlds → Build with selectable fractal,
+  ridged, and plate-like relief plus amplitude, sharpness, offset, period,
+  persistence, lacunarity, and octave controls.
+- Added five editable elevation Layers (transition, blend, colour, and RGB)
+  and Bump Mapping strength/offset controls. All values are sanitized, included
+  in v2 worker/material invalidation keys, and remain separate from the native
+  cloud, lighting, and atmosphere systems.
+- Removed the global Surprise me button, made the desktop Worlds sidebar full
+  height, and added a Worlds home action that returns from a planet editor to
+  the collection.
+- Kept system satellites moving when their parent is opened in Worlds by
+  mapping system children into the existing Kepler moon integrator.
+- Updated the terrain-generation exploration notes so the v1/v2 worker boundary
+  and the expanded invalidation keys match the implementation.
+- After CI exposed a compressor-sensitive entry overage, split the dense Worlds
+  builder into a lazy chunk. The entry now measures 252,669 B gzip locally and
+  the builder chunk 3,084 B gzip, both inside their checked-in budgets.
+
+VERIFIED
+- bun run typecheck
+- bun run lint
+- bun run test: 203 passed across 19 files
+- bun run build
+- bun run size:check: passed; entry 254,997 B gzip, terrain worker 39,632 B,
+  bake worker 93,835 B
+- bun run test:e2e: 40 passed, including fine controls, Worlds home, and
+  satellite motion in orbit and parent-world views
+- bun run perf:smoke: passed local browser budgets (three orbit shader
+  programs, zero paused work, zero renderer errors)
+- bun run perf:terrain: three runs passed every worker/artifact gate; median
+  preview settlement 1,021.9 ms, focused settlement 120.7 ms, zero main-thread
+  long-task time, and no obsolete artifact accepted
+- Focused Playwright navigation/control/orbit checks: 3 passed
+- Follow-up bun run perf:smoke: passed with 3 orbit shader programs, 0 paused
+  frames, and 0 renderer errors

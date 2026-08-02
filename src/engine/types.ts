@@ -6,6 +6,19 @@ export const LEGACY_GENERATOR_VERSION = 1 as const
 export const CURRENT_GENERATOR_VERSION = 2 as const
 export type GeneratorVersion = typeof LEGACY_GENERATOR_VERSION | typeof CURRENT_GENERATOR_VERSION
 
+/** Procedural terrain families exposed by the detailed Worlds builder. */
+export type TerrainNoiseType = 'fractal' | 'ridged' | 'plates'
+
+/** One elevation-colour layer in the worker-owned surface ramp. */
+export interface TerrainLayer {
+  /** Normalized elevation at which this layer begins. */
+  transition: number
+  /** How strongly the layer tints the generated palette. */
+  blend: number
+  /** sRGB hex colour, e.g. 0x78ad58. */
+  color: number
+}
+
 /** The complete description of a world. Everything else is derived from this. */
 export interface PlanetParams {
   /** Which deterministic terrain generator interprets this world's seed. */
@@ -37,6 +50,19 @@ export interface PlanetParams {
   /** Set only when showing a real planet's photographic map. */
   texture?: string | null
   cloudTexture?: string | null
+  /** Fine-grained v2 terrain controls. Older payloads use their defaults. */
+  terrainType?: TerrainNoiseType
+  terrainAmplitude?: number
+  terrainSharpness?: number
+  terrainOffset?: number
+  terrainPeriod?: number
+  terrainPersistence?: number
+  terrainLacunarity?: number
+  terrainOctaves?: number
+  terrainLayers?: TerrainLayer[]
+  /** Detailed normal-map controls, applied by the worker and material. */
+  bumpStrength?: number
+  bumpOffset?: number
   /** Render controls, not part of a world's identity. */
   mode?: 'single' | 'system'
   sizeMode?: 'same' | 'scale'

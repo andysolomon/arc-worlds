@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 
 export function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -10,14 +10,23 @@ export function Field({ label, children }: { label: string; children: ReactNode 
 }
 
 export function Slider({
-  name, value, onChange, disabled, format,
+  name, value, onChange, disabled, format, band,
 }: {
   name: string
   value: number
   onChange: (v: number) => void
   disabled?: boolean
   format?: (v: number) => string
+  /** Optional highlighted interval on the slider's normalized 0–1 scale. */
+  band?: { start: number; end: number; label: string }
 }) {
+  const bandStart = Math.max(0, Math.min(1, Math.min(band?.start ?? 0, band?.end ?? 0)))
+  const bandEnd = Math.max(0, Math.min(1, Math.max(band?.start ?? 0, band?.end ?? 0)))
+  const rangeStyle = band
+    ? ({
+        '--range-track': `linear-gradient(to right, #e6d9c6 0%, #e6d9c6 ${bandStart * 100}%, #74cfa5 ${bandStart * 100}%, #74cfa5 ${bandEnd * 100}%, #e6d9c6 ${bandEnd * 100}%, #e6d9c6 100%)`,
+      } as CSSProperties)
+    : undefined
   return (
     <div>
       <div className="slider-head">
@@ -32,8 +41,15 @@ export function Slider({
         value={value}
         disabled={disabled}
         aria-label={name}
+        style={rangeStyle}
         onChange={(e) => onChange(Number(e.target.value))}
       />
+      {band && (
+        <div className="range-legend">
+          <span className="range-legend-dot" />
+          {band.label}
+        </div>
+      )}
     </div>
   )
 }

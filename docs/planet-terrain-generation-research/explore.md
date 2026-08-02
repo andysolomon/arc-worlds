@@ -9,14 +9,14 @@
 ## Current generation pipeline
 
 - Terrain is seeded 3D simplex FBM sampled by unit-sphere direction. Rocky elevation combines a continental field and a ridged field; gas worlds use latitude bands plus noise (`src/engine/noise.ts:23-91`, `src/engine/surface.ts:52-131`).
-- Standard detailed terrain is a 150×104 UV sphere and high detail is 220×150. A surface-affecting change synchronously samples every vertex, updates position and color buffers, and recomputes normals on the main thread (`src/engine/viewport.ts:764-775`, `src/engine/viewport.ts:1905-1957`).
+- Standard detailed terrain is a 150×104 UV sphere and high detail is 220×150. The preserved v1 path synchronously samples every vertex, updates position and color buffers, and recomputes normals on the main thread (`src/engine/viewport.ts:764-775`, `src/engine/viewport.ts:1905-1957`). Current-generation worlds use the v2 worker compiler for canonical terrain and transfer the detailed position, colour, and normal artifacts back to the viewport.
 - Flat/orbit textures are 256×128 and cloud maps are 384×192. Their pixel loops run in a module worker and transfer the RGBA buffer back without copying (`src/engine/bake.ts:1-15`, `src/engine/bake.worker.ts:23-36`).
 - Orbit view shares one 48×32 sphere geometry for all planets and bakes procedural appearance into textures. This is intentionally cheaper than displaced geometry and separate shells for many bodies (`src/engine/bake.ts:23-28`, `src/engine/viewport.ts:910-914`).
 - Photographic maps can drive a 512×256 luminance-derived height field for detailed real planets; this work currently uses a browser canvas (`src/engine/heightfield.ts:17-79`).
 
 ## Invalidation, lifecycle, and performance constraints
 
-- Surface invalidation is narrow: detail, seed, preset, mountains, water, roughness, and ice. Lighting, animation, clouds, labels, and other presentation state do not force vertex regeneration (`src/engine/viewport.ts:109-132`).
+- Surface invalidation is narrow: v1 detail, seed, preset, mountains, water, roughness, and ice; v2 also includes the explicit Terrain noise controls, five Layers, and Bump Mapping values. Lighting, animation, clouds, labels, and other presentation state do not force terrain regeneration (`src/engine/viewport.ts:196-227`).
 - Worker jobs are generation-tagged/latest-wins, stale results are ignored, and workers, textures, geometries, materials, observers, and listeners are explicitly disposed (`src/engine/viewport.ts:600-625`, `src/engine/viewport.ts:917-1025`).
 - Rendering is capped near 30 fps for passive motion and stops while paused, hidden, or offscreen. The current measured real-GPU transition stall is 31–38 ms (`IMPLEMENTATION_PLAN.md:248-313`).
 - Enforced budgets include a 256 KB gzip entry, 100 KB raw worker, ≤200 ms local interaction duration, ≤4 shader programs added during Orbit transition, and zero paused frames (`performance-budget.json:1-58`).

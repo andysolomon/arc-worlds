@@ -98,11 +98,16 @@ async function visitPlanet(page: Page, name: string) {
   await page.getByRole('button', { name: new RegExp(name) }).click()
 }
 
+async function openWorldBuilder(page: Page) {
+  await page.getByRole('tab', { name: 'Worlds' }).click()
+  await page.getByRole('button', { name: 'Build', exact: true }).click()
+}
+
 test('a real planet in detail wears its own map', async ({ page }) => {
   // The bug this catches: the rich view discarding the photograph and
   // inventing continents from the seed.
   await visitPlanet(page, 'Earth')
-  await page.getByRole('tab', { name: 'Sculpt' }).click()
+  await openWorldBuilder(page)
   await shot(page, 'earth-detailed.png')
 })
 
@@ -110,7 +115,7 @@ test('a small rocky world reads as a planet, not an asteroid', async ({ page }) 
   // The bug this catches: relief amplitude high enough to make the silhouette
   // visibly lumpy.
   await visitPlanet(page, 'Mercury')
-  await page.getByRole('tab', { name: 'Sculpt' }).click()
+  await openWorldBuilder(page)
   await shot(page, 'mercury-detailed.png')
 })
 
@@ -145,4 +150,14 @@ test('a moon shows the planet it orbits, clear of it', async ({ page }) => {
   await visitPlanet(page, 'Jupiter')
   await page.getByRole('button', { name: 'Europa', exact: true }).click()
   await shot(page, 'europa-with-jupiter.png')
+})
+
+test('Pandora has broken weather fronts instead of glowing white continents', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Systems' }).click()
+  await page.getByRole('button', { name: 'Alpha Centauri A' }).click()
+  await page.getByRole('button', { name: 'Body list' }).click()
+  await page.getByRole('button', { name: /Pandora/ }).click()
+  await openWorldBuilder(page)
+  await shot(page, 'pandora-clouds.png')
 })

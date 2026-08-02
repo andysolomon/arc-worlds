@@ -8,7 +8,7 @@ import * as THREE from 'three'
 import { isGas, PALETTES } from './palettes'
 import { cloudAt, makeSurface, noiseFor } from './surface'
 import type { PlanetParams } from './types'
-import { v2CloudCoverage, v2CloudMask } from './v2/clouds'
+import { createV2CloudField, sampleV2CloudMask, v2CloudCoverage } from './v2/clouds'
 
 export const WORLD_BAKE_WIDTH = 256
 export const WORLD_BAKE_HEIGHT = 128
@@ -85,6 +85,7 @@ export function bakeCloudPixels(
   const { nc } = noiseFor(seed | 0)
   const data = new Uint8Array(width * height * 4)
   const v2Coverage = v2CloudCoverage(cover, liquidWater)
+  const v2Field = style === 'v2' ? createV2CloudField(seed) : null
 
   for (let y = 0; y < height; y++) {
     const phi = ((y + 0.5) / height) * Math.PI
@@ -96,7 +97,7 @@ export function bakeCloudPixels(
       const sy = cp
       const sz = sp * Math.sin(theta)
       const a = style === 'v2'
-        ? v2CloudMask(seed, v2Coverage, sx, sy, sz)
+        ? sampleV2CloudMask(v2Field!, v2Coverage, sx, sy, sz)
         : cloudAt(nc, cover, sx, sy, sz)
       const o = (y * width + x) * 4
       data[o] = 255

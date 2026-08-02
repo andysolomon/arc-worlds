@@ -11,7 +11,10 @@ The best long-term direction is a hybrid that keeps Arc Worlds' existing rendere
 1. **Keep Arc Worlds as the runtime foundation**: compact seeded params, worker-backed baking, flat/detailed tiers, shared Orbit geometry, narrow invalidation, caching, disposal, and render suspension.
 2. **Keep the current synchronous `Surface` unchanged for v1 worlds.** A graph-backed v2 cannot hide behind its allocation-free `sample(direction)` API; it needs a separate asynchronous worker compiler that emits flat and detailed artifacts from one canonical world model.
 3. **Adapt the proven parts of Mapgen4 selectively**: typed graph storage, mountain distance fields, downslope ordering, accumulated flow, rainfall ideas, and art-directed tuning. Spherical continents, plate behavior, wind, and climate remain new Arc Worlds design work rather than validated Mapgen4 features.
-4. **Borrow selected visual techniques from `threejs-procedural-planets`**: smoother elevation-layer blending and optional precomputed normal detail. Do not adopt its complete shader, atmosphere, bloom, or animation loop.
+4. **Use `threejs-procedural-planets` as a reference for only three surface
+   systems**: Terrain, smooth elevation Layers, and Bump Mapping through
+   precomputed normal detail. Do not adapt its clouds, lighting, atmosphere,
+   bloom, complete shader, or animation loop. Arc Worlds owns those systems.
 5. **Do not incorporate `prolearner/procedural-planet`**. Its quadtree and triplanar ideas are useful references only if Arc Worlds later adds close surface flight.
 
 This is the most promising route because Mapgen4 supplies useful **geographic building blocks**, the Three.js demo shows **how relief can read attractively**, and the current Arc Worlds engine already solves **how this product must run**. Keeping the current engine unchanged remains the lower-risk choice until a prototype proves the hybrid's bundle and runtime costs.
@@ -53,14 +56,18 @@ Sources:
 - [Repository](https://github.com/dgreenheck/threejs-procedural-planets)
 - [Live demo](https://dgreenheck.github.io/threejs-procedural-planets/)
 
-What it does well:
+The only in-scope ideas:
 
-- Direct Three.js fit and a strong first impression.
-- A compact 128×128 sphere with GPU vertex displacement.
-- Simplex, fractal, and ridged-fractal terrain modes.
-- Five elevation-color layers with adjustable transition widths.
-- Bump normals are reconstructed from nearby height samples, giving relief more visual detail than geometry alone.
-- MIT licensed.
+- **Terrain:** simplex/fractal relief and its shaping parameters.
+- **Layers:** five elevation-color layers with adjustable transition widths.
+- **Bump Mapping:** normals reconstructed from nearby height samples, giving
+  relief more visual detail than geometry alone.
+
+Everything else in the demo is out of scope. In particular, its cloud,
+lighting, particle-atmosphere, bloom, shader-runtime, and animation-loop
+implementations must not become Arc Worlds dependencies. The repository is MIT
+licensed, but this boundary is an architectural and art-direction decision,
+not merely a licensing decision.
 
 Why it should not become Arc Worlds' terrain engine:
 
@@ -177,7 +184,10 @@ Generate:
 - **Orbit/flat:** preserve one shared smooth sphere geometry and the existing 256×128-style baked map. Do not add displaced geometry, river meshes, cloud particles, or unique shader topology per body.
 - **Detailed first version:** upload worker-produced position, vertex-color, and normal buffers into the existing geometry and retain `MeshStandardMaterial`. This removes main-thread sampling and normal recomputation without introducing a new shader.
 - A normal map/custom shader is a later measured enhancement, not part of the first architecture. It introduces extra samplers, uploads, and a detailed-view program variant.
-- Keep water, clouds, and atmosphere as the existing lazy shells. Do not import the demo's particle atmosphere or bloom.
+- Keep water, independently authored climate-driven clouds, lighting, and
+  atmosphere in Arc Worlds' existing lazy rendering systems. Do not import or
+  translate the demo's cloud, light, particle-atmosphere, bloom, or render-loop
+  code.
 - Add rivers primarily to the color/normal output. Only add separate river geometry if a visual prototype proves it is visible at the current camera distance.
 - Keep shader warmup scoped to the active subtree and preserve the Orbit limit of four added programs. Add a separate detailed-view shader/program metric if a custom material is ever introduced.
 
@@ -205,12 +215,15 @@ From Mapgen4:
 - rainfall and rain-shadow concepts;
 - attractive rather than over-physical tuning.
 
-From dgreenheck:
+From dgreenheck, and only at the level of these three surface concepts:
 
-- ridged-fractal option for local relief;
-- smooth elevation-layer transitions;
-- fine normal detail;
-- interactive art-direction controls.
+- **Terrain:** fractal and ridged-fractal local relief controls;
+- **Layers:** smooth elevation-color transitions and art-directed palettes;
+- **Bump Mapping:** fine normal detail derived from nearby height samples.
+
+Do not borrow clouds, lighting, atmosphere, bloom, post-processing, or the
+continuous rendering architecture. Arc Worlds will develop and validate those
+independently against its climate model and performance budgets.
 
 From prolearner:
 
