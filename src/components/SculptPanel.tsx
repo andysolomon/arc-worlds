@@ -188,8 +188,9 @@ export function SculptPanel({
           </div>
           <div className="note" style={{ marginTop: 10 }}>
             The seed still defines the geography. These controls shape its elevation field,
-            while Layers colours the result and Bump Mapping adds local relief without moving
-            coastlines or changing the climate model.
+            while Layer 1 sets the base surface colour, later Layers blend across elevation
+            transitions, and Bump Mapping adds local relief without moving coastlines or
+            changing the climate model.
           </div>
           <Slider
             name="Amplitude"
@@ -249,18 +250,22 @@ export function SculptPanel({
                 <details className="layer-editor" key={index} open={index === 0}>
                   <summary>Layer {index + 1}</summary>
                   <div className="layer-editor-body">
-                    <Slider
-                      name="Transition point"
-                      value={layer.transition}
-                      disabled={fineDisabled}
-                      onChange={(v) => updateLayer(index, { transition: v })}
-                    />
-                    <Slider
-                      name="Blend factor"
-                      value={layer.blend}
-                      disabled={fineDisabled}
-                      onChange={(v) => updateLayer(index, { blend: v })}
-                    />
+                    {index > 0 && (
+                      <>
+                        <Slider
+                          name="Transition point"
+                          value={layer.transition}
+                          disabled={fineDisabled}
+                          onChange={(v) => updateLayer(index, { transition: v })}
+                        />
+                        <Slider
+                          name={`Blend factor (${index}->${index + 1})`}
+                          value={layer.blend}
+                          disabled={fineDisabled}
+                          onChange={(v) => updateLayer(index, { blend: v })}
+                        />
+                      </>
+                    )}
                     <label className="color-field">
                       <span>Layer colour</span>
                       <input

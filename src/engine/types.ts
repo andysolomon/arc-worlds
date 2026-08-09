@@ -13,7 +13,7 @@ export type TerrainNoiseType = 'fractal' | 'ridged' | 'plates'
 export interface TerrainLayer {
   /** Normalized elevation at which this layer begins. */
   transition: number
-  /** How strongly the layer tints the generated palette. */
+  /** How wide the transition into this layer should be, on a normalized scale. */
   blend: number
   /** sRGB hex colour, e.g. 0x78ad58. */
   color: number

@@ -182,6 +182,19 @@ describe('the canonical v2 terrain model', () => {
     }
   })
 
+  it('keeps authored elevation layers ordered in the model snapshot', () => {
+    const model = createTerrainV2Model({
+      ...DEFAULT_PARAMS,
+      generatorVersion: 2,
+      terrainLayers: DEFAULT_PARAMS.terrainLayers!.map((layer, index) => ({
+        ...layer,
+        transition: index === 0 ? 0.9 : index === 1 ? 0.1 : layer.transition,
+      })),
+    }, { graph: TEST_GRAPH })
+
+    expect(model.params.terrainLayers.map((layer) => layer.transition)).toEqual([0, 0.1, 0.46, 0.68, 0.86])
+  })
+
   it('uses the same stable model contract for gas worlds without invented drainage', () => {
     const gas = createTerrainV2Model({ ...DEFAULT_PARAMS, preset: 'gasAmber', seed: 2_024 }, { graph: TEST_GRAPH })
     expect(gas.gas).toBe(true)

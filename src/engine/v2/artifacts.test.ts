@@ -238,4 +238,33 @@ describe('v2 render artifacts', () => {
       terrainV2FlatArtifactKey(model, FLAT_WIDTH, FLAT_HEIGHT, { clouds: 1, cloudSeed: DEFAULT_PARAMS.seed + 1 }),
     )
   })
+
+  it('applies every authored layer control to the rendered surface', () => {
+    const base = { ...DEFAULT_PARAMS, generatorVersion: 2 as const }
+    const baseline = deriveV2FlatArtifact(createTerrainV2Model(base, { graph: TEST_GRAPH }), FLAT_WIDTH, FLAT_HEIGHT)
+    const variants = [
+      base.terrainLayers!.map((layer, index) => index === 1 ? { ...layer, transition: 0.8 } : { ...layer }),
+      base.terrainLayers!.map((layer, index) => index === 2 ? { ...layer, blend: 1 } : { ...layer }),
+      base.terrainLayers!.map((layer, index) => index === 3 ? { ...layer, color: 0xff2040 } : { ...layer }),
+    ]
+
+    for (const terrainLayers of variants) {
+      const artifact = deriveV2FlatArtifact(
+        createTerrainV2Model({ ...base, terrainLayers }, { graph: TEST_GRAPH }),
+        FLAT_WIDTH,
+        FLAT_HEIGHT,
+      )
+      expect(artifact.rgba).not.toEqual(baseline.rgba)
+    }
+
+    const detailed = deriveV2DetailedArtifact(
+      createTerrainV2Model({ ...base, terrainLayers: variants[2] }, { graph: TEST_GRAPH }),
+      { widthSegments: DETAIL_WIDTH, heightSegments: DETAIL_HEIGHT },
+    )
+    const baselineDetailed = deriveV2DetailedArtifact(
+      createTerrainV2Model(base, { graph: TEST_GRAPH }),
+      { widthSegments: DETAIL_WIDTH, heightSegments: DETAIL_HEIGHT },
+    )
+    expect(detailed.colors).not.toEqual(baselineDetailed.colors)
+  })
 })

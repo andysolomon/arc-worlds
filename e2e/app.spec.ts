@@ -73,13 +73,26 @@ test('the Worlds builder exposes fine terrain, layer, and bump controls', async 
   await expect(page.getByText('Bump Mapping', { exact: true })).toBeVisible()
   await expect(page.getByLabel('Amplitude')).toBeVisible()
   await expect(page.getByLabel('Octaves')).toBeVisible()
-  await expect(page.getByLabel('Transition point')).toHaveCount(5)
+  await expect(page.getByLabel('Transition point')).toHaveCount(4)
   await expect(page.getByLabel('Red')).toHaveCount(5)
 
   await page.getByRole('button', { name: 'Ridged', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Ridged', exact: true })).toHaveAttribute('aria-pressed', 'true')
   await page.getByLabel('Bump strength').fill('1')
   await expect(page.getByLabel('Bump strength')).toHaveValue('1')
+})
+
+test('layer edits invalidate the visible surface artifact', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByText('Terrain detail', { exact: true })).toBeVisible()
+  await expect.poll(() => page.locator('canvas').getAttribute('data-surface-artifact'), { timeout: 30_000 }).not.toBeNull()
+
+  const before = await page.locator('canvas').getAttribute('data-surface-artifact')
+  await page.getByLabel('Red').first().fill('1')
+  await expect.poll(
+    () => page.locator('canvas').getAttribute('data-surface-artifact'),
+    { timeout: 30_000 },
+  ).not.toBe(before)
 })
 
 test('pause lets the renderer go idle', async ({ page }) => {

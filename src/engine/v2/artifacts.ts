@@ -248,7 +248,15 @@ export function sampleV2SurfaceInto(
   return out
 }
 
-/** Apply the user-authored elevation ramp after the scientific biome pass. */
+/**
+ * Apply the user-authored elevation ramp after the scientific biome pass.
+ *
+ * `transition` chooses where a layer starts and `blend` controls the width of
+ * the hand-off from the preceding layer. The ramp is deliberately applied as
+ * a strong tint rather than replacing the biome colour: water, ice, moisture,
+ * and climate still come from the scientific model, while the artist gets a
+ * visible, deterministic elevation palette in both flat and detailed views.
+ */
 function applyTerrainLayers(
   model: TerrainV2Model,
   elevation: number,
@@ -257,21 +265,25 @@ function applyTerrainLayers(
   const layers = model.params.terrainLayers
   if (!layers.length) return out
   const level = clamp((elevation + 1.1) / 2.2)
-  let index = 0
-  for (let i = 1; i < layers.length; i++) {
-    if (level >= layers[i].transition) index = i
-  }
-  const left = layers[index]
-  const right = layers[Math.min(index + 1, layers.length - 1)]
-  const span = Math.max(1e-6, right.transition - left.transition)
-  const between = index === layers.length - 1
+  let upperIndex = 1
+  while (upperIndex < layers.length && level >= layers[upperIndex].transition) upperIndex++
+  const left = layers[Math.max(0, upperIndex - 1)]
+  const right = layers[Math.min(upperIndex, layers.length - 1)]
+  const between = upperIndex >= layers.length
     ? 0
-    : smoothstep(0, 1, (level - left.transition) / span)
+    : (() => {
+        const segment = Math.max(0.02, right.transition - left.transition)
+        // Zero is a crisp contour; one uses the whole adjacent elevation
+        // interval. This is the same control users see as Blend factor (n→n+1).
+        const width = segment * right.blend
+        return smoothstep(right.transition - width * 0.5, right.transition + width * 0.5, level)
+      })()
   const red = Math.round(((left.color >>> 16) & 0xff) * (1 - between) + ((right.color >>> 16) & 0xff) * between)
   const green = Math.round(((left.color >>> 8) & 0xff) * (1 - between) + ((right.color >>> 8) & 0xff) * between)
   const blue = Math.round((left.color & 0xff) * (1 - between) + (right.color & 0xff) * between)
-  const tint = Math.min(0.72, Math.max(0, left.blend * (1 - between) + right.blend * between))
-  mixColor(out, (red << 16) | (green << 8) | blue, tint)
+  // Keep the science visible underneath, but make the authored ramp strong
+  // enough that a slider edit cannot disappear beneath the biome palette.
+  mixColor(out, (red << 16) | (green << 8) | blue, 0.72)
   return out
 }
 
