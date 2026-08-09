@@ -93,10 +93,15 @@ function finiteIn(value: unknown, fallback: number, min: number, max: number): n
 function sanitizeLayers(input: unknown): NonNullable<PlanetParams['terrainLayers']> {
   const source = Array.isArray(input) ? input : []
   const defaults = DEFAULT_PARAMS.terrainLayers!
+  let previousTransition = 0
   return defaults.map((fallback, index) => {
     const raw = (source[index] ?? {}) as Record<string, unknown>
+    const transition = index === 0
+      ? 0
+      : Math.max(previousTransition, finiteIn(raw.transition, fallback.transition, 0, 1))
+    previousTransition = transition
     return {
-      transition: finiteIn(raw.transition, fallback.transition, 0, 1),
+      transition,
       blend: finiteIn(raw.blend, fallback.blend, 0, 1),
       color: Math.round(finiteIn(raw.color, fallback.color, 0, 0xffffff)),
     }

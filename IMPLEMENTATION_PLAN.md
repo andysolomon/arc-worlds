@@ -667,3 +667,20 @@ systems, particularly in Safari on high-density displays.
 - [ ] Optional: the same run in Safari itself rather than its engine. Needs
       `safaridriver --enable`, which wants an administrator and cannot run
       headless. It would confirm rather than discover.
+
+### 23. Make authored elevation layers visibly effective (delivered 2026-08-02)
+
+- [x] Treat each layer as a real elevation-ramp colour, with transition points
+      and `Blend factor (n→n+1)` controlling the hand-off width.
+- [x] Keep the ramp ordered when a user drags transition points past one
+      another, both in persisted input sanitization and worker snapshots.
+- [x] Apply the same layer ramp to flat/orbit artifacts and detailed vertex
+      colours; keep the scientific biome, water, ice, moisture, and climate
+      pass underneath instead of replacing it.
+- [x] Feed the authored base layer into the detailed water shell and include
+      terrain-layer values in the focused gas/flat invalidation key so edits do
+      not leave a stale projection visible.
+- [x] Add regression coverage proving transition, blend, and colour changes
+      alter both flat and detailed artifacts, plus coverage for ordered layers.
+- [x] Run the full typecheck, lint, unit, browser, build, bundle, terrain-worker,
+      and performance gates before delivery.

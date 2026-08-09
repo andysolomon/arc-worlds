@@ -222,10 +222,18 @@ function terrainNumber(value: number | undefined, fallback: number, min: number,
 
 function terrainLayers(params: PlanetParams): readonly TerrainLayer[] {
   const source = params.terrainLayers ?? DEFAULT_TERRAIN_LAYERS
+  let previousTransition = 0
   return DEFAULT_TERRAIN_LAYERS.map((fallback, index) => {
     const layer = source[index] ?? fallback
+    // A layer ramp must remain ordered even while a user drags controls past
+    // one another. The first layer is the base colour; subsequent layers can
+    // only begin at or above the previous transition.
+    const transition = index === 0
+      ? 0
+      : Math.max(previousTransition, terrainNumber(layer.transition, fallback.transition, 0, 1))
+    previousTransition = transition
     return {
-      transition: terrainNumber(layer.transition, fallback.transition, 0, 1),
+      transition,
       blend: terrainNumber(layer.blend, fallback.blend, 0, 1),
       color: Math.round(terrainNumber(layer.color, fallback.color, 0, 0xffffff)),
     }

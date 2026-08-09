@@ -201,6 +201,16 @@ function terrainDetailKey(p: PlanetParams): string {
   ])
 }
 
+/** The base elevation layer also colours the detailed water shell. */
+function waterShellColor(p: PlanetParams, fallback: number): number {
+  const layer = p.terrainLayers?.[0]
+  if (!layer) return fallback
+  const t = 0.22 + Math.max(0, Math.min(1, layer.blend)) * 0.5
+  const base = new THREE.Color(fallback)
+  base.lerp(new THREE.Color(layer.color), t)
+  return base.getHex()
+}
+
 /**
  * Identity of the expensive, baked part of a body's appearance. Lighting,
  * animation and labels deliberately do not belong here: changing one of those
@@ -1692,6 +1702,7 @@ export class PlanetViewport {
         this.flatMap?.dispose()
         this.flatMap = texture
         this.gasMesh.material.uniforms.uMap.value = texture
+        this.renderer.domElement.dataset.surfaceArtifact = response.canonicalKey
         this.invalidate()
         return
       }
@@ -1706,6 +1717,7 @@ export class PlanetViewport {
         this.companion.material.map = texture
         this.companion.material.color.set(0xffffff)
         this.companion.material.needsUpdate = true
+        this.renderer.domElement.dataset.surfaceArtifact = response.canonicalKey
         this.invalidate()
         return
       }
@@ -1726,6 +1738,7 @@ export class PlanetViewport {
       target.node.baked = texture
       mat.map = texture
       mat.color.set(0xffffff)
+      this.renderer.domElement.dataset.surfaceArtifact = response.canonicalKey
       this.invalidate()
       return
     }
@@ -1770,6 +1783,7 @@ export class PlanetViewport {
     material.color.set(0xffffff)
     this.v2SeaRadius = artifact.seaRadius
     this.water.scale.setScalar(Math.max(0.88, artifact.seaRadius))
+    this.renderer.domElement.dataset.surfaceArtifact = response.canonicalKey
     this.invalidate()
   }
 
@@ -2452,7 +2466,7 @@ export class PlanetViewport {
 
     const key = [
       P.generatorVersion, P.seed, P.preset, P.mountains, P.water, P.roughness, P.ice, P.clouds,
-      climateKey(P),
+      climateKey(P), terrainDetailKey(P),
     ].join(':')
     if (key !== this.flatKey) {
       this.flatKey = key
@@ -2865,7 +2879,7 @@ export class PlanetViewport {
     this.water.visible = !isGas(pal) && (P.water || 0) > 0.03 && (pal.emissive ? true : liquidWater > 0.03)
     this.water.scale.setScalar(Math.max(0.88, seaRadius))
     if (!isGas(pal)) {
-      wmat.color.set(ecosystem?.waterShell ?? pal.water)
+      wmat.color.set(waterShellColor(P, ecosystem?.waterShell ?? pal.water))
       wmat.emissive.set(pal.emissive ?? 0x000000)
       wmat.opacity = (livingV2 ? 0.9 : pal.waterOpacity ?? 0.72) * (pal.emissive ? 1 : liquidWater)
       wmat.shininess = livingV2 ? 180 : 90

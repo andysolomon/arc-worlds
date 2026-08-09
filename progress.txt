@@ -1612,3 +1612,33 @@ VERIFIED
 - Focused Playwright navigation/control/orbit checks: 3 passed
 - Follow-up bun run perf:smoke: passed with 3 orbit shader programs, 0 paused
   frames, and 0 renderer errors
+
+2026-08-02 elevation-layer visibility fix
+
+CHANGED
+- Reworked the five authored layers into a real ordered elevation colour ramp.
+  Layer 1 is the base colour; Layers 2–5 expose transition points and explicit
+  `Blend factor (n→n+1)` controls for the hand-off width, matching the detailed
+  authoring model users expect.
+- Kept the scientific biome/climate pass underneath the authored ramp, but
+  increased the ramp's influence so colour and transition edits are visible in
+  the detailed globe as well as the orbit texture.
+- Ordered transition points during sanitization and worker snapshot creation,
+  preventing an out-of-order drag from collapsing the ramp into a no-op.
+- Applied the base layer to the detailed water shell and added terrain-detail
+  values to the focused flat/gas invalidation key, eliminating stale lowland or
+  projection appearances after a layer edit.
+
+VERIFIED
+- Direct worker/artifact checks show transition, blend, and colour variants
+  produce different flat and detailed buffers.
+- Live Playwright interaction shows a changed canvas after layer edits.
+- `bun run typecheck`, `bun run lint`, and `bun run test`: 205 tests passed.
+- Full production Playwright suite: 41 tests passed, including a regression
+  that observes the visible artifact key change after a layer edit.
+- `bun run build` and `bun run size:check`: entry 252,764 B gzip,
+  terrain worker 39,655 B raw, bake worker 93,835 B raw.
+- `bun run perf:smoke`: all local browser budgets passed, including zero paused
+  frames, two orbit shader programs, and zero renderer errors.
+- `bun run perf:terrain`: all three worker/artifact runs passed with zero main
+  thread long-task time and zero obsolete artifacts accepted.
