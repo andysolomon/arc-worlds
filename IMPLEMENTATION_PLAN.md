@@ -684,3 +684,35 @@ systems, particularly in Safari on high-density displays.
       alter both flat and detailed artifacts, plus coverage for ordered layers.
 - [x] Run the full typecheck, lint, unit, browser, build, bundle, terrain-worker,
       and performance gates before delivery.
+
+### 24. One world, one appearance — and a settings home (delivered 2026-08-09)
+
+- [x] Give the tab pills the navigation they imply: Worlds returns to the Worlds
+      workspace, replacing the `‹ Worlds home` link inside the panel, and Systems
+      takes the viewport to the system rather than leaving a single world on
+      screen behind the orbit controls.
+- [x] Run the sidebar the full height of the window by making the shell a row
+      and giving the header to the stage beside it.
+- [x] Move the viewer preferences — display switches, starfield, exposure,
+      nebula — out of the Systems panel into a settings modal reachable from the
+      header on any tab. `Hold on hover` stays in the time bar; a second control
+      of the same name would make every name-based lookup ambiguous.
+- [x] Fix gas giants rendering near-black in the single-world view: `GAS_FRAG`
+      sampled an sRGB-tagged map, which the sampler decodes to linear, then wrote
+      that linear value straight to the framebuffer with no tone mapping and no
+      encode. The same texture on a standard material in the orbit view round
+      tripped correctly, which is why one giant looked like two planets.
+- [x] Encode `solidTexture`'s bytes, which were linear components in an
+      sRGB-tagged texture, so every first-frame placeholder is the colour asked
+      for.
+- [x] Give orbiting worlds the single view's surface treatment: clouds returned
+      as their own layer and hung on a shell instead of being composited flat
+      into the albedo, and the relief normal map derived by the same shared pass
+      the detailed artifact uses, so the bumps are the same bumps.
+- [x] Stop disposing scene-graph materials while a shader warmup may still be
+      polling them. `compileAsync` keeps its material set and polls each
+      program on a timer; a rebuild freeing one made three throw inside that
+      timer, where nothing catches it, so the promise never settled and the
+      view sat on the compile deadline. Rebuilding the bodies did exactly that.
+- [x] Run the full typecheck, lint, unit, browser, build, bundle,
+      terrain-worker, and performance gates before delivery.

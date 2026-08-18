@@ -303,7 +303,12 @@ async function process(job: QueuedJob) {
         model,
         request.artifact.width,
         request.artifact.height,
-        { clouds: request.params.clouds, cloudSeed: request.params.seed },
+        {
+          clouds: request.params.clouds,
+          cloudSeed: request.params.seed,
+          cloudLayer: request.artifact.cloudLayer,
+          relief: request.artifact.relief,
+        },
       )
       const artifactElapsedMs = request.measure ? elapsed(artifactStartedAt) : undefined
       if (cancelledJob(job)) {
@@ -313,7 +318,25 @@ async function process(job: QueuedJob) {
         return
       }
       const rgba = transferBuffer(artifact.rgba)
-      postArtifactTelemetry(job, startedAt, 'complete', artifactElapsedMs, rgba.byteLength)
+      const clouds = artifact.clouds
+        ? {
+            width: artifact.clouds.width,
+            height: artifact.clouds.height,
+            rgba: transferBuffer(artifact.clouds.rgba),
+          }
+        : undefined
+      const normalMap = artifact.normalMap
+        ? {
+            width: artifact.normalMap.width,
+            height: artifact.normalMap.height,
+            rgba: transferBuffer(artifact.normalMap.rgba),
+          }
+        : undefined
+      const transfer = [rgba, clouds?.rgba, normalMap?.rgba].filter(
+        (buffer): buffer is ArrayBuffer => !!buffer,
+      )
+      const transferBytes = transfer.reduce((total, buffer) => total + buffer.byteLength, 0)
+      postArtifactTelemetry(job, startedAt, 'complete', artifactElapsedMs, transferBytes)
       post({
         type: 'artifact',
         protocol: V2_WORKER_PROTOCOL,
@@ -325,8 +348,10 @@ async function process(job: QueuedJob) {
           width: artifact.width,
           height: artifact.height,
           rgba,
+          clouds,
+          normalMap,
         },
-      }, [rgba])
+      }, transfer)
       postJobTelemetry(job, startedAt, 'complete')
       return
     }

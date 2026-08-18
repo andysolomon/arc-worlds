@@ -1642,3 +1642,73 @@ VERIFIED
   frames, two orbit shader programs, and zero renderer errors.
 - `bun run perf:terrain`: all three worker/artifact runs passed with zero main
   thread long-task time and zero obsolete artifacts accepted.
+
+================================================================================
+2026-08-09 — One world, one appearance, and a settings home
+================================================================================
+
+DONE
+- Tab pills now navigate. Worlds returns to the Worlds workspace and brings the
+  viewport back with it, which retires the `‹ Worlds home` link that used to sit
+  inside the panel; Systems takes the viewport to the system, so the orbit
+  controls are no longer shown over a single world. The body list is one segment
+  further in, on the panel that owns it.
+- The sidebar runs the full height of the window: the shell is a row and the
+  header belongs to the stage beside the panel rather than to the column above
+  it, and `.panel-scroll` grows to the window edge.
+- Viewer preferences moved from partway down the Systems panel into a settings
+  modal opened from the header, so exposure, the starfield, the nebula and the
+  display switches are reachable from the Worlds tab too. They were never
+  properties of a solar system. `Hold on hover` deliberately stays in the time
+  bar alone: two buttons of one name would make every accessible-name lookup in
+  the suite and the benchmark ambiguous.
+- Gas giants no longer render near-black up close. `GAS_FRAG` samples a map
+  tagged sRGB — so the sampler hands it linear light — then wrote that value
+  straight out with no tone mapping and no encode. The orbit view carries the
+  very same texture on a standard material, which round trips correctly, so one
+  planet had two appearances. Added the two output chunks.
+- `solidTexture` wrote THREE.Color's linear components into an sRGB-tagged
+  texture, so every placeholder landed a stop or two darker than the colour
+  asked for. Encoded on the way in.
+- Orbiting worlds now get the single view's surface treatment. The flat bake can
+  return clouds as their own layer and leave the albedo bare, and the orbit node
+  hangs them on a shell; compositing them in had turned cloud cover into a white
+  wash over the ground, which is most of why a cloudy world read pale in orbit
+  and saturated up close. The relief normal map comes from one shared pass used
+  by both artifact kinds, so the bumps are the same bumps at either resolution.
+
+FIXED ALONG THE WAY
+- Materials in the scene graph are no longer disposed while a shader warmup may
+  still be reading them. `compileAsync` keeps the material set it prepared and
+  polls each program for readiness on its own timer; disposing one drops the
+  renderer's record, so the next poll throws inside three's timer where nothing
+  can catch it and the promise never settles at all. Rebuilding the bodies is
+  exactly that disposal and it runs on every edit. `retireMaterial` holds them
+  until the warmup is done. This was pre-existing — the compile deadline was
+  added for it — and it cost about 160 ms on every orbit transition.
+
+VERIFIED
+- `bun run typecheck`, `bun run lint`, `bunx vitest run`: 207 tests passed,
+  including new coverage that a shelled flat artifact's albedo is bit-identical
+  to the cloudless one and that both artifact kinds share their relief encoding.
+- Full production Playwright suite: 41 tests passed, plus 3 new ones for the
+  full-height sidebar, the two tab pills, and the settings modal.
+- `bun run build` and `bun run size:check`: entry 253,6xx B gzip against a
+  256,000 B budget, terrain worker 40,386 B raw, bake worker 93,835 B raw.
+- `bun run perf:smoke` three consecutive times, all passed and all better than
+  the measured baseline on main: firstSystemFrameMs 226/233/226 against 390,
+  longTaskTotalMs 369/330/194 against 345, taskDurationMs 1777/1773/1659
+  against 1722, zero renderer errors every run. Shader programs added on the
+  orbit transition is 3–4 against a budget of 4; the fourth is the normal-map
+  variant the relief needs, and the cloud shell shares the body program rather
+  than costing one of its own.
+- `bun run perf:terrain`: all three worker/artifact runs passed.
+
+NOT DONE
+- Orbit and single-world lighting still differ by design: ambient is 0.16 with a
+  point light at the star in orbit, 0.34 with a directional light aimed by the
+  user up close. No single ambient value can match both, since orbit bodies fall
+  off with distance from their star. Worth judging by eye now that the albedo
+  and the relief agree.
+- The detailed view's water shell and atmosphere shell have no orbit
+  counterpart. At a few dozen pixels across they would be sub-pixel.

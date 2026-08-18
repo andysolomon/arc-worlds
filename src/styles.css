@@ -32,7 +32,16 @@ a:hover { color: #d95f3f; }
 
 /* --- shell -------------------------------------------------------------- */
 
-.app { height: 100dvh; display: flex; flex-direction: column; background: var(--space); }
+/*
+ * A row, not a column: the panel is a child of the shell itself so it runs the
+ * full height of the window. Putting the header above everything used to push
+ * the sidebar down by its height and leave a strip of empty space beside the
+ * brand.
+ */
+.app { height: 100dvh; display: flex; background: var(--space); }
+
+/* The header and the canvas together — everything the panel sits beside. */
+.stage { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 
 .header {
   display: flex; align-items: center; justify-content: space-between;
@@ -47,11 +56,9 @@ a:hover { color: #d95f3f; }
 .brand-name { font-family: 'Baloo 2', cursive; font-weight: 800; font-size: 21px; color: #fff3e4; line-height: 1; }
 .brand-sub { font-size: 12.5px; color: #b9a4c4; margin-top: 2px; }
 
-.main { flex: 1; display: flex; gap: 0; min-height: 0; }
-
 /* --- viewport ----------------------------------------------------------- */
 
-.view { position: relative; flex: 1; min-width: 0; }
+.view { position: relative; flex: 1; min-width: 0; min-height: 0; }
 
 .time-bar {
   position: absolute; top: 16px; left: 22px; z-index: 2;
@@ -103,19 +110,11 @@ a:hover { color: #d95f3f; }
   display: flex; flex-direction: column; min-height: 0;
   box-shadow: -12px 0 40px rgba(12, 6, 18, 0.35);
 }
-.panel-scroll { overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 16px; }
-
-.workspace-home {
-  align-self: flex-start;
-  margin: 0 0 -6px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  font: 700 12px 'Quicksand', sans-serif;
-  cursor: pointer;
+/* Takes the rest of the panel, so the scroll region ends at the window edge. */
+.panel-scroll {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: 18px; display: flex; flex-direction: column; gap: 16px;
 }
-.workspace-home:hover { color: var(--ink); }
 
 .fine-controls {
   margin-top: 2px;
@@ -321,11 +320,46 @@ input[type='range']:disabled { opacity: 0.42; }
 .dot-title { display: flex; align-items: center; gap: 8px; }
 .dot-title .dot { width: 11px; height: 11px; border-radius: 50%; flex: none; }
 
+/* --- settings modal ----------------------------------------------------- */
+
+.modal-scrim {
+  position: fixed; inset: 0; z-index: 10;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  background: rgba(12, 6, 18, 0.62);
+}
+.modal {
+  width: 100%; max-width: 420px; max-height: 100%;
+  display: flex; flex-direction: column; min-height: 0;
+  background: var(--panel);
+  border-radius: 20px;
+  box-shadow: 0 24px 60px rgba(12, 6, 18, 0.5);
+}
+.modal:focus { outline: none; }
+.modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex: none;
+  padding: 16px 18px 12px;
+  border-bottom: 1.5px solid var(--line);
+}
+.modal-head h2 {
+  margin: 0;
+  font-family: 'Baloo 2', cursive; font-weight: 800; font-size: 20px;
+  color: var(--ink); line-height: 1;
+}
+.modal-body {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: 16px 18px 20px;
+  display: flex; flex-direction: column; gap: 16px;
+}
+
 /* --- responsive --------------------------------------------------------- */
 
 @media (max-width: 900px) {
-  .app { height: auto; min-height: 100dvh; }
-  .main { flex-direction: column; }
+  .app { height: auto; min-height: 100dvh; flex-direction: column; }
+  .stage { min-height: 0; flex: none; }
   .view { height: 52vh; min-height: 340px; flex: none; }
   .panel { width: auto; border-radius: 24px 24px 0 0; margin: -18px 0 0; max-height: none; }
+  /* Stacked, the panel is as tall as its content — so the scroll region is too. */
+  .panel-scroll { flex: none; }
 }
