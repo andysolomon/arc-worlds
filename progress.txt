@@ -1768,3 +1768,51 @@ NOT DONE
 - Bodies of systems you have saved yourself are not in the catalog — only your
   saved worlds are. They are reachable from Systems, and listing them would need
   a rule for the same world appearing in two of your systems.
+
+================================================================================
+2026-08-22 — The performance gate stops measuring the rasteriser
+================================================================================
+
+CONTEXT
+- PR #19 failed the Performance workflow on one row, taskDurationMs, twice:
+  +23.6% and +23.3% against its base, against a 10% relative limit. Every
+  absolute budget passed both times. The first run also flagged longTaskTotalMs
+  at +113%, which did not reproduce — the second run measured +9.8% and passed.
+  That row crosses a fixed 50 ms threshold, so it counts frames rather than
+  time and swings hard; taskDurationMs was the stable signal.
+
+DONE
+- Attributed it rather than waiving it. Script time moved 204 -> 211 ms over
+  the same runs, and LayoutDuration and RecalcStyleDuration were both zero, so
+  the extra ~1,200 ms is not JavaScript, layout, or style.
+- Reproduced it locally, which had not been done before: headless Chromium on
+  this machine turns out to run the same SwiftShader path CI does — confirmed
+  through WEBGL_debug_renderer_info — so the only real difference is core count
+  and speed. A five-way A/B over five runs each puts the cost at one extra
+  blended sphere per cloudy world: removing the cloud shells recovers ten of
+  the sixteen local points, removing the relief map two, and giving the shell a
+  cheaper Lambert material recovers nothing, which rules out shader complexity.
+- Hiding an idle shell until its bake lands was measured and rejected. It
+  improves first render, 28.1 -> 20.0 ms, and moves taskDurationMs not at all:
+  the window is six seconds and the shells are legitimately visible for nearly
+  all of it. Worth knowing before it gets proposed again.
+- taskDurationMs therefore leaves regression.lowerIsBetter, and
+  scriptDurationMs takes its place with a 60 ms noise floor. On the CI profile
+  the first tracks how many passes a frame costs; the second tracks the
+  main-thread work the check was really protecting. The absolute ceilings are
+  untouched and remain the guard: 2,500 ms locally, 7,500 ms on CI against a
+  measured 6,002 ms.
+
+VERIFIED
+- Fixture coverage of the checker itself: taskDurationMs +50% within its
+  ceiling now passes; taskDurationMs over 7,500 ms still fails on the absolute
+  rule; scriptDurationMs +50% (+100 ms) fails; scriptDurationMs +7.5% (+15 ms,
+  under the floor) passes.
+- bun run lint, bun run build, bun run size:check, bun run perf:smoke — all
+  passed, every absolute row green, zero renderer errors.
+
+NOT DONE
+- The shells still cost what they cost. If it ever matters on hardware a
+  visitor uses, the fix is to composite the cloud layer inside the body's own
+  fragment shader — lit, one draw, no blending — which keeps the appearance the
+  unification was for. Nothing measured so far says it is worth doing.

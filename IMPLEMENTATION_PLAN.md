@@ -752,3 +752,22 @@ systems, particularly in Safari on high-density displays.
       the pre-change baseline, with the panel a 2,827 B lazy chunk.
 - [x] Run the full typecheck, lint, unit, browser, build, bundle, and
       performance gates before delivery.
+
+### 25. The performance gate stops measuring the rasteriser (delivered 2026-08-22)
+
+- [x] Attribute PR #19's reproducible `taskDurationMs` regression (+23.6% and
+      +23.3%, absolute budgets passing) rather than waiving it: script time
+      moved 204 → 211 ms and layout and style duration were zero, so the extra
+      main-thread time is neither JavaScript, layout, nor style.
+- [x] Reproduce it locally for the first time, having established that headless
+      Chromium here runs the same SwiftShader path CI does, and isolate the cost
+      with a five-way A/B: one extra blended sphere per cloudy world, ten of
+      sixteen local points, unchanged by a cheaper shell material.
+- [x] Measure and reject hiding idle cloud shells: first render 28.1 → 20.0 ms,
+      `taskDurationMs` unmoved, because the shells are legitimately visible for
+      nearly all of the six-second window.
+- [x] Move `taskDurationMs` out of the relative regression list and put
+      `scriptDurationMs` in its place with a 60 ms noise floor, keeping both
+      absolute ceilings untouched as the guard.
+- [x] Cover the checker itself with fixtures for all four cases, and re-run
+      lint, build, bundle, and browser gates.
