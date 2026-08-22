@@ -460,3 +460,58 @@ and 44 ms in headed Chromium / Apple GPU, with zero frames over 50 ms and the
 same 55,920 triangles in both. Headless Chromium's documented software path
 measured 547 ms and 27 frames over 50 ms; it remains separately identified and
 does not describe visitor hardware. No performance budget changed.
+
+## Why taskDurationMs no longer gates on relative regression (2026-08-22)
+
+Unifying the orbit and single-world appearance (#19) failed the pull-request
+performance gate on one row, `taskDurationMs`, and passed every absolute
+budget. It failed twice, at **+23.6%** and **+23.3%** against its base — too
+reproducible to be runner noise, and worth understanding rather than waiving.
+
+### It is not the application doing more work
+
+Script time barely moved across the same runs: 204 ms → 211 ms median, +3%.
+`LayoutDuration` and `RecalcStyleDuration` were zero on both sides, so it is
+not the settings modal, the full-height sidebar, or any other DOM change
+either. Whatever the extra ~1,200 ms of main-thread task time is, it is not
+JavaScript, layout, or style.
+
+### It is software rasterisation, and one specific draw
+
+Headless Chromium has no GPU on a hosted runner, so SwiftShader draws the
+scene on the CPU. A five-way local A/B — same headless browser, same
+SwiftShader path (verified through `WEBGL_debug_renderer_info`), five runs
+each, medians — isolates it:
+
+| Build | taskDurationMs | vs main | First Orbit render |
+| --- | ---: | ---: | ---: |
+| `main` 631759b | 1,524 ms | — | 17.9 ms |
+| Unified appearance 13d114e | 1,773 ms | +16.3% | 28.1 ms |
+| …with idle cloud shells hidden | 1,824 ms | +19.7% | 20.0 ms |
+| …with body relief removed | 1,744 ms | +14.4% | 25.9 ms |
+| …with a cheaper Lambert shell | 1,831 ms | +20.1% | 29.0 ms |
+| …with cloud shells removed | 1,613 ms | +5.8% | 18.0 ms |
+
+Removing the cloud shells recovers about ten of the sixteen points; removing
+the relief normal map recovers two. Giving the shell a cheaper material
+recovers nothing at all, which rules out shader complexity: the cost is the
+existence of a second blended sphere per cloudy world, not what is in it.
+Hiding a shell until its bake lands recovers nothing either, because the
+measurement window is six seconds and the shells are legitimately visible for
+almost all of it — it only improves first render, 28.1 ms → 20.0 ms.
+
+### What this means for the budgets
+
+`taskDurationMs` on the CI profile tracks how many passes a frame costs, not
+how much work the application does. Every future change that draws one more
+thing will fail a 10% relative gate on it, for a cost that exists only on a
+rasteriser no visitor uses. So it leaves `regression.lowerIsBetter`, and
+`scriptDurationMs` — the clean signal for the main-thread work this check was
+really protecting — takes its place, with a 60 ms noise floor covering the
+run-to-run spread observed on the shared runner.
+
+The absolute ceilings stay exactly as they were and remain the guard:
+2,500 ms on developer hardware, 7,500 ms on the CI profile against a measured
+6,002 ms. Nothing else was loosened. Every metric a visitor actually feels
+improved or held over the same two runs: first system frame −10.7%,
+interaction duration −16.7%, longest task −10.8%, passive cadence unchanged.

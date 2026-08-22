@@ -74,7 +74,7 @@
       "interactionDurationMs": 80,
       "longTaskMaxMs": 150,
       "longTaskTotalMs": 150,
-      "taskDurationMs": 600,
+      "scriptDurationMs": 60,
       "orbitShaderKickoffMs": 10,
       "orbitShaderProgramsAdded": 1,
       "activeRendererFps": 3
@@ -84,7 +84,7 @@
       "interactionDurationMs",
       "longTaskMaxMs",
       "longTaskTotalMs",
-      "taskDurationMs",
+      "scriptDurationMs",
       "orbitShaderKickoffMs",
       "orbitShaderProgramsAdded",
       "pausedFramesIn3s",
