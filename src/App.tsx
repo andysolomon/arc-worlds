@@ -1,8 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ScanPanel } from './components/ScanPanel'
+import { SettingsModal } from './components/SettingsModal'
 import { SystemsPanel } from './components/SystemsPanel'
 import { Viewport } from './components/Viewport'
-import { WorldsPanel } from './components/WorldsPanel'
 import { Segmented } from './components/ui'
 import {
   MOONS, PRESETS, SOLAR, isLittleWorldsOriginal, typeOf, type AncientWorld,
@@ -11,6 +11,7 @@ import { MILKY_WAY } from './data/systems'
 import { climateForBody, standaloneClimate, withSystemClimates } from './engine/climate'
 import { parentOf } from './engine/planets'
 import { loadDisplay, nebulaCss, saveDisplay, type DisplayOptions } from './lib/display'
+import type { CatalogWorld } from './lib/catalog'
 import { CURRENT_PARAMS, sanitize } from './lib/params'
 import {
   addMoon, addRolledWorld, addWorld, duplicateBody, editableCopy, hasRoom, sanitizeSystem,
@@ -32,8 +33,16 @@ const SculptPanel = lazy(async () => {
   return { default: module.SculptPanel }
 })
 
+// Worlds home carries the catalog of every world in the app, and the app does
+// not open on it — Build does. Same bargain as the builder above: it leaves the
+// entry chunk, and React fetches it the moment Browse becomes the destination.
+const WorldsPanel = lazy(async () => {
+  const module = await import('./components/WorldsPanel')
+  return { default: module.WorldsPanel }
+})
+
 type Tab = 'solar' | 'worlds'
-type WorldsView = 'build' | 'analyze' | 'saved'
+type WorldsView = 'build' | 'analyze' | 'browse'
 
 const TABS: Array<[Tab, string]> = [
   ['worlds', 'Worlds'],
@@ -43,7 +52,7 @@ const TABS: Array<[Tab, string]> = [
 const WORLD_VIEWS: Array<[WorldsView, string]> = [
   ['build', 'Build'],
   ['analyze', 'Analyze'],
-  ['saved', 'Saved'],
+  ['browse', 'Browse'],
 ]
 
 const SPEEDS: Array<[number, string]> = [
@@ -78,6 +87,7 @@ export default function App() {
   const [sizeMode, setSizeMode] = useState<'same' | 'scale'>('same')
   const [timeScale, setTimeScale] = useState(1)
   const [display, setDisplay] = useState<DisplayOptions>(loadDisplay)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   const [scan, setScan] = useState<ScanResult | null>(null)
   const [scanning, setScanning] = useState(false)
@@ -562,7 +572,7 @@ export default function App() {
     } catch (e) {
       setGalleryError((e as Error).message)
       setTab('worlds')
-      setWorldsView('saved')
+      setWorldsView('browse')
     } finally {
       setSaving(false)
     }
@@ -579,6 +589,48 @@ export default function App() {
     setWorldsView('build')
     window.history.replaceState(null, '', `/w/${w.slug}`)
   }, [])
+
+  /**
+   * Open anything on Worlds home.
+   *
+   * One entry point for the whole catalog, because a card is a card: a saved
+   * world, a measured planet, a moon, a reconstruction, an exoplanet, a homage
+   * and a world type all arrive here. Everything but a type is loaded whole and
+   * locks itself by the identity rule the rest of the app already uses — a
+   * canonical seed or a photographic map means a reference world, which you can
+   * explore and scan but not overwrite. A type has no world yet, so it rolls
+   * one.
+   */
+  const openCatalogWorld = useCallback((w: CatalogWorld) => {
+    if (w.saved) {
+      openWorld(w.saved)
+      return
+    }
+    if (w.preset) {
+      const p = PRESETS.find((x) => x.key === w.preset)
+      setParams({
+        ...CURRENT_PARAMS,
+        ...(p?.def ?? {}),
+        preset: w.preset,
+        seed: (Math.random() * 99_999) | 0,
+      })
+      setName(`New ${w.name}`)
+      setWorldLocked(false)
+    } else if (w.params) {
+      setParams(sanitize(w.params))
+      setName(w.name)
+      setWorldLocked(isLittleWorldsOriginal(w.params) || !!w.params.texture)
+    } else {
+      return
+    }
+    setScan(null)
+    setSavedSlug(null)
+    setSelectedBodyIndex(null)
+    setView('single')
+    setTab('worlds')
+    setWorldsView('build')
+    if (window.location.pathname.startsWith('/w/')) window.history.replaceState(null, '', '/')
+  }, [openWorld])
 
   const copyLink = useCallback((w: SavedWorld) => {
     navigator.clipboard
@@ -598,10 +650,25 @@ export default function App() {
    */
   const goWorldsHome = useCallback(() => {
     setTab('worlds')
-    setWorldsView('saved')
+    setWorldsView('browse')
     setSelectedBodyIndex(null)
     setSavedSlug(null)
+    // The Worlds workspace is about one world at a time, so it brings the
+    // viewport back with it. This used to live on the tab button itself.
+    setView('single')
     if (window.location.pathname.startsWith('/w/')) window.history.replaceState(null, '', '/')
+  }, [])
+
+  /**
+   * The Systems counterpart, reached the same way — by its own pill.
+   *
+   * Switching the viewport is the whole point: the tab used to change the panel
+   * and leave a single world sitting in the canvas, so "Systems" showed you
+   * orbit controls for a system you could not see.
+   */
+  const goSystemsHome = useCallback(() => {
+    setTab('solar')
+    setView('system')
   }, [])
 
   /* --- render ----------------------------------------------------------- */
@@ -614,17 +681,29 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="header">
-        <div className="brand">
-          <div className="brand-dot" />
-          <div>
-            <div className="brand-name">Little Worlds</div>
-            <div className="brand-sub">build a planet, then discover what lives there</div>
+      {/*
+        The stage owns the header as well as the canvas, so the panel beside it
+        runs the full height of the window instead of starting below the brand.
+      */}
+      <div className="stage">
+        <header className="header">
+          <div className="brand">
+            <div className="brand-dot" />
+            <div>
+              <div className="brand-name">Little Worlds</div>
+              <div className="brand-sub">build a planet, then discover what lives there</div>
+            </div>
           </div>
-        </div>
-      </header>
+          <button
+            className="btn-ghost"
+            type="button"
+            aria-haspopup="dialog"
+            onClick={() => setSettingsOpen(true)}
+          >
+            Settings
+          </button>
+        </header>
 
-      <div className="main">
         <div className="view">
           <div className="time-bar">
             <span className="lbl">TIME</span>
@@ -686,98 +765,91 @@ export default function App() {
             <span className="hint">drag to travel · scroll to zoom</span>
           </div>
         </div>
+      </div>
 
-        <aside className="panel">
-          <div className="tabs" role="tablist">
-            {TABS.map(([k, label]) => (
-              <button
-                key={k}
-                className="tab"
-                role="tab"
-                aria-selected={tab === k}
-                type="button"
-                onClick={() => {
-                  setTab(k)
-                  if (k !== 'solar') setView('single')
-                }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+      <aside className="panel">
+        <div className="tabs" role="tablist">
+          {TABS.map(([k, label]) => (
+            <button
+              key={k}
+              className="tab"
+              role="tab"
+              aria-selected={tab === k}
+              type="button"
+              onClick={() => (k === 'solar' ? goSystemsHome() : goWorldsHome())}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
 
-          <div className="panel-scroll" ref={panelScroll}>
-            {tab === 'solar' && (
-              <SystemsPanel
-                system={system}
-                view={view}
-                sizeMode={sizeMode}
-                display={display}
-                onDisplay={toggleDisplay}
-                onDisplaySet={setDisplayField}
-                onView={setView}
-                onSizeMode={setSizeMode}
-                onVisit={visitBody}
-                onSystem={chooseSystem}
-                onAddCurrent={addCurrentWorld}
-                onAddRolled={addRolled}
-                onAddSaved={addSavedWorld}
-                onAddMoon={addMoonTo}
-                onDuplicate={duplicateWorld}
-                currentWorld={name}
-                canAddCurrent={!worldLocked}
-                worlds={worlds}
-                worldsError={galleryError}
-                onSave={onSaveSystem}
-                saving={systemSaving}
-                savedSlug={savedSystemSlug}
-                systems={systems}
-                systemsLoading={systemsLoading}
-                systemsError={systemsError}
-                onOpenSaved={openSavedSystem}
-              />
-            )}
+        <div className="panel-scroll" ref={panelScroll}>
+          {tab === 'solar' && (
+            <SystemsPanel
+              system={system}
+              view={view}
+              sizeMode={sizeMode}
+              onView={setView}
+              onSizeMode={setSizeMode}
+              onVisit={visitBody}
+              onSystem={chooseSystem}
+              onAddCurrent={addCurrentWorld}
+              onAddRolled={addRolled}
+              onAddSaved={addSavedWorld}
+              onAddMoon={addMoonTo}
+              onDuplicate={duplicateWorld}
+              currentWorld={name}
+              canAddCurrent={!worldLocked}
+              worlds={worlds}
+              worldsError={galleryError}
+              onSave={onSaveSystem}
+              saving={systemSaving}
+              savedSlug={savedSystemSlug}
+              systems={systems}
+              systemsLoading={systemsLoading}
+              systemsError={systemsError}
+              onOpenSaved={openSavedSystem}
+            />
+          )}
 
-            {tab === 'worlds' && (
-              <>
-                <button className="workspace-home" type="button" onClick={goWorldsHome}>
-                  ‹ Worlds home
-                </button>
-                <div>
-                  <div className="field-label">World workspace</div>
-                  <Segmented options={WORLD_VIEWS} value={worldsView} onChange={setWorldsView} />
-                </div>
+          {tab === 'worlds' && (
+            <>
+              <div>
+                <div className="field-label">World workspace</div>
+                <Segmented options={WORLD_VIEWS} value={worldsView} onChange={setWorldsView} />
+              </div>
 
-                {worldsView === 'build' && (
-                  <Suspense fallback={<div className="note">Loading builder…</div>}>
-                    <SculptPanel
-                      params={params}
-                      name={name}
-                      onVisitMoon={visitMoon}
-                      onName={setName}
-                      onParam={setParam}
-                      onPreset={applyPreset}
-                      onAncient={applyAncient}
-                      onReshape={reshape}
-                      onSave={onSave}
-                      saving={saving}
-                      saved={!!savedSlug}
-                      locked={worldLocked}
-                      onClone={cloneCurrentWorld}
-                    />
-                  </Suspense>
-                )}
+              {worldsView === 'build' && (
+                <Suspense fallback={<div className="note">Loading builder…</div>}>
+                  <SculptPanel
+                    params={params}
+                    name={name}
+                    onVisitMoon={visitMoon}
+                    onName={setName}
+                    onParam={setParam}
+                    onPreset={applyPreset}
+                    onAncient={applyAncient}
+                    onReshape={reshape}
+                    onSave={onSave}
+                    saving={saving}
+                    saved={!!savedSlug}
+                    locked={worldLocked}
+                    onClone={cloneCurrentWorld}
+                  />
+                </Suspense>
+              )}
 
-                {worldsView === 'analyze' && (
-                  <ScanPanel worldName={name} scan={scan} scanning={scanning} onScan={runScan} />
-                )}
+              {worldsView === 'analyze' && (
+                <ScanPanel worldName={name} scan={scan} scanning={scanning} onScan={runScan} />
+              )}
 
-                {worldsView === 'saved' && (
+              {worldsView === 'browse' && (
+                <Suspense fallback={<div className="note">Loading worlds…</div>}>
                   <WorldsPanel
                     worlds={worlds}
                     loading={galleryLoading}
                     error={galleryError}
-                    onOpen={openWorld}
+                    onOpen={openCatalogWorld}
                     onCopyLink={copyLink}
                     copiedSlug={copiedSlug}
                     system={system}
@@ -785,12 +857,21 @@ export default function App() {
                     onAdd={addSavedWorld}
                     addedSlug={addedSlug}
                   />
-                )}
-              </>
-            )}
-          </div>
-        </aside>
-      </div>
+                </Suspense>
+              )}
+            </>
+          )}
+        </div>
+      </aside>
+
+      {settingsOpen && (
+        <SettingsModal
+          display={display}
+          onToggle={toggleDisplay}
+          onSet={setDisplayField}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
     </div>
   )
 }

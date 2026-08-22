@@ -117,7 +117,15 @@ void main(){
      float sa2=(uRing.w>3.5)?saturnA(ru):0.5*striate(ru);
      l*=1.0-0.85*clamp(sa2,0.0,1.0);
     }}}}
- gl_FragColor=vec4(c*l,1.0);}
+ gl_FragColor=vec4(c*l,1.0);
+ // uMap is tagged sRGB, so the sampler above already handed us linear light.
+ // Without these two the linear value goes to the framebuffer as if it were
+ // already encoded and the whole planet reads gamma-crushed — which is why a
+ // giant used to be bright in the orbit view, where the very same texture is
+ // carried by a MeshStandardMaterial, and near-black up close.
+ #include <tonemapping_fragment>
+ #include <colorspace_fragment>
+}
 `
 
 /** Fiery star: granulation, sunspots and limb darkening. No halo sprite. */

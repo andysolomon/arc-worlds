@@ -15,7 +15,7 @@ import { ATMO_FRAG, ATMO_VERT, GAS_FRAG, GAS_VERT, SUN_FRAG, SUN_VERT } from './
 import { heightAt, heightFieldFrom, type HeightField } from './heightfield'
 import type { Moon, PlanetParams, PresetKey, RingConfig, SystemBody, SystemDef } from './types'
 import { V2TerrainClient } from './v2/client'
-import type { V2WorkerResponse } from './v2/protocol'
+import type { V2LayerPayload, V2WorkerResponse } from './v2/protocol'
 import { ecosystemStyleFor } from './v2/ecosystems'
 import { v2CloudLayerOpacity } from './v2/clouds'
 
@@ -117,9 +117,11 @@ const WORLD_HIT_R = 1.08
 /**
  * How long to wait for shader compilation before drawing anyway.
  *
- * Well past any real compile — the whole orbit view, build and warmup
- * together, is budgeted at a second — so this only ever fires when the
- * promise has been abandoned rather than merely slow.
+ * Well past any real compile — warmup reports ready in tens of milliseconds,
+ * and the whole orbit view, build and warmup together, is budgeted at a
+ * second — so this only ever fires when the promise has been abandoned rather
+ * than merely slow. That is now a backstop rather than something that happens:
+ * the disposal that used to abandon it goes through retireMaterial.
  */
 const COMPILE_DEADLINE = 3000
 
@@ -152,8 +154,16 @@ interface SysNode {
   spin: THREE.Group
   mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>
   ringMesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial> | null
+  /**
+   * The body's own cloud shell, built on the first bake that carries a cloud
+   * layer. Worlds without clouds — and every gas giant — never get one.
+   */
+  cloudMesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial> | null
   /** Baked map, owned by this node so it can be freed on rebuild. */
   baked: THREE.Texture | null
+  /** Baked cloud and relief maps, owned by this node for the same reason. */
+  bakedClouds: THREE.Texture | null
+  bakedRelief: THREE.Texture | null
   /** True for the temporary procedural placeholder; false for shared photo maps. */
   ownsMap: boolean
   a: number
@@ -241,6 +251,15 @@ function surfaceKey(p: PlanetParams, detail: string): string {
 const V2_FLAT_WIDTH = 256
 const V2_FLAT_HEIGHT = 128
 
+/**
+ * How far an orbiting body's cloud shell stands off its surface.
+ *
+ * The single view uses 1.025 for a plain world and 1.035 for a living one. In
+ * orbit a body is tens of pixels across, so the difference is invisible and the
+ * lower figure keeps the shell from clipping the terminator.
+ */
+const V2_ORBIT_CLOUD_SHELL = 1.025
+
 function dataTexture(
   pixels: Uint8Array,
   width: number,
@@ -294,11 +313,13 @@ function skyDot(core: number): THREE.CanvasTexture {
 
 /** A mapped placeholder keeps the material's shader variant stable on swaps. */
 function solidTexture(color: THREE.ColorRepresentation, alpha = 255): THREE.DataTexture {
-  const c = new THREE.Color(color)
+  // THREE.Color holds linear-sRGB, but dataTexture tags its bytes as sRGB and
+  // the sampler decodes them — so the components have to be encoded on the way
+  // in, or every placeholder lands a stop or two darker than the colour asked
+  // for. getHex does exactly that conversion.
+  const hex = new THREE.Color(color).getHex(THREE.SRGBColorSpace)
   return dataTexture(
-    new Uint8Array([
-      Math.round(c.r * 255), Math.round(c.g * 255), Math.round(c.b * 255), alpha,
-    ]),
+    new Uint8Array([(hex >> 16) & 255, (hex >> 8) & 255, hex & 255, alpha]),
     1,
     1,
   )
@@ -308,6 +329,18 @@ function normalTexture(pixels: Uint8Array, width: number, height: number): THREE
   const texture = dataTexture(pixels, width, height, THREE.NoColorSpace)
   texture.wrapS = THREE.RepeatWrapping
   return texture
+}
+
+/**
+ * A perfectly flat normal, for a material that will be given real relief later.
+ *
+ * The point is the shader variant, not the pixel: a material that gains its
+ * first normal map has to be recompiled, and doing that while an earlier
+ * parallel compile is still in flight is the race warmShaders keeps a deadline
+ * for. Holding the variant from the start makes the bake a texture swap.
+ */
+function flatNormalTexture(): THREE.DataTexture {
+  return normalTexture(new Uint8Array([128, 128, 255, 255]), 1, 1)
 }
 
 /**
@@ -398,6 +431,8 @@ export class PlanetViewport {
   private forceRender = true
   private lastRender = 0
   private compileNeeded = true
+  /** Materials a shader warmup may still be polling; see retireMaterial. */
+  private retiring: THREE.Material[] = []
   private compiling: Promise<void> | null = null
   private inView = true
   private pixelRatio: number
@@ -865,6 +900,8 @@ export class PlanetViewport {
     this.v2Terrain?.dispose()
     this.v2Terrain = null
     this.clearBodies()
+    // Nothing can be warming up after this, so anything held back goes now.
+    this.flushRetired()
     this.flatMap?.dispose()
     this.flatSolid?.dispose()
     this.companionMap?.dispose()
@@ -1156,7 +1193,7 @@ export class PlanetViewport {
     for (const old of this.moons) {
       // Meshes reuse cached geometry/materials; the path line is per-instance.
       old.line.geometry.dispose()
-      old.line.material.dispose()
+      this.retireMaterial(old.line.material)
       this.moonRoot.remove(old.orbit)
     }
     this.moons = []
@@ -1298,12 +1335,12 @@ export class PlanetViewport {
     while (this.skyDots.length > want) {
       const s = this.skyDots.pop()!
       this.skyGroup.remove(s)
-      s.material.dispose()
+      this.retireMaterial(s.material)
       const lab = this.skyLabels.pop()
       if (lab) {
         this.skyGroup.remove(lab)
         lab.material.map?.dispose()
-        lab.material.dispose()
+        this.retireMaterial(lab.material)
       }
     }
     while (this.skyDots.length < want) {
@@ -1327,7 +1364,7 @@ export class PlanetViewport {
       if (!lab) continue
       this.skyGroup.remove(lab)
       lab.material.map?.dispose()
-      lab.material.dispose()
+      this.retireMaterial(lab.material)
       this.skyLabels[i] = null
     }
     this.skyTick = 0
@@ -1420,7 +1457,7 @@ export class PlanetViewport {
       if (existing) {
         this.skyGroup.remove(existing)
         existing.material.map?.dispose()
-        existing.material.dispose()
+        this.retireMaterial(existing.material)
       }
       return null
     }
@@ -1556,20 +1593,30 @@ export class PlanetViewport {
     this.v2PreviewTargets.clear()
     this.worldWorker?.terminate()
     this.worldWorker = null
+    // Textures go now; materials wait for any shader warmup still polling them.
     for (const u of this.sysNodes) {
-      u.mesh.material.dispose()
+      // Each of these maps is either the bake or the placeholder the bake has
+      // not replaced yet, and both are this node's to free.
+      u.mesh.material.normalMap?.dispose()
       u.baked?.dispose()
       if (!u.baked && u.ownsMap && u.mesh.material.map) u.mesh.material.map.dispose()
+      this.retireMaterial(u.mesh.material)
+      if (u.cloudMesh) {
+        // The shell shares sysGeo, so only its maps and material are its own.
+        u.cloudMesh.material.map?.dispose()
+        u.cloudMesh.material.normalMap?.dispose()
+        this.retireMaterial(u.cloudMesh.material)
+      }
       if (u.ringMesh) {
         u.ringMesh.geometry.dispose()
-        u.ringMesh.material.dispose()
+        this.retireMaterial(u.ringMesh.material)
       }
       for (const l of [u.lineSame, u.lineScale]) {
         l.geometry.dispose()
-        l.material.dispose()
+        this.retireMaterial(l.material)
       }
       u.label?.material.map?.dispose()
-      u.label?.material.dispose()
+      if (u.label) this.retireMaterial(u.label.material)
       u.plane.removeFromParent()
     }
     this.sysNodes = []
@@ -1656,7 +1703,17 @@ export class PlanetViewport {
       this.ensureV2Terrain().request(slot, {
         params,
         priority: 'preview',
-        artifact: { kind: 'flat', width: V2_FLAT_WIDTH, height: V2_FLAT_HEIGHT },
+        // A world in orbit is the same world you sculpt, so it gets the same
+        // treatment: bare ground with the clouds on a shell above it, and the
+        // relief that makes a surface read as a surface. Both used to be
+        // missing here, which is why one world looked like two.
+        artifact: {
+          kind: 'flat',
+          width: V2_FLAT_WIDTH,
+          height: V2_FLAT_HEIGHT,
+          cloudLayer: true,
+          relief: true,
+        },
       })
       return
     }
@@ -1738,6 +1795,8 @@ export class PlanetViewport {
       target.node.baked = texture
       mat.map = texture
       mat.color.set(0xffffff)
+      this.syncPreviewRelief(target.node, artifact.normalMap)
+      this.syncPreviewClouds(target.node, artifact.clouds)
       this.renderer.domElement.dataset.surfaceArtifact = response.canonicalKey
       this.invalidate()
       return
@@ -1785,6 +1844,57 @@ export class PlanetViewport {
     this.water.scale.setScalar(Math.max(0.88, artifact.seaRadius))
     this.renderer.domElement.dataset.surfaceArtifact = response.canonicalKey
     this.invalidate()
+  }
+
+  /**
+   * Give an orbiting body the same relief shading the sculpted one gets.
+   *
+   * The map itself is derived by the shared relief pass, so the bumps are the
+   * same bumps; the strength has to be recomputed here from the body's own
+   * params because a preview slot carries only its node.
+   */
+  private syncPreviewRelief(node: SysNode, layer: V2LayerPayload | undefined) {
+    if (!layer) return
+    const params = this.sysBodies[node.index]?.params
+    if (!params) return
+    const mat = node.mesh.material
+    const next = normalTexture(new Uint8Array(layer.rgba), layer.width, layer.height)
+    next.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy())
+    if (mat.normalMap && mat.normalMap !== node.bakedRelief) mat.normalMap.dispose()
+    node.bakedRelief?.dispose()
+    node.bakedRelief = next
+    mat.normalMap = next
+    const bump = Math.max(0, Math.min(2, params.bumpStrength ?? 0.72)) / 0.72
+    mat.normalScale.setScalar(
+      (ecosystemStyleFor(params.seed, params.preset) ? 0.85 : 0.55) * bump,
+    )
+  }
+
+  /**
+   * Hang this body's clouds on a shell of their own.
+   *
+   * The orbit view used to have the flat bake paint them straight onto the
+   * ground, which turned cover into a white wash and was most of why a cloudy
+   * world read pale here and saturated in the single view. The shell is one
+   * extra sphere on the shared geometry, and only cloudy worlds get one.
+   */
+  private syncPreviewClouds(node: SysNode, layer: V2LayerPayload | undefined) {
+    const mesh = node.cloudMesh
+    if (!mesh) return
+    if (!layer) {
+      // A world that lost its clouds — or never had any — keeps its shell but
+      // never shows it, so a later bake with cover can just turn it back on.
+      mesh.visible = false
+      return
+    }
+    const texture = dataTexture(new Uint8Array(layer.rgba), layer.width, layer.height)
+    texture.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy())
+    const mat = mesh.material
+    if (mat.map && mat.map !== node.bakedClouds) mat.map.dispose()
+    node.bakedClouds?.dispose()
+    node.bakedClouds = texture
+    mat.map = texture
+    mesh.visible = true
   }
 
   /**
@@ -1840,6 +1950,51 @@ export class PlanetViewport {
       m.scale.set(1, 1 - b.flattening, 1)
       spin.add(m)
 
+      // A sculpted world gets the single view's treatment: relief on the
+      // surface and clouds on a shell above it. Both are built here rather than
+      // when the bake lands, so the material's shader variant never changes
+      // mid-flight — the compile race warmShaders guards against. A photographed
+      // body is excluded: its map already has its own weather in it.
+      const sculpted = !b.texture && b.params.generatorVersion === 2
+      let cloudMesh: SysNode['cloudMesh'] = null
+      if (sculpted) {
+        mat.normalMap = flatNormalTexture()
+        mat.normalScale.setScalar(0)
+        // Cover scales with this slider, so a world set to zero can never have
+        // any — no shell, no material, nothing for the warmup to compile.
+        if (!isGas(pal) && (b.params.clouds ?? 0) > 0) {
+          // Standard rather than the single view's Lambert, and carrying a
+          // normal map it makes no use of, so that its every program parameter
+          // matches the body material above and the two share one compiled
+          // program. Orbit warmup is held to four new programs, and a shell per
+          // world must not cost one of them. At roughness 1 and metalness 0 a
+          // white diffuse shell looks the same either way.
+          cloudMesh = new THREE.Mesh(
+            this.sysGeo!,
+            new THREE.MeshStandardMaterial({
+              map: solidTexture(0xffffff, 0),
+              normalMap: flatNormalTexture(),
+              roughness: 1,
+              metalness: 0,
+              transparent: true,
+              opacity: 0.95,
+              depthWrite: false,
+            }),
+          )
+          // Visible from the start, wearing a fully transparent map: it draws
+          // nothing until its bake lands, but compileAsync only walks visible
+          // objects, so hiding it would push this program out of the orbit
+          // warmup and into a render — a shader compile mid-flight, which is
+          // both a stall and the race warmShaders keeps a deadline for.
+          cloudMesh.scale.set(
+            V2_ORBIT_CLOUD_SHELL,
+            V2_ORBIT_CLOUD_SHELL * (1 - b.flattening),
+            V2_ORBIT_CLOUD_SHELL,
+          )
+          spin.add(cloudMesh)
+        }
+      }
+
       // The orbit path wears the same colour the planet itself falls back to,
       // so line and body read as one thing. Textured bodies have palettes too.
       const lineOpacity = this.showPaths ? PATH_OPACITY : 0
@@ -1887,6 +2042,7 @@ export class PlanetViewport {
 
       const ud: SysNode = {
         index: i, plane, node, tilt, spin, mesh: m, ringMesh, baked: null,
+        cloudMesh, bakedClouds: null, bakedRelief: null,
         ownsMap: !b.texture,
         a: 0, e: b.e, period: b.period, aSame: 0, aScale: 0,
         // Same-size mode draws every planet alike so the small ones stay
@@ -2043,6 +2199,13 @@ export class PlanetViewport {
       if (!node) return
       node.tilt.rotation.z = body.tilt * D2R
       node.mesh.scale.set(1, 1 - body.flattening, 1)
+      // The cloud shell wears the body's flattening, so squashing a world in
+      // the editor must not leave its clouds standing off the poles.
+      node.cloudMesh?.scale.set(
+        V2_ORBIT_CLOUD_SHELL,
+        V2_ORBIT_CLOUD_SHELL * (1 - body.flattening),
+        V2_ORBIT_CLOUD_SHELL,
+      )
       node.day = body.day
       node.f = body.flattening
       node.rScale = sizeMap(body.radius * 6371) * 0.85
@@ -3144,6 +3307,35 @@ export class PlanetViewport {
     )
   }
 
+  /**
+   * Free a material, but never while a shader warmup could still be reading it.
+   *
+   * `compileAsync` keeps the set of materials it prepared and polls each one's
+   * program for readiness on its own timer. Disposing a material in that set
+   * drops the renderer's record of it, so the next poll reads a program that is
+   * no longer there and throws — inside three's timer, where nothing can catch
+   * it, which is why the promise then never settles at all. Rebuilding the
+   * bodies is exactly that disposal, and it happens on every edit.
+   *
+   * Holding the material until the warmup has finished with it costs one frame's
+   * worth of memory and removes the whole failure mode.
+   */
+  private retireMaterial(material: THREE.Material) {
+    if (!this.compiling) {
+      material.dispose()
+      return
+    }
+    this.retiring.push(material)
+  }
+
+  /** Dispose everything held back by a warmup that has now finished. */
+  private flushRetired() {
+    if (!this.retiring.length) return
+    const held = this.retiring
+    this.retiring = []
+    for (const material of held) material.dispose()
+  }
+
   /** Start parallel shader compilation and render only after it has settled. */
   private warmShaders(): boolean {
     if (!this.compileNeeded || this.compiling) return !!this.compiling
@@ -3170,11 +3362,13 @@ export class PlanetViewport {
     const giveUp = window.setTimeout(() => {
       if (this.compiling !== job) return
       this.compiling = null
+      this.flushRetired()
       this.invalidate()
     }, COMPILE_DEADLINE)
     job.finally(() => {
       window.clearTimeout(giveUp)
       if (this.compiling === job) this.compiling = null
+      this.flushRetired()
       recordOrbitMeasure('shader-ready', compileStart)
       const canvas = this.renderer.domElement
       canvas.dataset.compileProgramsBefore = String(programsBefore)

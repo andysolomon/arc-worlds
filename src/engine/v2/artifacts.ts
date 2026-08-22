@@ -31,6 +31,15 @@ export const V2_DETAIL_MAP_WIDTH = 256
 export const V2_DETAIL_MAP_HEIGHT = 128
 const V2_ORBIT_CLOUD_WIDTH = 64
 const V2_ORBIT_CLOUD_HEIGHT = 32
+/**
+ * The orbit view's relief map is a quarter of the focused one's area.
+ *
+ * A body in orbit is a few dozen pixels across, so this is far more texels than
+ * it can show — and the slope scaling below is resolution-independent, so the
+ * relief reads the same at either size rather than merely similar.
+ */
+export const V2_ORBIT_RELIEF_WIDTH = 128
+export const V2_ORBIT_RELIEF_HEIGHT = 64
 
 export interface MutableV2Direction {
   x: number
@@ -78,6 +87,13 @@ export interface V2SurfaceNoise {
   readonly fine: Noise3
 }
 
+/** An extra equirectangular RGBA layer alongside a flat artifact's albedo. */
+export interface V2FlatLayer {
+  readonly width: number
+  readonly height: number
+  readonly rgba: Uint8Array
+}
+
 export interface V2FlatArtifact {
   readonly width: number
   readonly height: number
@@ -86,6 +102,14 @@ export interface V2FlatArtifact {
   readonly pixels: Uint8Array
   /** One canonical biome decision per texel, useful for identity diagnostics. */
   readonly biomes: Uint8Array
+  /**
+   * Clouds as their own tinted layer, for a consumer that wants to hang them
+   * on a shell of their own rather than have them flattened into the ground.
+   * Null unless `cloudLayer` was asked for, or when the world has no clouds.
+   */
+  readonly clouds: V2FlatLayer | null
+  /** Tangent-space relief, matching the detailed artifact's. Null unless asked for. */
+  readonly normalMap: V2FlatLayer | null
 }
 
 /**
@@ -96,6 +120,21 @@ export interface V2FlatArtifact {
 export interface V2FlatArtifactOptions {
   readonly clouds?: number
   readonly cloudSeed?: number
+  /**
+   * Hand clouds back as a separate layer and leave the albedo bare.
+   *
+   * Compositing them in is cheaper and right for a body drawn a few pixels
+   * wide, but it turns cloud cover into a flat white wash over the ground
+   * colour — which is why the same world used to read pale and low-contrast in
+   * the orbit view and saturated up close. A consumer that can afford a shell
+   * asks for this instead and gets the single-world treatment.
+   */
+  readonly cloudLayer?: boolean
+  /**
+   * Also derive the relief normal map. Off by default: only a consumer that
+   * lights the surface with a standard material has any use for it.
+   */
+  readonly relief?: boolean
 }
 
 export interface V2DetailOptions {
@@ -506,11 +545,15 @@ export function terrainV2FlatArtifactKey(
   const cloudSeed = Number.isFinite(options.cloudSeed) ? Math.floor(Math.abs(options.cloudSeed!)) : model.params.seed
   return [
     model.canonicalKey,
-    'flat-v2-3',
+    'flat-v2-4',
     Math.max(1, Math.floor(width)),
     Math.max(1, Math.floor(height)),
     Math.round(clouds * 1_000_000),
     cloudSeed,
+    // Both change what comes back, so neither may share a cached identity with
+    // the composited, relief-less artifact the other consumers ask for.
+    options.cloudLayer ? 'shell' : 'baked',
+    options.relief ? 'relief' : 'smooth',
   ].join(':')
 }
 
@@ -554,6 +597,9 @@ export function deriveV2FlatArtifact(
   const cloudOpacity = !isGas(palette)
     ? v2CloudLayerOpacity(palette.cloudO, model.params.preset === 'temperate')
     : 0
+  // Asked for as a shell, the clouds stay off the ground entirely; the albedo
+  // is the bare surface, exactly what the detailed artifact colours.
+  const composite = cloudRaster && !options.cloudLayer
   for (let row = 0; row < safeHeight; row++) {
     for (let column = 0; column < safeWidth; column++) {
       directionForV2EquirectangularPixel(safeWidth, safeHeight, column, row, direction)
@@ -562,7 +608,7 @@ export function deriveV2FlatArtifact(
         model, surfaceNoise, direction.x, direction.y, direction.z, sample.elevation, surface,
       )
       colorTerrainV2Into(model, sample, color, surface.elevation, surface.detail)
-      if (cloudRaster) {
+      if (composite) {
         const alpha = sampleWrappedRaster(
           cloudRaster,
           cloudWidth,
@@ -581,7 +627,37 @@ export function deriveV2FlatArtifact(
       biomes[pixel] = sample.biome
     }
   }
-  return { width: safeWidth, height: safeHeight, rgba, pixels: rgba, biomes }
+
+  // The mask is already in hand at its own resolution, so the layer costs one
+  // small buffer rather than a second pass over anything.
+  let clouds: V2FlatLayer | null = null
+  if (cloudRaster && options.cloudLayer) {
+    const tint = setHexLinear(createV2Color(), cloudHex)
+    const r = linearToSrgbByte(tint.r)
+    const g = linearToSrgbByte(tint.g)
+    const b = linearToSrgbByte(tint.b)
+    const layer = new Uint8Array(cloudWidth * cloudHeight * 4)
+    for (let pixel = 0; pixel < cloudWidth * cloudHeight; pixel++) {
+      const offset = pixel * 4
+      layer[offset] = r
+      layer[offset + 1] = g
+      layer[offset + 2] = b
+      layer[offset + 3] = Math.round(clamp(cloudRaster[pixel] * cloudOpacity) * 255)
+    }
+    clouds = { width: cloudWidth, height: cloudHeight, rgba: layer }
+  }
+
+  const normalMap = options.relief
+    ? {
+        width: V2_ORBIT_RELIEF_WIDTH,
+        height: V2_ORBIT_RELIEF_HEIGHT,
+        rgba: deriveV2Relief(
+          model, surfaceNoise, V2_ORBIT_RELIEF_WIDTH, V2_ORBIT_RELIEF_HEIGHT,
+        ).normalMap,
+      }
+    : null
+
+  return { width: safeWidth, height: safeHeight, rgba, pixels: rgba, biomes, clouds, normalMap }
 }
 
 /** Compatibility-shaped convenience for callers that only need raw texture bytes. */
@@ -592,6 +668,60 @@ export function bakeV2Flat(
   options: V2FlatArtifactOptions = {},
 ): Uint8Array {
   return deriveV2FlatArtifact(model, width, height, options).rgba
+}
+
+/**
+ * Fine surface relief as a height field and the tangent-space normals derived
+ * from it, at whatever resolution the caller can afford.
+ *
+ * Shared by both artifact kinds so a world's bumps are the same bumps whether
+ * it is being sculpted or seen from across its system — parity by construction
+ * rather than by two loops that happen to agree today.
+ */
+function deriveV2Relief(
+  model: TerrainV2Model,
+  surfaceNoise: V2SurfaceNoise,
+  width: number,
+  height: number,
+): { detailMap: Uint8Array; normalMap: Uint8Array } {
+  const direction = createV2Direction()
+  const surface = createV2Surface()
+  const detailMap = new Uint8Array(width * height)
+  for (let row = 0; row < height; row++) {
+    for (let column = 0; column < width; column++) {
+      directionForV2EquirectangularPixel(width, height, column, row, direction)
+      sampleV2SurfaceInto(model, surfaceNoise, direction.x, direction.y, direction.z, 0, surface)
+      detailMap[row * width + column] = Math.round(clamp(0.5 + surface.detail / 0.6) * 255)
+    }
+  }
+
+  // A one-texel step spans more of the surface at a coarser resolution, so the
+  // finite difference below grows in inverse proportion to the width. Scaling
+  // the slope back by it keeps the apparent steepness fixed, which is what lets
+  // the orbit view run a smaller map without looking like a rougher world.
+  const slope = 3.5 * (width / V2_DETAIL_MAP_WIDTH)
+  const normalMap = new Uint8Array(width * height * 4)
+  for (let row = 0; row < height; row++) {
+    const north = Math.max(0, row - 1)
+    const south = Math.min(height - 1, row + 1)
+    for (let column = 0; column < width; column++) {
+      const west = (column + width - 1) % width
+      const east = (column + 1) % width
+      let nx = (detailMap[row * width + west] - detailMap[row * width + east]) / 255 * slope
+      let ny = (detailMap[north * width + column] - detailMap[south * width + column]) / 255 * slope
+      let nz = 1
+      const length = Math.hypot(nx, ny, nz)
+      nx /= length
+      ny /= length
+      nz /= length
+      const offset = (row * width + column) * 4
+      normalMap[offset] = Math.round((nx * 0.5 + 0.5) * 255)
+      normalMap[offset + 1] = Math.round((ny * 0.5 + 0.5) * 255)
+      normalMap[offset + 2] = Math.round((nz * 0.5 + 0.5) * 255)
+      normalMap[offset + 3] = 255
+    }
+  }
+  return { detailMap, normalMap }
 }
 
 function addFaceNormal(positions: Float32Array, normals: Float32Array, a: number, b: number, c: number): void {
@@ -724,39 +854,11 @@ export function deriveV2DetailedArtifact(
     }
   }
 
-  const detailMap = new Uint8Array(V2_DETAIL_MAP_WIDTH * V2_DETAIL_MAP_HEIGHT)
-  for (let row = 0; row < V2_DETAIL_MAP_HEIGHT; row++) {
-    for (let column = 0; column < V2_DETAIL_MAP_WIDTH; column++) {
-      directionForV2EquirectangularPixel(
-        V2_DETAIL_MAP_WIDTH, V2_DETAIL_MAP_HEIGHT, column, row, direction,
-      )
-      sampleV2SurfaceInto(model, surfaceNoise, direction.x, direction.y, direction.z, 0, surface)
-      detailMap[row * V2_DETAIL_MAP_WIDTH + column] = Math.round(clamp(0.5 + surface.detail / 0.6) * 255)
-    }
-  }
-  const normalMap = new Uint8Array(V2_DETAIL_MAP_WIDTH * V2_DETAIL_MAP_HEIGHT * 4)
-  for (let row = 0; row < V2_DETAIL_MAP_HEIGHT; row++) {
-    const north = Math.max(0, row - 1)
-    const south = Math.min(V2_DETAIL_MAP_HEIGHT - 1, row + 1)
-    for (let column = 0; column < V2_DETAIL_MAP_WIDTH; column++) {
-      const west = (column + V2_DETAIL_MAP_WIDTH - 1) % V2_DETAIL_MAP_WIDTH
-      const east = (column + 1) % V2_DETAIL_MAP_WIDTH
-      let nx = (detailMap[row * V2_DETAIL_MAP_WIDTH + west]
-        - detailMap[row * V2_DETAIL_MAP_WIDTH + east]) / 255 * 3.5
-      let ny = (detailMap[north * V2_DETAIL_MAP_WIDTH + column]
-        - detailMap[south * V2_DETAIL_MAP_WIDTH + column]) / 255 * 3.5
-      let nz = 1
-      const length = Math.hypot(nx, ny, nz)
-      nx /= length
-      ny /= length
-      nz /= length
-      const offset = (row * V2_DETAIL_MAP_WIDTH + column) * 4
-      normalMap[offset] = Math.round((nx * 0.5 + 0.5) * 255)
-      normalMap[offset + 1] = Math.round((ny * 0.5 + 0.5) * 255)
-      normalMap[offset + 2] = Math.round((nz * 0.5 + 0.5) * 255)
-      normalMap[offset + 3] = 255
-    }
-  }
+  const relief = deriveV2Relief(
+    model, surfaceNoise, V2_DETAIL_MAP_WIDTH, V2_DETAIL_MAP_HEIGHT,
+  )
+  const detailMap = relief.detailMap
+  const normalMap = relief.normalMap
 
   const seaRadius = 1 + model.seaLevel * V2_RELIEF_AMPLITUDE
   return {

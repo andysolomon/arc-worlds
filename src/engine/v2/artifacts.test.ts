@@ -239,6 +239,65 @@ describe('v2 render artifacts', () => {
     )
   })
 
+  it('leaves the albedo bare when clouds are asked for as their own layer', () => {
+    const params = { ...DEFAULT_PARAMS, generatorVersion: 2 as const, clouds: 1 }
+    const model = createTerrainV2Model(params, { graph: TEST_GRAPH })
+    const options = { clouds: 1, cloudSeed: params.seed }
+
+    const bare = deriveV2FlatArtifact(model, FLAT_WIDTH, FLAT_HEIGHT)
+    const composited = deriveV2FlatArtifact(model, FLAT_WIDTH, FLAT_HEIGHT, options)
+    const shelled = deriveV2FlatArtifact(model, FLAT_WIDTH, FLAT_HEIGHT, {
+      ...options,
+      cloudLayer: true,
+    })
+
+    // The whole point: the ground under a shell is the ground with no clouds at
+    // all, which is what the detailed artifact colours.
+    expect(shelled.rgba).toEqual(bare.rgba)
+    expect(composited.rgba).not.toEqual(bare.rgba)
+
+    // And the cover that used to be smeared into it comes back separately.
+    expect(shelled.clouds).not.toBeNull()
+    expect(composited.clouds).toBeNull()
+    const clouds = shelled.clouds!
+    expect(clouds.rgba).toHaveLength(clouds.width * clouds.height * 4)
+    const alphas = new Set<number>()
+    for (let pixel = 0; pixel < clouds.width * clouds.height; pixel++) {
+      alphas.add(clouds.rgba[pixel * 4 + 3])
+    }
+    expect(alphas.size).toBeGreaterThan(1)
+
+    // Two artifacts that differ must never share a cached identity.
+    expect(terrainV2FlatArtifactKey(model, FLAT_WIDTH, FLAT_HEIGHT, options)).not.toBe(
+      terrainV2FlatArtifactKey(model, FLAT_WIDTH, FLAT_HEIGHT, { ...options, cloudLayer: true }),
+    )
+  })
+
+  it('gives the orbit view the same relief as the sculpted world', () => {
+    const params = { ...DEFAULT_PARAMS, generatorVersion: 2 as const }
+    const model = createTerrainV2Model(params, { graph: TEST_GRAPH })
+
+    expect(deriveV2FlatArtifact(model, FLAT_WIDTH, FLAT_HEIGHT).normalMap).toBeNull()
+    const relief = deriveV2FlatArtifact(model, FLAT_WIDTH, FLAT_HEIGHT, { relief: true }).normalMap
+    expect(relief).not.toBeNull()
+    expect(relief!.rgba).toHaveLength(relief!.width * relief!.height * 4)
+
+    // Both maps come from one relief pass, so they agree on where the slopes
+    // are; the orbit map is simply coarser. Sampling the pole rows, which are
+    // flat by construction in both, pins the shared encoding.
+    const detailed = deriveV2DetailedArtifact(model, {
+      widthSegments: DETAIL_WIDTH,
+      heightSegments: DETAIL_HEIGHT,
+    })
+    expect(relief!.width).toBeLessThan(detailed.detailMapWidth)
+    expect(relief!.rgba[2]).toBeGreaterThan(128)
+    expect(detailed.normalMap[2]).toBeGreaterThan(128)
+
+    expect(terrainV2FlatArtifactKey(model, FLAT_WIDTH, FLAT_HEIGHT)).not.toBe(
+      terrainV2FlatArtifactKey(model, FLAT_WIDTH, FLAT_HEIGHT, { relief: true }),
+    )
+  })
+
   it('applies every authored layer control to the rendered surface', () => {
     const base = { ...DEFAULT_PARAMS, generatorVersion: 2 as const }
     const baseline = deriveV2FlatArtifact(createTerrainV2Model(base, { graph: TEST_GRAPH }), FLAT_WIDTH, FLAT_HEIGHT)

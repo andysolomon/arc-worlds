@@ -17,6 +17,13 @@ export interface V2FlatSpec {
   readonly kind: 'flat'
   readonly width: number
   readonly height: number
+  /**
+   * Leave the albedo bare and return clouds as their own layer, for a consumer
+   * that hangs them on a shell — see V2FlatArtifactOptions.
+   */
+  readonly cloudLayer?: boolean
+  /** Also return the relief normal map. */
+  readonly relief?: boolean
 }
 
 export interface V2DetailedSpec {
@@ -85,7 +92,17 @@ export interface V2FlatArtifactResponse {
     readonly width: number
     readonly height: number
     readonly rgba: ArrayBuffer
+    /** Present only when asked for, and only when the world has clouds at all. */
+    readonly clouds?: V2LayerPayload
+    readonly normalMap?: V2LayerPayload
   }
+}
+
+/** An extra equirectangular layer, carried at its own resolution. */
+export interface V2LayerPayload {
+  readonly width: number
+  readonly height: number
+  readonly rgba: ArrayBuffer
 }
 
 export interface V2DetailedArtifactResponse {
