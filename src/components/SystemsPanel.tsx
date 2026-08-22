@@ -1,4 +1,4 @@
-import { BUILT_IN_SYSTEMS } from '../data/systems'
+import { useMemo, useState } from 'react'
 import { ANCIENT, PRESETS, SOLAR } from '../data/presets'
 import { climateForBody, formatClimate, stellarLuminosity } from '../engine/climate'
 import { periodFor, satRadii, starRadius, starSize } from '../engine/scale'
@@ -7,9 +7,12 @@ import {
   duplicateSystem, emptySystem, isGasBody, removeBodyAt, retime, rollSystem,
   satPeriodFor, setParent,
 } from '../lib/systems'
+import {
+  buildSystemCatalog, matchesSystemQuery, type CatalogSystem, type SystemKind,
+} from '../lib/system-catalog'
 import type { SavedSystem, SavedWorld } from '../lib/api'
 import type { PresetKey, SystemBody, SystemDef } from '../engine/types'
-import { Field, Segmented, Slider } from './ui'
+import { Chip, Field, Segmented, Slider } from './ui'
 
 // Viewer preferences used to live in this panel. They belong to the browser
 // rather than to any system, so they moved to the settings modal, which is
@@ -114,6 +117,45 @@ export function SystemsPanel(props: Props) {
     systemsError, onOpenSaved,
   } = props
 
+  const [category, setCategory] = useState<SystemKind | 'all'>('all')
+  const [query, setQuery] = useState('')
+
+  // The system on screen is passed in as the working copy so an unsaved one —
+  // which has no slug yet — still appears under Your systems rather than
+  // disappearing the moment it is created. Once it has a slug the gallery
+  // entry is the same system, so passing it again would list it twice.
+  const catalog = useMemo(
+    () => buildSystemCatalog(systems, savedSlug ? null : system),
+    [systems, system, savedSlug],
+  )
+
+  // Filtering happens here rather than in the catalog so the chips can always
+  // name every category, including the ones the current search has emptied.
+  const shown = useMemo(
+    () => catalog
+      .filter((g) => category === 'all' || g.key === category)
+      .map((g) => ({ ...g, systems: g.systems.filter((s) => matchesSystemQuery(s, query)) }))
+      .filter((g) => g.systems.length > 0),
+    [catalog, category, query],
+  )
+
+  const total = catalog.reduce((n, g) => n + g.systems.length, 0)
+  const found = shown.reduce((n, g) => n + g.systems.length, 0)
+
+  /** The card for the system already on screen offers nothing to open. */
+  const isCurrent = (s: CatalogSystem) =>
+    s.working || (s.saved ? s.saved.slug === savedSlug : system.id === s.def.id)
+
+  // The saved section carries its own status, so a gallery that is loading or
+  // unreachable no longer hides the systems that ship with the app.
+  const savedStatus = systemsError
+    ? systemsError
+    : systemsLoading
+      ? 'Looking…'
+      : systems.length === 0 && system.origin !== 'custom'
+        ? 'No systems saved yet. Duplicate one, or start an empty one, and it will show up here.'
+        : null
+
   const editable = system.origin === 'custom'
   const full = system.bodies.length >= MAX_BODIES
 
@@ -146,30 +188,95 @@ export function SystemsPanel(props: Props) {
 
   return (
     <>
-      {/* --- which system --------------------------------------------------- */}
-      <div>
-        <div className="field-label">System</div>
+      {/* --- which system ---------------------------------------------------
+          Every system the app has, in categories, the way Worlds home lists
+          every world. The flat chip row this replaced said nothing about
+          which of these are measured and which were invented, and left the
+          systems saved in this browser stranded at the bottom of the panel. */}
+      <p className="empty" style={{ padding: '0 2px 4px', textAlign: 'left' }}>
+        Every system in Little Worlds. Open one to fly it, or duplicate it to move the planets
+        around — the references stay read-only, and anything you build lands in <strong>Your
+        systems</strong>.
+      </p>
+
+      <Field label="Find a system">
+        <input
+          type="search"
+          value={query}
+          aria-label="Search systems"
+          placeholder="Name, star, or description"
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </Field>
+
+      <Field label={`Categories · ${found} of ${total} systems`}>
         <div className="chips">
-          {BUILT_IN_SYSTEMS.map((s) => (
-            <button
-              key={s.id}
-              className="chip"
-              type="button"
-              aria-pressed={system.id === s.id}
-              onClick={() => onSystem(s)}
-            >
-              <span className="dot" style={dotStyle(s.star.color, s.star.mass)} />
-              {s.name}
-            </button>
+          <Chip on={category === 'all'} onClick={() => setCategory('all')}>
+            All
+          </Chip>
+          {catalog.map((g) => (
+            <Chip key={g.key} on={category === g.key} onClick={() => setCategory(g.key)}>
+              {g.label}
+            </Chip>
           ))}
-          {editable && (
-            <button className="chip" type="button" aria-pressed>
-              <span className="dot" style={dotStyle(system.star.color, system.star.mass)} />
-              {system.name}
-            </button>
-          )}
         </div>
-      </div>
+      </Field>
+
+      {savedStatus && (category === 'all' || category === 'saved') && (
+        <div>
+          <div className="field-label">Your systems</div>
+          <p className="empty" style={{ padding: '12px 8px' }}>{savedStatus}</p>
+        </div>
+      )}
+
+      {shown.map((group) => (
+        <div key={group.key} className="catalog-group">
+          <div className="field-label">
+            {group.label} <span className="catalog-count">{group.systems.length}</span>
+          </div>
+          <div className="note">{group.note}</div>
+
+          {group.systems.map((s) => {
+            const current = isCurrent(s)
+            return (
+              <button
+                className="card"
+                key={s.id}
+                type="button"
+                aria-current={current ? 'true' : undefined}
+                disabled={current}
+                aria-label={current ? `${s.name} — open now` : `Open ${s.name}`}
+                onClick={() => (s.saved ? onOpenSaved(s.saved) : onSystem(s.def))}
+                style={{ cursor: current ? 'default' : 'pointer' }}
+              >
+                <span
+                  className="globe"
+                  style={{ background: `radial-gradient(circle at 34% 30%, #fff8, ${s.dot})` }}
+                />
+                <span className="body">
+                  <span className="title">{s.name}</span>
+                  <span className="sub">
+                    {s.sub}
+                    <br />
+                    {s.star} · {s.worlds} {s.worlds === 1 ? 'world' : 'worlds'}
+                  </span>
+                </span>
+                <span className="go ghost" aria-hidden="true">
+                  {current ? 'Open now' : 'Open'}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      ))}
+
+      {found === 0 && query.trim() !== '' && (
+        <p className="empty">
+          No system here matches “{query}”.
+          <br />
+          Try another name, or clear the search to see all {total}.
+        </p>
+      )}
 
       <div className="row" style={{ flexWrap: 'wrap' }}>
         <button className="btn-ghost" type="button" onClick={() => onSystem(duplicateSystem(system))}>
@@ -548,31 +655,6 @@ export function SystemsPanel(props: Props) {
         </>
       )}
 
-      {/* --- systems saved from this browser -------------------------------- */}
-      <div className="field-label" style={{ marginTop: 4 }}>
-        Your saved systems
-      </div>
-      {systemsError ? (
-        <p className="empty">{systemsError}</p>
-      ) : systemsLoading ? (
-        <p className="empty">Looking…</p>
-      ) : systems.length === 0 ? (
-        <p className="empty">No systems saved yet. Build one and it will show up here.</p>
-      ) : (
-        systems.map((s) => (
-          <button className="card" key={s.slug} type="button" onClick={() => onOpenSaved(s)}>
-            <span
-              className="globe"
-              style={{ background: `radial-gradient(circle at 34% 30%, #fff8, ${s.dot})` }}
-            />
-            <span className="body">
-              <span className="title">{s.name}</span>
-              <span className="sub">{s.sub}</span>
-            </span>
-            <span className="go">Open</span>
-          </button>
-        ))
-      )}
     </>
   )
 }
