@@ -5,7 +5,7 @@ import { SystemsPanel } from './components/SystemsPanel'
 import { Viewport } from './components/Viewport'
 import { Segmented } from './components/ui'
 import {
-  MOONS, PRESETS, SOLAR, isLittleWorldsOriginal, typeOf, type AncientWorld,
+  MOONS, PRESETS, SOLAR, isLittleWorldsOriginal, typeOf,
 } from './data/presets'
 import { MILKY_WAY } from './data/systems'
 import { climateForBody, standaloneClimate, withSystemClimates } from './engine/climate'
@@ -265,16 +265,6 @@ export default function App() {
     setSavedSlug(null)
     setSelectedBodyIndex(null)
     setWorldLocked(false)
-  }, [])
-
-  /** Load an ancient world whole — canonical seed, sliders, name and all. */
-  const applyAncient = useCallback((a: AncientWorld) => {
-    setParams({ ...CURRENT_PARAMS, ...a.params, generatorVersion: CURRENT_GENERATOR_VERSION, preset: a.key, texture: null, cloudTexture: null })
-    setName(a.name)
-    setScan(null)
-    setSavedSlug(null)
-    setSelectedBodyIndex(null)
-    setWorldLocked(true)
   }, [])
 
   /** Clicking a moon that is a world visits it, the way a planet card does. */
@@ -828,7 +818,6 @@ export default function App() {
                     onName={setName}
                     onParam={setParam}
                     onPreset={applyPreset}
-                    onAncient={applyAncient}
                     onReshape={reshape}
                     onSave={onSave}
                     saving={saving}
