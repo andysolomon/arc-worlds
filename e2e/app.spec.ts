@@ -407,7 +407,9 @@ test('a system built from your own worlds renders in orbit', async ({ page }) =>
 
   // Each world orbits further out than the last, so a year gets longer too.
   await page.getByRole('button', { name: 'Body list' }).click()
-  const cards = page.locator('.card .sub')
+  const cards = page
+    .locator('.card', { has: page.locator('.go', { hasText: 'Visit' }) })
+    .locator('.sub')
   const au = await cards.evaluateAll((els) =>
     els.map((e) => Number(/([\d.]+) AU/.exec(e.textContent ?? '')?.[1] ?? NaN)),
   )
@@ -460,11 +462,11 @@ test('adding a world never edits a read-only system in place', async ({ page }) 
   await expect(page.getByLabel('Name of world 10')).toBeVisible()
 
   // The original is still there, still measured, still nine bodies.
-  await page.getByRole('button', { name: 'The Solar System', exact: true }).click()
+  await page.getByRole('button', { name: 'Open The Solar System', exact: true }).click()
   // Choosing a system now opens the orbit view; its provenance and body list
   // both live one click away.
   await page.getByRole('button', { name: 'Body list' }).click()
-  await expect(page.getByText(/every number measured/)).toBeVisible()
+  await expect(page.locator('.note').filter({ hasText: /every number measured/ })).toBeVisible()
   // Nine planets, plus the seven moons that are worlds in their own right.
   await expect(page.getByRole('button', { name: /Visit/ })).toHaveCount(16)
 })
@@ -506,15 +508,46 @@ test('an imagined system is never presented as a measured one', async ({ page })
   await page.goto('/')
   await openSystems(page)
 
-  await expect(page.getByText(/every number measured/)).toBeVisible()
+  await expect(page.locator('.note').filter({ hasText: /every number measured/ })).toBeVisible()
 
   await page.getByRole('button', { name: 'Andromeda' }).click()
   // Choosing a system now opens the orbit view; its provenance is stated on
   // the body list, which is a click away.
   await page.getByRole('button', { name: 'Body list' }).click()
-  await expect(page.getByText(/not a measured system/)).toBeVisible()
+  await expect(page.locator('.note').filter({ hasText: /not a measured system/ })).toBeVisible()
   await page.getByRole('button', { name: 'Orbit view' }).click()
   await awaitGeometry(page)
+})
+
+test('the Systems tab shows every system in categories, and filters them', async ({ page }) => {
+  await page.goto('/')
+  await openSystems(page)
+
+  // Every system at once, sorted into what it is. The flat row of chips this
+  // replaced said nothing about which of these were measured and which were
+  // invented, and left the systems saved in this browser at the far bottom.
+  await expect(page.getByText('Categories \u00b7 9 of 9 systems')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'The Solar System \u2014 open now' })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^Open / })).toHaveCount(8)
+
+  // One category at a time.
+  await page.getByRole('button', { name: 'Observed exoplanets', exact: true }).click()
+  await expect(page.getByRole('button', { name: /^Open / })).toHaveCount(4)
+  await expect(page.getByRole('button', { name: 'The Solar System \u2014 open now' })).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'All', exact: true }).click()
+  await page.getByLabel('Search systems').fill('trappist')
+  await expect(page.getByText('Categories \u00b7 1 of 9 systems')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Open TRAPPIST-1' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Open Andromeda' })).toHaveCount(0)
+
+  // The star at the centre is searchable too: Halcyon is Andromeda's, and is
+  // named nowhere in the system's own name.
+  await page.getByLabel('Search systems').fill('halcyon')
+  await expect(page.getByRole('button', { name: 'Open Andromeda' })).toBeVisible()
+
+  await page.getByLabel('Search systems').fill('nothing by this name')
+  await expect(page.getByText(/No system here matches/)).toBeVisible()
 })
 
 test('a heavier star is drawn as a bigger one', async ({ page }) => {
@@ -781,7 +814,8 @@ test('the Worlds tab aims Add at any saved system, and warns before a duplicate'
   await page.getByRole('button', { name: 'Add Testball to Fixture System' }).click()
   await page.getByRole('button', { name: 'Add anyway' }).click()
   await openSystems(page)
-  await expect(page.getByRole('button', { name: /Fixture System/, pressed: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Fixture System — open now' }))
+    .toHaveAttribute('aria-current', 'true')
   await expect(page.getByRole('button', { name: /Visit/ })).toHaveCount(2)
 })
 
@@ -830,7 +864,8 @@ test('Pandora orbits Polyphemus, and is still a whole world', async ({ page }) =
   await page.getByRole('button', { name: 'Alpha Centauri A' }).click()
   // Choosing a system now opens the orbit view; the body list is a click away.
   await page.getByRole('button', { name: 'Body list' }).click()
-  await expect(page.getByText(/Pandora and the giant it orbits/)).toBeVisible()
+  await expect(page.locator('.note').filter({ hasText: /Pandora and the giant it orbits/ }))
+    .toBeVisible()
   await expect(page.getByRole('button', { name: /Visit/ })).toHaveCount(2)
 
   // It orbits its planet rather than the star, and the orbit view draws it
