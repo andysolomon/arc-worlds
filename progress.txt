@@ -1712,3 +1712,59 @@ NOT DONE
   and the relief agree.
 - The detailed view's water shell and atmosphere shell have no orbit
   counterpart. At a few dozen pixels across they would be sub-pixel.
+
+
+## Worlds home is every world in the app (2026-08-22)
+
+The Worlds pill has taken you to the third segment of the Worlds workspace
+since the appearance/settings pass, but what waited there was a shelf of the
+worlds saved in this browser and nothing else. Everything the app ships with —
+nine measured planets, seven moons that are worlds, three deep-time
+reconstructions, ten observed exoplanets, six invented worlds, three homages —
+was reachable only by touring the Systems tab one system at a time, and Erid,
+Adrian and Pandora had no route from the Worlds tab at all.
+
+`Saved` is now `Browse`, and it lists all 46 in named categories: Your worlds,
+The Solar System, Moons, Ancient worlds, Observed exoplanets, Imagined worlds,
+From fiction, and Start a new world. A search across name, subtitle and system
+plus a category chip row is the way through that many cards.
+
+- `src/lib/catalog.ts` assembles the list from `BUILT_IN_SYSTEMS`, `ANCIENT` and
+  `PRESETS` rather than restating any world, so a body added to a system shows
+  up in Worlds home without a second edit. A body's category is derived from its
+  system's own `origin`; fiction is checked first, because a homage world sits
+  in an `imagined` system and filing it as merely invented would lose the thing
+  worth showing.
+- One entry point opens everything, and the lock comes from the same identity
+  rule the rest of the app uses — a canonical seed or a photographic map means a
+  reference world. Opening Europa from Worlds home and visiting it from Systems
+  now agree on both the world and the lock. A world type has no world yet, so it
+  rolls a fresh seed and opens editable as `New Frost`.
+- A gallery that will not load no longer hides the catalog: the saved section
+  carries its own status and everything else renders regardless.
+- The panel is lazy-loaded, as the builder already was. The app opens on Build,
+  so the catalog and its data leave the entry chunk.
+
+VERIFIED
+- `bun run typecheck`, `bun run lint`, `bun run test`: 218 tests passed,
+  including 11 new ones covering the categories, the identity/lock claim the
+  builder depends on, and the search.
+- Full production Playwright suite: 45 tests passed, including two new ones —
+  the catalog listing every category and one world from each family with the
+  gallery deliberately aborted, and opening a reference world, an invented
+  world, and a world type each landing in the builder correctly locked.
+- `bun run build` and `bun run size:check`: entry 252,797 B gzip against a
+  256,000 B budget — 940 B smaller than before this change — with the browse
+  panel a 2,827 B lazy chunk, terrain worker 40,386 B raw, bake worker
+  93,835 B raw.
+- `bun run perf:smoke`: passed. firstSystemFrameMs 239.1, longTaskTotalMs 194,
+  taskDurationMs 1590, orbit shader programs added 3 against a budget of 4,
+  zero renderer errors.
+
+NOT DONE
+- Add on a card is still yours-only. Putting a measured planet or an invented
+  world straight into a system from Worlds home would be a natural next step;
+  today that journey is Open, then the Systems tab.
+- Bodies of systems you have saved yourself are not in the catalog — only your
+  saved worlds are. They are reachable from Systems, and listing them would need
+  a rule for the same world appearing in two of your systems.

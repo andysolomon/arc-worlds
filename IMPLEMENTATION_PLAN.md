@@ -716,3 +716,39 @@ systems, particularly in Safari on high-density displays.
       view sat on the compile deadline. Rebuilding the bodies did exactly that.
 - [x] Run the full typecheck, lint, unit, browser, build, bundle,
       terrain-worker, and performance gates before delivery.
+
+### 25. Worlds home is every world in the app (delivered 2026-08-22)
+
+- [x] Turn the third Worlds segment from `Saved` — a private shelf of whatever
+      this browser had saved — into `Browse`, the catalog the Worlds pill has
+      been landing on since §24. The measured planets, the moons, the deep-time
+      reconstructions, the observed exoplanets, the invented worlds and the
+      homages were all reachable only by touring the Systems tab one system at
+      a time; three of them (Erid, Adrian, Pandora) had no way in from Worlds
+      at all.
+- [x] Assemble the catalog in `lib/catalog` from the same tables the canvas
+      builds from — `BUILT_IN_SYSTEMS`, `ANCIENT`, `PRESETS` — so a world added
+      to a system appears in Worlds home without anyone listing it twice. A
+      body's category comes from its system's own `origin`, with fiction
+      checked first so a homage in an `imagined` system is not filed as merely
+      invented.
+- [x] Categories: Your worlds, The Solar System, Moons, Ancient worlds,
+      Observed exoplanets, Imagined worlds, From fiction, Start a new world.
+      Each carries one line on what it is, so the honesty the scans keep is
+      visible in the list as well.
+- [x] Give four dozen cards a way through: a search that reads the name, the
+      subtitle and the system, and a category chip row that always names every
+      category, including the ones the current search has emptied.
+- [x] Open anything through one entry point, and lock it by the identity rule
+      the rest of the app already uses — a canonical seed or a photographic map
+      means a reference world. Opening Earth from Worlds home and visiting it
+      from Systems now land in the same place with the same lock. A world type
+      is not a world yet, so it rolls a fresh seed instead.
+- [x] Stop a failed gallery hiding the catalog. The saved section carries its
+      own status; the several dozen worlds that ship with the app render either
+      way.
+- [x] Lazy-load the panel the way §22 lazy-loaded the builder. The app opens on
+      Build, so the catalog leaves the entry chunk: 252,797 B gzip, 940 B below
+      the pre-change baseline, with the panel a 2,827 B lazy chunk.
+- [x] Run the full typecheck, lint, unit, browser, build, bundle, and
+      performance gates before delivery.

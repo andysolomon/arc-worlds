@@ -3,7 +3,6 @@ import { ScanPanel } from './components/ScanPanel'
 import { SettingsModal } from './components/SettingsModal'
 import { SystemsPanel } from './components/SystemsPanel'
 import { Viewport } from './components/Viewport'
-import { WorldsPanel } from './components/WorldsPanel'
 import { Segmented } from './components/ui'
 import {
   MOONS, PRESETS, SOLAR, isLittleWorldsOriginal, typeOf, type AncientWorld,
@@ -12,6 +11,7 @@ import { MILKY_WAY } from './data/systems'
 import { climateForBody, standaloneClimate, withSystemClimates } from './engine/climate'
 import { parentOf } from './engine/planets'
 import { loadDisplay, nebulaCss, saveDisplay, type DisplayOptions } from './lib/display'
+import type { CatalogWorld } from './lib/catalog'
 import { CURRENT_PARAMS, sanitize } from './lib/params'
 import {
   addMoon, addRolledWorld, addWorld, duplicateBody, editableCopy, hasRoom, sanitizeSystem,
@@ -33,8 +33,16 @@ const SculptPanel = lazy(async () => {
   return { default: module.SculptPanel }
 })
 
+// Worlds home carries the catalog of every world in the app, and the app does
+// not open on it — Build does. Same bargain as the builder above: it leaves the
+// entry chunk, and React fetches it the moment Browse becomes the destination.
+const WorldsPanel = lazy(async () => {
+  const module = await import('./components/WorldsPanel')
+  return { default: module.WorldsPanel }
+})
+
 type Tab = 'solar' | 'worlds'
-type WorldsView = 'build' | 'analyze' | 'saved'
+type WorldsView = 'build' | 'analyze' | 'browse'
 
 const TABS: Array<[Tab, string]> = [
   ['worlds', 'Worlds'],
@@ -44,7 +52,7 @@ const TABS: Array<[Tab, string]> = [
 const WORLD_VIEWS: Array<[WorldsView, string]> = [
   ['build', 'Build'],
   ['analyze', 'Analyze'],
-  ['saved', 'Saved'],
+  ['browse', 'Browse'],
 ]
 
 const SPEEDS: Array<[number, string]> = [
@@ -564,7 +572,7 @@ export default function App() {
     } catch (e) {
       setGalleryError((e as Error).message)
       setTab('worlds')
-      setWorldsView('saved')
+      setWorldsView('browse')
     } finally {
       setSaving(false)
     }
@@ -581,6 +589,48 @@ export default function App() {
     setWorldsView('build')
     window.history.replaceState(null, '', `/w/${w.slug}`)
   }, [])
+
+  /**
+   * Open anything on Worlds home.
+   *
+   * One entry point for the whole catalog, because a card is a card: a saved
+   * world, a measured planet, a moon, a reconstruction, an exoplanet, a homage
+   * and a world type all arrive here. Everything but a type is loaded whole and
+   * locks itself by the identity rule the rest of the app already uses — a
+   * canonical seed or a photographic map means a reference world, which you can
+   * explore and scan but not overwrite. A type has no world yet, so it rolls
+   * one.
+   */
+  const openCatalogWorld = useCallback((w: CatalogWorld) => {
+    if (w.saved) {
+      openWorld(w.saved)
+      return
+    }
+    if (w.preset) {
+      const p = PRESETS.find((x) => x.key === w.preset)
+      setParams({
+        ...CURRENT_PARAMS,
+        ...(p?.def ?? {}),
+        preset: w.preset,
+        seed: (Math.random() * 99_999) | 0,
+      })
+      setName(`New ${w.name}`)
+      setWorldLocked(false)
+    } else if (w.params) {
+      setParams(sanitize(w.params))
+      setName(w.name)
+      setWorldLocked(isLittleWorldsOriginal(w.params) || !!w.params.texture)
+    } else {
+      return
+    }
+    setScan(null)
+    setSavedSlug(null)
+    setSelectedBodyIndex(null)
+    setView('single')
+    setTab('worlds')
+    setWorldsView('build')
+    if (window.location.pathname.startsWith('/w/')) window.history.replaceState(null, '', '/')
+  }, [openWorld])
 
   const copyLink = useCallback((w: SavedWorld) => {
     navigator.clipboard
@@ -600,7 +650,7 @@ export default function App() {
    */
   const goWorldsHome = useCallback(() => {
     setTab('worlds')
-    setWorldsView('saved')
+    setWorldsView('browse')
     setSelectedBodyIndex(null)
     setSavedSlug(null)
     // The Worlds workspace is about one world at a time, so it brings the
@@ -793,19 +843,21 @@ export default function App() {
                 <ScanPanel worldName={name} scan={scan} scanning={scanning} onScan={runScan} />
               )}
 
-              {worldsView === 'saved' && (
-                <WorldsPanel
-                  worlds={worlds}
-                  loading={galleryLoading}
-                  error={galleryError}
-                  onOpen={openWorld}
-                  onCopyLink={copyLink}
-                  copiedSlug={copiedSlug}
-                  system={system}
-                  systems={systems}
-                  onAdd={addSavedWorld}
-                  addedSlug={addedSlug}
-                />
+              {worldsView === 'browse' && (
+                <Suspense fallback={<div className="note">Loading worlds…</div>}>
+                  <WorldsPanel
+                    worlds={worlds}
+                    loading={galleryLoading}
+                    error={galleryError}
+                    onOpen={openCatalogWorld}
+                    onCopyLink={copyLink}
+                    copiedSlug={copiedSlug}
+                    system={system}
+                    systems={systems}
+                    onAdd={addSavedWorld}
+                    addedSlug={addedSlug}
+                  />
+                </Suspense>
               )}
             </>
           )}

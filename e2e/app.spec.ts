@@ -32,7 +32,7 @@ async function awaitGeometry(page: Page): Promise<void> {
 }
 
 /** Open one tool inside the consolidated Worlds workspace. */
-async function openWorldTool(page: Page, tool: 'Build' | 'Analyze' | 'Saved'): Promise<void> {
+async function openWorldTool(page: Page, tool: 'Build' | 'Analyze' | 'Browse'): Promise<void> {
   await page.getByRole('tab', { name: 'Worlds' }).click()
   await page.getByRole('button', { name: tool, exact: true }).click()
 }
@@ -100,7 +100,7 @@ test('Worlds is the single workspace for building, analysis, and saved worlds', 
   await expect(page.getByRole('tab', { name: 'Scan' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Build', exact: true })).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByRole('button', { name: 'Analyze', exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Saved', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Browse', exact: true })).toBeVisible()
 })
 
 test('the Worlds builder exposes fine terrain, layer, and bump controls', async ({ page }) => {
@@ -213,10 +213,82 @@ test('each tab pill is the way home to its own workspace', async ({ page }) => {
 
   // And Worlds brings back one world and the collection that holds it.
   await page.getByRole('tab', { name: 'Worlds' }).click()
-  await expect(page.getByRole('button', { name: 'Saved', exact: true })).toHaveAttribute(
+  await expect(page.getByRole('button', { name: 'Browse', exact: true })).toHaveAttribute(
     'aria-pressed', 'true',
   )
   await expect(page.getByRole('heading', { name: 'Peachmoss' })).toBeVisible()
+})
+
+/**
+ * Worlds home is the whole collection, not just the private shelf.
+ *
+ * Before this, the measured planets, the moons, the reconstructions, the
+ * exoplanets and the homages were reachable only by touring the Systems tab
+ * one system at a time — and a gallery that failed to load hid the lot behind
+ * an error. Every category is asserted by name so a world quietly dropping out
+ * of one shows up here rather than in a screenshot months later.
+ */
+test('Worlds home lists every world in the app, by category', async ({ page }) => {
+  // The catalog ships with the app, so it must stand up without the gallery.
+  await page.route('**/api/worlds*', (r) => r.abort())
+  await page.goto('/')
+  await openWorldTool(page, 'Browse')
+
+  for (const category of [
+    'The Solar System', 'Moons', 'Ancient worlds', 'Observed exoplanets',
+    'Imagined worlds', 'From fiction', 'Start a new world',
+  ]) {
+    await expect(page.getByRole('button', { name: category, exact: true })).toBeVisible()
+  }
+
+  // One world from each family, including the three that had no way in at all.
+  for (const world of [
+    'Earth', 'Europa', 'Archean Earth', 'TRAPPIST-1 e', 'Cinderpip', 'Erid', 'Pandora',
+  ]) {
+    await expect(page.getByRole('button', { name: `Open ${world}` })).toBeVisible()
+  }
+
+  // The search is the way through four dozen cards, and it reads the subtitle
+  // and the system as well as the name.
+  await page.getByLabel('Search worlds').fill('titan')
+  await expect(page.getByRole('button', { name: 'Open Titan' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Open Earth' })).toHaveCount(0)
+
+  await page.getByLabel('Search worlds').fill('')
+  await page.getByRole('button', { name: 'From fiction', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Open Erid' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Open Earth' })).toHaveCount(0)
+})
+
+/**
+ * Opening from the catalog has to land where visiting from a system lands:
+ * same world, same lock. A reference world you could overwrite from one door
+ * and not the other would be a bug in whichever door was wrong.
+ */
+test('opening a catalog world lands in the builder with the right lock', async ({ page }) => {
+  await page.goto('/')
+  await openWorldTool(page, 'Browse')
+
+  await page.getByRole('button', { name: 'Open Europa' }).click()
+  await expect(page.getByRole('heading', { name: 'Europa' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Build', exact: true })).toHaveAttribute(
+    'aria-pressed', 'true',
+  )
+  await expect(page.getByText('Europa is a Little Worlds original.')).toBeVisible()
+  await expect(page.getByLabel('World name')).toBeDisabled()
+  await awaitGeometry(page)
+
+  // An invented world is nobody's reference, so it opens ready to edit.
+  await openWorldTool(page, 'Browse')
+  await page.getByRole('button', { name: 'Open Cinderpip' }).click()
+  await expect(page.getByLabel('World name')).toBeEnabled()
+  await expect(page.getByText('is a Little Worlds original.')).toHaveCount(0)
+
+  // A world type is not a world yet: starting one rolls a fresh seed.
+  await openWorldTool(page, 'Browse')
+  await page.getByRole('button', { name: 'Start Frost' }).click()
+  await expect(page.getByLabel('World name')).toHaveValue('New Frost')
+  await expect(page.getByLabel('World name')).toBeEnabled()
 })
 
 test('settings are reachable from either tab and remembered', async ({ page }) => {
@@ -483,9 +555,9 @@ test('a heavier star is drawn as a bigger one', async ({ page }) => {
 test('the gallery degrades gracefully when the API is unavailable', async ({ page }) => {
   await page.route('**/api/worlds*', (r) => r.abort())
   await page.goto('/')
-  await openWorldTool(page, 'Saved')
+  await openWorldTool(page, 'Browse')
   // It must say something useful rather than hanging on a spinner.
-  await expect(page.getByText(/Could not reach the gallery|Nothing here yet/)).toBeVisible({
+  await expect(page.getByText(/Could not reach the gallery|Nothing saved yet/)).toBeVisible({
     timeout: 10_000,
   })
 })
@@ -508,8 +580,8 @@ test('each browser asks for its own gallery', async ({ browser }) => {
     })
 
     await page.goto('/')
-    await openWorldTool(page, 'Saved')
-    await expect(page.getByText(/Nothing here yet/)).toBeVisible({ timeout: 10_000 })
+    await openWorldTool(page, 'Browse')
+    await expect(page.getByText(/Nothing saved yet/)).toBeVisible({ timeout: 10_000 })
 
     await context.close()
     return key
@@ -685,7 +757,7 @@ test('the Worlds tab aims Add at any saved system, and warns before a duplicate'
   await page.route('**/api/systems*', (r) => r.fulfill({ json: { systems: [fixture] } }))
 
   await page.goto('/')
-  await openWorldTool(page, 'Saved')
+  await openWorldTool(page, 'Browse')
 
   // The default destination is whatever the Systems tab is showing — the
   // read-only Solar System, so Add promises an editable copy and delivers one.
@@ -698,7 +770,7 @@ test('the Worlds tab aims Add at any saved system, and warns before a duplicate'
 
   // Aim at the saved system instead. Testball already orbits there, so Add
   // warns; Cancel stands down.
-  await openWorldTool(page, 'Saved')
+  await openWorldTool(page, 'Browse')
   await page.getByLabel('System to add worlds to').selectOption('stest')
   await page.getByRole('button', { name: 'Add Testball to Fixture System' }).click()
   await expect(page.getByText(/already orbiting in Fixture System/)).toBeVisible()
@@ -801,7 +873,7 @@ test('satellites keep moving in orbit view and in the Worlds parent view', async
   expect(await moonPosition()).not.toBe(firstMoonPosition)
 
   await page.getByRole('tab', { name: 'Worlds' }).click()
-  await expect(page.getByRole('button', { name: 'Saved', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: 'Browse', exact: true })).toHaveAttribute('aria-pressed', 'true')
 })
 
 test('the moons toggle drops every satellite from the orbit view', async ({ page }) => {
