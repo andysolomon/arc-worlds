@@ -808,7 +808,9 @@ test('TRAPPIST-1 wears measured orbits on imagined worlds', async ({ page }) => 
 
 test('an ancient world loads whole and scans as a reconstruction', async ({ page }) => {
   await page.goto('/')
-  await page.getByRole('button', { name: 'Archean Earth' }).click()
+  // Ancient worlds live in the Worlds list, alongside every other world.
+  await openWorldTool(page, 'Browse')
+  await page.getByRole('button', { name: 'Open Archean Earth' }).click()
   await expect(page.getByRole('heading', { name: 'Archean Earth' })).toBeVisible()
   await expect(page.getByText(/archean world/)).toBeVisible()
 

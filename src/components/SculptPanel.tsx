@@ -1,4 +1,4 @@
-import { ANCIENT, MOONS, PRESETS, type AncientWorld } from '../data/presets'
+import { MOONS, PRESETS } from '../data/presets'
 import { realFor } from '../engine/planets'
 import { DEFAULT_PARAMS } from '../lib/params'
 import { Chip, Field, Slider } from './ui'
@@ -30,7 +30,6 @@ interface Props {
   onName: (v: string) => void
   onParam: <K extends keyof PlanetParams>(k: K, v: PlanetParams[K]) => void
   onPreset: (key: PresetKey) => void
-  onAncient: (a: AncientWorld) => void
   onReshape: () => void
   onSave: () => void
   saving: boolean
@@ -41,7 +40,7 @@ interface Props {
 }
 
 export function SculptPanel({
-  params: P, name, onVisitMoon, onName, onParam, onPreset, onAncient, onReshape,
+  params: P, name, onVisitMoon, onName, onParam, onPreset, onReshape,
   onSave, saving, saved, locked, onClone,
 }: Props) {
   // Moons that are worlds in their own right, on the body being shown. They
@@ -133,26 +132,6 @@ export function SculptPanel({
               {p.label}
             </Chip>
           ))}
-        </div>
-      </Field>
-
-      <Field label="Ancient worlds">
-        <div className="chips">
-          {ANCIENT.map((a) => (
-            <Chip
-              key={a.key}
-              on={P.preset === a.key && P.seed === a.params.seed}
-              dot={a.dot}
-              onClick={() => onAncient(a)}
-            >
-              {a.name}
-            </Chip>
-          ))}
-        </div>
-        <div className="note" style={{ marginTop: 10 }}>
-          Worlds we know existed, rebuilt from evidence — the spectrometer reads them as
-          reconstructions and says so. Still yours to shape; change the seed and one becomes an
-          ordinary world of its kind.
         </div>
       </Field>
 
